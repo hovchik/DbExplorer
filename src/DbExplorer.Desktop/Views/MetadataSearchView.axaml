@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DbExplorer.Desktop.Views.MetadataSearchView">
+  <DockPanel Margin="8">
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <TextBox x:Name="QueryBox" Width="420" Text="{Binding Query}"
+                 Watermark="Table, column, procedure name, or text inside code…" />
+        <Button Content="Search" Classes="accent" Command="{Binding SearchCommand}" />
+      </StackPanel>
+      <WrapPanel>
+        <CheckBox Margin="0,0,16,0" Content="Object names" IsChecked="{Binding SearchObjects}" />
+        <CheckBox Margin="0,0,16,0" Content="Column names" IsChecked="{Binding SearchColumns}" />
+        <CheckBox Margin="0,0,32,0" Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
+        <CheckBox Margin="0,0,16,0" Content="Match case" IsChecked="{Binding MatchCase}" />
+        <CheckBox Margin="0,0,16,0" Content="Whole word" IsChecked="{Binding WholeWord}" />
+        <CheckBox Margin="0,0,16,0" Content="Regex" IsChecked="{Binding UseRegex}" />
+      </WrapPanel>
+    </StackPanel>
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
+    <DataGrid ItemsSource="{Binding Results}"
+              IsReadOnly="True" AutoGenerateColumns="False"
+              CanUserResizeColumns="True" CanUserSortColumns="True"
+              GridLinesVisibility="Horizontal">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Found in" Binding="{Binding Kind}" Width="Auto" />
+        <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+        <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="220" />
+        <DataGridTextColumn Header="Type" Binding="{Binding ObjectType}" Width="Auto" />
+        <DataGridTextColumn Header="Line" Binding="{Binding Line}" Width="Auto" />
+        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

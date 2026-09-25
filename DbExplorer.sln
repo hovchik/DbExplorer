@@ -1,0 +1,64 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{930665A1-2894-47D0-BDD4-05B61E931195}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{525D2BAB-0727-4AF1-8AB8-09CBD375197A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Core", "src\DbExplorer.Core\DbExplorer.Core.csproj", "{4828BEDE-D7CA-4298-A3C3-5A6B40058854}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Application", "src\DbExplorer.Application\DbExplorer.Application.csproj", "{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Providers.SqlServer", "src\DbExplorer.Providers.SqlServer\DbExplorer.Providers.SqlServer.csproj", "{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Providers.Postgres", "src\DbExplorer.Providers.Postgres\DbExplorer.Providers.Postgres.csproj", "{AC795039-238C-44BA-98AC-75049FD822F6}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Desktop", "src\DbExplorer.Desktop\DbExplorer.Desktop.csproj", "{98B019CF-F22A-4177-B68D-55D39438CC86}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Tests", "tests\DbExplorer.Tests\DbExplorer.Tests.csproj", "{5A15B322-EF75-4AFC-BF0A-E6942458AA02}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4828BEDE-D7CA-4298-A3C3-5A6B40058854}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4828BEDE-D7CA-4298-A3C3-5A6B40058854}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4828BEDE-D7CA-4298-A3C3-5A6B40058854}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4828BEDE-D7CA-4298-A3C3-5A6B40058854}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AC795039-238C-44BA-98AC-75049FD822F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC795039-238C-44BA-98AC-75049FD822F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC795039-238C-44BA-98AC-75049FD822F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC795039-238C-44BA-98AC-75049FD822F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98B019CF-F22A-4177-B68D-55D39438CC86}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98B019CF-F22A-4177-B68D-55D39438CC86}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98B019CF-F22A-4177-B68D-55D39438CC86}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98B019CF-F22A-4177-B68D-55D39438CC86}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4828BEDE-D7CA-4298-A3C3-5A6B40058854} = {930665A1-2894-47D0-BDD4-05B61E931195}
+		{CBC36799-AC5A-48C8-86F6-2F1487CFC2DF} = {930665A1-2894-47D0-BDD4-05B61E931195}
+		{7DA6C325-5A3A-429A-BA5F-8A12AC06C47E} = {930665A1-2894-47D0-BDD4-05B61E931195}
+		{AC795039-238C-44BA-98AC-75049FD822F6} = {930665A1-2894-47D0-BDD4-05B61E931195}
+		{98B019CF-F22A-4177-B68D-55D39438CC86} = {930665A1-2894-47D0-BDD4-05B61E931195}
+		{5A15B322-EF75-4AFC-BF0A-E6942458AA02} = {525D2BAB-0727-4AF1-8AB8-09CBD375197A}
+	EndGlobalSection
+EndGlobal

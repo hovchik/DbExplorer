@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DbExplorer.Desktop.Views.DataSearchView">
+  <Grid Margin="8" RowDefinitions="Auto,Auto,Auto,*,6,Auto">
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+      <TextBox x:Name="TermBox" Width="360" Text="{Binding Term}" Watermark="Value to find in any column…" />
+      <ComboBox Width="130" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" />
+      <Button Content="Search" Classes="accent" Command="{Binding StartCommand}" />
+      <Button Content="Cancel" Command="{Binding CancelCommand}" />
+    </StackPanel>
+
+    <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+      <WrapPanel.Styles>
+        <Style Selector="StackPanel.field">
+          <Setter Property="Margin" Value="0,0,14,6" />
+          <Setter Property="Spacing" Value="2" />
+        </Style>
+      </WrapPanel.Styles>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Schemas (comma-separated)" />
+        <TextBox Width="180" Text="{Binding Schemas}" Watermark="all" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Table name contains" />
+        <TextBox Width="160" Text="{Binding TableFilter}" Watermark="all" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Max rows / table" />
+        <NumericUpDown Width="120" Value="{Binding MaxMatchesPerTable}" Minimum="1" Maximum="10000" Increment="10" FormatString="0" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Parallel queries" />
+        <NumericUpDown Width="110" Value="{Binding Parallelism}" Minimum="1" Maximum="16" Increment="1" FormatString="0" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Query timeout (s)" />
+        <NumericUpDown Width="110" Value="{Binding QueryTimeoutSeconds}" Minimum="1" Maximum="3600" Increment="5" FormatString="0" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Lock timeout (ms)" />
+        <NumericUpDown Width="120" Value="{Binding LockTimeoutMs}" Minimum="0" Maximum="60000" Increment="250" FormatString="0" />
+      </StackPanel>
+      <StackPanel Classes="field">
+        <TextBlock Classes="hint" Text="Skip tables above (rows)" />
+        <NumericUpDown Width="150" Value="{Binding MaxTableRows}" Minimum="0" Increment="100000" FormatString="N0" Watermark="no limit" />
+      </StackPanel>
+      <StackPanel Classes="field" VerticalAlignment="Bottom">
+        <CheckBox Content="Views too" IsChecked="{Binding IncludeViews}" />
+      </StackPanel>
+      <StackPanel Classes="field" VerticalAlignment="Bottom">
+        <CheckBox Content="Numeric columns (exact)" IsChecked="{Binding IncludeNumeric}" />
+      </StackPanel>
+      <StackPanel Classes="field" VerticalAlignment="Bottom">
+        <CheckBox Content="GUID/UUID columns" IsChecked="{Binding IncludeGuid}" />
+      </StackPanel>
+    </WrapPanel>
+
+    <StackPanel Grid.Row="2" Spacing="4" Margin="0,4,0,8">
+      <ProgressBar Value="{Binding Progress}" Maximum="100" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <DataGrid Grid.Row="3" ItemsSource="{Binding Matches}"
+              IsReadOnly="True" AutoGenerateColumns="False"
+              CanUserResizeColumns="True" CanUserSortColumns="True"
+              GridLinesVisibility="Horizontal">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+        <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="200" />
+        <DataGridTextColumn Header="Column" Binding="{Binding Column}" Width="160" />
+        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+        <DataGridTextColumn Header="Row key" Binding="{Binding RowKey}" Width="200" />
+      </DataGrid.Columns>
+    </DataGrid>
+
+    <GridSplitter Grid.Row="4" ResizeDirection="Rows" Background="Transparent" />
+
+    <Expander Grid.Row="5" Header="Skipped tables (timeouts, locks, errors)" HorizontalAlignment="Stretch">
+      <DataGrid ItemsSource="{Binding Skipped}" MaxHeight="220"
+                IsReadOnly="True" AutoGenerateColumns="False" GridLinesVisibility="Horizontal">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+          <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="220" />
+          <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="*" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Expander>
+  </Grid>
+</UserControl>

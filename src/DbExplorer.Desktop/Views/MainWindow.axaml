@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:DbExplorer.Desktop.Views"
+        x:Class="DbExplorer.Desktop.Views.MainWindow"
+        Title="DB Explorer"
+        Width="1400" Height="860"
+        WindowStartupLocation="CenterScreen">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1" BorderBrush="#33808080">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <ComboBox Width="300"
+                  ItemsSource="{Binding Profiles}"
+                  SelectedItem="{Binding SelectedProfile}"
+                  PlaceholderText="Select a connection…"
+                  IsEnabled="{Binding !IsConnected}" />
+        <Button Content="New…" Command="{Binding NewConnectionCommand}" />
+        <Button Content="Edit…" Command="{Binding EditConnectionCommand}" />
+        <Button Content="Delete" Command="{Binding DeleteConnectionCommand}" />
+        <Border Width="1" Margin="6,2" Background="#33808080" />
+        <Button Content="Connect" Classes="accent" Command="{Binding ConnectCommand}" />
+        <Button Content="Disconnect" Command="{Binding DisconnectCommand}" />
+        <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
+                ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
+        <ProgressBar Width="120" VerticalAlignment="Center"
+                     IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      </StackPanel>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom" Padding="8,4" BorderThickness="0,1,0,0" BorderBrush="#33808080">
+      <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <TabControl Margin="4" IsEnabled="{Binding IsConnected}">
+      <TabItem Header="Objects">
+        <views:ObjectsView DataContext="{Binding Objects}" />
+      </TabItem>
+      <TabItem Header="Search names &amp; code">
+        <views:MetadataSearchView DataContext="{Binding Search}" />
+      </TabItem>
+      <TabItem Header="Search data">
+        <views:DataSearchView DataContext="{Binding DataSearch}" />
+      </TabItem>
+      <TabItem Header="Indexes">
+        <views:IndexesView DataContext="{Binding Indexes}" />
+      </TabItem>
+      <TabItem Header="Locks">
+        <views:LocksView DataContext="{Binding Locks}" />
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

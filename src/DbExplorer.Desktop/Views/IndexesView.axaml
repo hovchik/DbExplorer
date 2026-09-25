@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DbExplorer.Desktop.Views.IndexesView">
+  <DockPanel Margin="8">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+      <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" />
+      <CheckBox Content="Include fragmentation (slower)" IsChecked="{Binding IncludeFragmentation}" />
+      <TextBox Width="280" Text="{Binding FilterText}" Watermark="Filter by table, index or column…" />
+      <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+    </StackPanel>
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
+    <DataGrid ItemsSource="{Binding Indexes}"
+              IsReadOnly="True" AutoGenerateColumns="False"
+              CanUserResizeColumns="True" CanUserSortColumns="True"
+              GridLinesVisibility="Horizontal">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+        <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="170" />
+        <DataGridTextColumn Header="Index" Binding="{Binding Name}" Width="200" />
+        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
+        <DataGridCheckBoxColumn Header="Unique" Binding="{Binding IsUnique}" Width="Auto" />
+        <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
+        <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding IsDisabled}" Width="Auto" />
+        <DataGridTextColumn Header="Key columns" Binding="{Binding Columns}" Width="220" />
+        <DataGridTextColumn Header="Included" Binding="{Binding IncludedColumns}" Width="160" />
+        <DataGridTextColumn Header="Filter" Binding="{Binding Filter}" Width="120" />
+        <DataGridTextColumn Header="Rows" Binding="{Binding Rows, StringFormat='{}{0:N0}'}" Width="Auto" />
+        <DataGridTextColumn Header="Size MB" Binding="{Binding SizeMb, StringFormat='{}{0:N2}'}" Width="Auto" />
+        <DataGridTextColumn Header="Seeks" Binding="{Binding Seeks, StringFormat='{}{0:N0}'}" Width="Auto" />
+        <DataGridTextColumn Header="Scans" Binding="{Binding Scans, StringFormat='{}{0:N0}'}" Width="Auto" />
+        <DataGridTextColumn Header="Updates" Binding="{Binding Updates, StringFormat='{}{0:N0}'}" Width="Auto" />
+        <DataGridTextColumn Header="Frag %" Binding="{Binding FragmentationPercent, StringFormat='{}{0:N1}'}" Width="Auto" />
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

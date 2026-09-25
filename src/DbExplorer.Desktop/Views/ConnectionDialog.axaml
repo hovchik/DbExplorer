@@ -2,17 +2,17 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="DbExplorer.Desktop.Views.ConnectionDialog"
         Title="Connection"
-        Width="580" SizeToContent="Height"
+        Width="620" SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
-  <Grid Margin="16" ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+  <Grid Margin="20" ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
     <Grid.Styles>
       <Style Selector="TextBlock.label">
         <Setter Property="VerticalAlignment" Value="Center" />
-        <Setter Property="Margin" Value="0,0,8,0" />
+        <Setter Property="Margin" Value="0,0,12,0" />
       </Style>
       <Style Selector="Grid > :is(Control)">
-        <Setter Property="Margin" Value="0,4" />
+        <Setter Property="Margin" Value="0,6" />
       </Style>
     </Grid.Styles>
 
@@ -37,37 +37,37 @@
     <TextBlock Grid.Row="5" Classes="label" Text="User" />
     <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding UserName}" IsEnabled="{Binding !IntegratedSecurity}" />
 
-    <TextBlock Grid.Row="6" Classes="label" Text="Password" />
-    <StackPanel Grid.Row="6" Grid.Column="1" Spacing="4">
+    <TextBlock Grid.Row="6" Classes="label" Text="Password" VerticalAlignment="Top" Margin="0,14,12,0" />
+    <StackPanel Grid.Row="6" Grid.Column="1" Spacing="6" Margin="0,6">
       <TextBox Text="{Binding Password}" PasswordChar="•" IsEnabled="{Binding !IntegratedSecurity}" />
       <CheckBox Content="Save password (encrypted for the current Windows user; not saved on macOS/Linux)"
                 IsChecked="{Binding SavePassword}" IsEnabled="{Binding !IntegratedSecurity}" />
     </StackPanel>
 
     <TextBlock Grid.Row="7" Classes="label" Text="Database" />
-    <Grid Grid.Row="7" Grid.Column="1" ColumnDefinitions="*,Auto,160">
-      <TextBox Grid.Column="0" Text="{Binding Database}" />
-      <Button Grid.Column="1" Margin="6,0" Content="List" Command="{Binding LoadDatabasesCommand}" />
-      <ComboBox Grid.Column="2" HorizontalAlignment="Stretch"
+    <Grid Grid.Row="7" Grid.Column="1" ColumnDefinitions="*,Auto,170" Margin="0,6">
+      <TextBox Grid.Column="0" Text="{Binding Database}" Margin="0" />
+      <Button Grid.Column="1" Margin="8,0" Content="List" Command="{Binding LoadDatabasesCommand}" />
+      <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" Margin="0"
                 ItemsSource="{Binding Databases}"
                 SelectedItem="{Binding SelectedDatabase}"
                 PlaceholderText="pick…" />
     </Grid>
 
-    <TextBlock Grid.Row="8" Classes="label" Text="Options" VerticalAlignment="Top" />
-    <StackPanel Grid.Row="8" Grid.Column="1" Spacing="2">
+    <TextBlock Grid.Row="8" Classes="label" Text="Options" VerticalAlignment="Top" Margin="0,14,12,0" />
+    <StackPanel Grid.Row="8" Grid.Column="1" Spacing="6" Margin="0,6">
       <CheckBox Content="Encrypt connection (SSL/TLS required)" IsChecked="{Binding Encrypt}" />
       <CheckBox Content="Trust server certificate" IsChecked="{Binding TrustServerCertificate}" />
       <CheckBox Content="Read-only intent (route to readable secondary)"
                 IsChecked="{Binding ReadOnlyIntent}" IsEnabled="{Binding CanUseReadOnlyIntent}" />
     </StackPanel>
 
-    <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" />
+    <TextBlock Grid.Row="9" Grid.Column="1" Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" Margin="0,8,0,0" />
 
-    <ProgressBar Grid.Row="10" Grid.Column="1" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+    <ProgressBar Grid.Row="10" Grid.Column="1" IsIndeterminate="True" IsVisible="{Binding IsBusy}" Margin="0,4" />
 
     <StackPanel Grid.Row="11" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="8" Margin="0,12,0,0">
+                Spacing="8" Margin="0,16,0,0">
       <Button Content="Test connection" Command="{Binding TestCommand}" />
       <Button Content="Save" Classes="accent" Command="{Binding SaveCommand}" IsDefault="True" />
       <Button Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />

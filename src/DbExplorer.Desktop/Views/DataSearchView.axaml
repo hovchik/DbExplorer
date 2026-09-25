@@ -9,53 +9,55 @@
       <Button Content="Cancel" Command="{Binding CancelCommand}" />
     </StackPanel>
 
-    <WrapPanel Grid.Row="1" Margin="0,8,0,0">
-      <WrapPanel.Styles>
-        <Style Selector="StackPanel.field">
-          <Setter Property="Margin" Value="0,0,14,6" />
-          <Setter Property="Spacing" Value="2" />
-        </Style>
-      </WrapPanel.Styles>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Schemas (comma-separated)" />
-        <TextBox Width="180" Text="{Binding Schemas}" Watermark="all" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Table name contains" />
-        <TextBox Width="160" Text="{Binding TableFilter}" Watermark="all" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Max rows / table" />
-        <NumericUpDown Width="120" Value="{Binding MaxMatchesPerTable}" Minimum="1" Maximum="10000" Increment="10" FormatString="0" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Parallel queries" />
-        <NumericUpDown Width="110" Value="{Binding Parallelism}" Minimum="1" Maximum="16" Increment="1" FormatString="0" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Query timeout (s)" />
-        <NumericUpDown Width="110" Value="{Binding QueryTimeoutSeconds}" Minimum="1" Maximum="3600" Increment="5" FormatString="0" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Lock timeout (ms)" />
-        <NumericUpDown Width="120" Value="{Binding LockTimeoutMs}" Minimum="0" Maximum="60000" Increment="250" FormatString="0" />
-      </StackPanel>
-      <StackPanel Classes="field">
-        <TextBlock Classes="hint" Text="Skip tables above (rows)" />
-        <NumericUpDown Width="150" Value="{Binding MaxTableRows}" Minimum="0" Increment="100000" FormatString="N0" Watermark="no limit" />
-      </StackPanel>
-      <StackPanel Classes="field" VerticalAlignment="Bottom">
-        <CheckBox Content="Views too" IsChecked="{Binding IncludeViews}" />
-      </StackPanel>
-      <StackPanel Classes="field" VerticalAlignment="Bottom">
-        <CheckBox Content="Numeric columns (exact)" IsChecked="{Binding IncludeNumeric}" />
-      </StackPanel>
-      <StackPanel Classes="field" VerticalAlignment="Bottom">
-        <CheckBox Content="GUID/UUID columns" IsChecked="{Binding IncludeGuid}" />
-      </StackPanel>
-    </WrapPanel>
+    <Expander Grid.Row="1" Classes="options" Header="Search options" Margin="0,8,0,0">
+      <WrapPanel Margin="4,10,0,2">
+        <WrapPanel.Styles>
+          <Style Selector="StackPanel.field">
+            <Setter Property="Margin" Value="0,0,14,6" />
+            <Setter Property="Spacing" Value="2" />
+          </Style>
+        </WrapPanel.Styles>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Schemas (comma-separated)" />
+          <TextBox Width="180" Text="{Binding Schemas}" Watermark="all" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Table name contains" />
+          <TextBox Width="160" Text="{Binding TableFilter}" Watermark="all" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Max rows / table" />
+          <NumericUpDown Width="120" Value="{Binding MaxMatchesPerTable}" Minimum="1" Maximum="10000" Increment="10" FormatString="0" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Parallel queries" />
+          <NumericUpDown Width="110" Value="{Binding Parallelism}" Minimum="1" Maximum="16" Increment="1" FormatString="0" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Query timeout (s)" />
+          <NumericUpDown Width="110" Value="{Binding QueryTimeoutSeconds}" Minimum="1" Maximum="3600" Increment="5" FormatString="0" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Lock timeout (ms)" />
+          <NumericUpDown Width="120" Value="{Binding LockTimeoutMs}" Minimum="0" Maximum="60000" Increment="250" FormatString="0" />
+        </StackPanel>
+        <StackPanel Classes="field">
+          <TextBlock Classes="hint" Text="Skip tables above (rows)" />
+          <NumericUpDown Width="150" Value="{Binding MaxTableRows}" Minimum="0" Increment="100000" FormatString="N0" Watermark="no limit" />
+        </StackPanel>
+        <StackPanel Classes="field" VerticalAlignment="Bottom">
+          <CheckBox Content="Views too" IsChecked="{Binding IncludeViews}" />
+        </StackPanel>
+        <StackPanel Classes="field" VerticalAlignment="Bottom">
+          <CheckBox Content="Numeric columns (exact)" IsChecked="{Binding IncludeNumeric}" />
+        </StackPanel>
+        <StackPanel Classes="field" VerticalAlignment="Bottom">
+          <CheckBox Content="GUID/UUID columns" IsChecked="{Binding IncludeGuid}" />
+        </StackPanel>
+      </WrapPanel>
+    </Expander>
 
-    <StackPanel Grid.Row="2" Spacing="4" Margin="0,4,0,8">
+    <StackPanel Grid.Row="2" Spacing="4" Margin="0,0,0,8">
       <ProgressBar Value="{Binding Progress}" Maximum="100" />
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>

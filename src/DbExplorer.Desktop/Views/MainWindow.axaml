@@ -6,31 +6,36 @@
         Width="1400" Height="860"
         WindowStartupLocation="CenterScreen">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="8" BorderThickness="0,0,0,1" BorderBrush="#33808080">
-      <StackPanel Orientation="Horizontal" Spacing="6">
-        <ComboBox Width="300"
-                  ItemsSource="{Binding Profiles}"
-                  SelectedItem="{Binding SelectedProfile}"
-                  PlaceholderText="Select a connection…"
-                  IsEnabled="{Binding !IsConnected}" />
-        <Button Content="New…" Command="{Binding NewConnectionCommand}" />
-        <Button Content="Edit…" Command="{Binding EditConnectionCommand}" />
-        <Button Content="Delete" Command="{Binding DeleteConnectionCommand}" />
-        <Border Width="1" Margin="6,2" Background="#33808080" />
-        <Button Content="Connect" Classes="accent" Command="{Binding ConnectCommand}" />
-        <Button Content="Disconnect" Command="{Binding DisconnectCommand}" />
-        <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
-                ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
-        <ProgressBar Width="120" VerticalAlignment="Center"
-                     IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
-      </StackPanel>
+    <Border DockPanel.Dock="Top" Padding="10,7" BorderThickness="0,0,0,1" BorderBrush="#22808080">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <TextBlock Text="DB Explorer" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0" />
+          <ComboBox Width="240"
+                    ItemsSource="{Binding Profiles}"
+                    SelectedItem="{Binding SelectedProfile}"
+                    PlaceholderText="Select a connection…"
+                    IsEnabled="{Binding !IsConnected}" />
+          <Button Classes="icon" Content="＋" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}" />
+          <Button Classes="icon" Content="✎" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}" />
+          <Button Classes="icon" Content="🗑" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <ProgressBar Width="100" VerticalAlignment="Center"
+                       IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+          <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
+                  ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
+          <Button Content="Disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}" />
+          <Button Content="Connect" Classes="accent" IsVisible="{Binding !IsConnected}" Command="{Binding ConnectCommand}" />
+        </StackPanel>
+      </Grid>
     </Border>
 
-    <Border DockPanel.Dock="Bottom" Padding="8,4" BorderThickness="0,1,0,0" BorderBrush="#33808080">
-      <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+    <Border DockPanel.Dock="Bottom" Padding="10,5" BorderThickness="0,1,0,0" BorderBrush="#22808080">
+      <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <TabControl Margin="4" IsEnabled="{Binding IsConnected}">
+    <TabControl Margin="6" Padding="0" IsEnabled="{Binding IsConnected}">
       <TabItem Header="Objects">
         <views:ObjectsView DataContext="{Binding Objects}" />
       </TabItem>

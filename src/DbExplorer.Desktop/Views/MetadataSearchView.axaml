@@ -8,14 +8,16 @@
                  Watermark="Table, column, procedure name, or text inside code…" />
         <Button Content="Search" Classes="accent" Command="{Binding SearchCommand}" />
       </StackPanel>
-      <WrapPanel>
-        <CheckBox Margin="0,0,16,0" Content="Object names" IsChecked="{Binding SearchObjects}" />
-        <CheckBox Margin="0,0,16,0" Content="Column names" IsChecked="{Binding SearchColumns}" />
-        <CheckBox Margin="0,0,32,0" Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
-        <CheckBox Margin="0,0,16,0" Content="Match case" IsChecked="{Binding MatchCase}" />
-        <CheckBox Margin="0,0,16,0" Content="Whole word" IsChecked="{Binding WholeWord}" />
-        <CheckBox Margin="0,0,16,0" Content="Regex" IsChecked="{Binding UseRegex}" />
-      </WrapPanel>
+      <Expander Classes="options" Header="Search options">
+        <WrapPanel Margin="4,10,0,2">
+          <CheckBox Content="Object names" IsChecked="{Binding SearchObjects}" />
+          <CheckBox Content="Column names" IsChecked="{Binding SearchColumns}" />
+          <CheckBox Margin="0,0,32,0" Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
+          <CheckBox Content="Match case" IsChecked="{Binding MatchCase}" />
+          <CheckBox Content="Whole word" IsChecked="{Binding WholeWord}" />
+          <CheckBox Content="Regex" IsChecked="{Binding UseRegex}" />
+        </WrapPanel>
+      </Expander>
     </StackPanel>
     <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
     <DataGrid ItemsSource="{Binding Results}"

@@ -2,11 +2,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.IndexesView">
   <DockPanel Margin="8">
-    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-      <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" />
-      <CheckBox Content="Include fragmentation (slower)" IsChecked="{Binding IncludeFragmentation}" />
-      <TextBox Width="280" Text="{Binding FilterText}" Watermark="Filter by table, index or column…" />
-      <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" />
+        <TextBox Width="280" Text="{Binding FilterText}" Watermark="Filter by table, index or column…" />
+        <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+      </StackPanel>
+      <Expander Classes="options" Header="Options">
+        <StackPanel Margin="4,10,0,2">
+          <CheckBox Content="Include fragmentation (slower)" IsChecked="{Binding IncludeFragmentation}" />
+        </StackPanel>
+      </Expander>
     </StackPanel>
     <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
     <DataGrid ItemsSource="{Binding Indexes}"

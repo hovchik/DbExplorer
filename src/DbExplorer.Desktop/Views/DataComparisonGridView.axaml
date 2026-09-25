@@ -1,0 +1,6 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 x:Class="DbExplorer.Desktop.Views.DataComparisonGridView">
+  <DataGrid Name="Grid" IsReadOnly="True" AutoGenerateColumns="False"
+			CanUserResizeColumns="True" GridLinesVisibility="Horizontal" />
+</UserControl>

@@ -1,3 +1,4 @@
+using DbExplorer.Application.Compare;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
@@ -26,6 +27,7 @@ public static class DependencyInjection
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
         services.AddSingleton<QueryExecutionService>();
+        services.AddSingleton<ObjectComparisonService>();
         return services;
     }
 }

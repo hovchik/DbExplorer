@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+			 xmlns:conv="using:DbExplorer.Desktop.Converters"
+			 xmlns:models="using:DbExplorer.Core.Models"
+			 xmlns:views="using:DbExplorer.Desktop.Views"
+			 x:Class="DbExplorer.Desktop.Views.ComparerView"
+			 x:Name="root"
+			 x:DataType="vm:ComparerViewModel">
+  <UserControl.Resources>
+	<conv:DiffKindToBrushConverter x:Key="DiffKindBrush" />
+	<conv:DataRowStatusToBrushConverter x:Key="RowStatusBrush" />
+  </UserControl.Resources>
+
+  <Grid Margin="8" RowDefinitions="Auto,Auto,*">
+	<!-- Connection pickers -->
+	<Grid Grid.Row="0" ColumnDefinitions="*,Auto,*" Margin="0,0,0,8">
+	  <StackPanel Grid.Column="0" Spacing="4">
+		<CheckBox Content="Show left" IsChecked="{Binding IsLeftPanelVisible}" />
+	  <Border BorderThickness="1" BorderBrush="#22808080" Padding="8" CornerRadius="4" IsVisible="{Binding IsLeftPanelVisible}">
+		<StackPanel Spacing="6">
+		  <TextBlock Text="Left (baseline)" FontWeight="SemiBold" />
+		  <StackPanel Orientation="Horizontal" Spacing="6">
+			<ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
+					  PlaceholderText="Select a connection..." />
+			<Button Content="Connect" Command="{Binding ConnectLeftCommand}" />
+			<Button Content="Use current" Command="{Binding UseCurrentAsLeftCommand}"
+					ToolTip.Tip="Use the connection already open in the main window" />
+		  </StackPanel>
+		  <AutoCompleteBox ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
+							ValueMemberBinding="{Binding FullName}" FilterMode="Contains"
+							Watermark="Type to filter objects...">
+			<AutoCompleteBox.ItemTemplate>
+			  <DataTemplate x:DataType="models:DbObject">
+				<TextBlock Text="{Binding FullName}" />
+			  </DataTemplate>
+			</AutoCompleteBox.ItemTemplate>
+		  </AutoCompleteBox>
+		</StackPanel>
+	  </Border>
+	  </StackPanel>
+
+	  <TextBlock Grid.Column="1" Text="vs" FontSize="20" VerticalAlignment="Center" Margin="10,0" />
+
+	  <StackPanel Grid.Column="2" Spacing="4">
+		<CheckBox Content="Show right" IsChecked="{Binding IsRightPanelVisible}" />
+	  <Border BorderThickness="1" BorderBrush="#22808080" Padding="8" CornerRadius="4" IsVisible="{Binding IsRightPanelVisible}">
+		<StackPanel Spacing="6">
+		  <TextBlock Text="Right (comparand)" FontWeight="SemiBold" />
+		  <StackPanel Orientation="Horizontal" Spacing="6">
+			<ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
+					  PlaceholderText="Select a connection..." />
+			<Button Content="Connect" Command="{Binding ConnectRightCommand}" />
+			<Button Content="Use current" Command="{Binding UseCurrentAsRightCommand}"
+					ToolTip.Tip="Use the connection already open in the main window" />
+		  </StackPanel>
+		  <AutoCompleteBox ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
+							ValueMemberBinding="{Binding FullName}" FilterMode="Contains"
+							Watermark="Type to filter objects...">
+			<AutoCompleteBox.ItemTemplate>
+			  <DataTemplate x:DataType="models:DbObject">
+				<TextBlock Text="{Binding FullName}" />
+			  </DataTemplate>
+			</AutoCompleteBox.ItemTemplate>
+		  </AutoCompleteBox>
+		</StackPanel>
+	  </Border>
+	  </StackPanel>
+	</Grid>
+
+	<TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,8" Text="{Binding Status}" />
+
+	<TabControl Grid.Row="2">
+	  <TabItem Header="Schema">
+		<Grid RowDefinitions="Auto,*">
+		  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+			<Button Content="Compare definitions" Classes="accent" Command="{Binding CompareSchemaCommand}" />
+			<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding SchemaStatus}" />
+		  </StackPanel>
+		  <DataGrid Grid.Row="1" ItemsSource="{Binding SchemaDiff}" IsReadOnly="True" AutoGenerateColumns="False"
+					CanUserResizeColumns="True" GridLinesVisibility="Horizontal" FontFamily="Cascadia Mono, Consolas, Menlo, monospace">
+			<DataGrid.Styles>
+			  <Style Selector="DataGridRow">
+				<Setter Property="Background" Value="{Binding Kind, Converter={StaticResource DiffKindBrush}}" />
+			  </Style>
+			</DataGrid.Styles>
+			<DataGrid.Columns>
+			  <DataGridTextColumn Header="L#" Binding="{Binding LeftLineNumber}" Width="60"
+								   IsVisible="{Binding #root.DataContext.IsLeftPanelVisible}" />
+			  <DataGridTextColumn Header="Left" Binding="{Binding LeftText}" Width="*"
+								   IsVisible="{Binding #root.DataContext.IsLeftPanelVisible}" />
+			  <DataGridTextColumn Header="R#" Binding="{Binding RightLineNumber}" Width="60"
+								   IsVisible="{Binding #root.DataContext.IsRightPanelVisible}" />
+			  <DataGridTextColumn Header="Right" Binding="{Binding RightText}" Width="*"
+								   IsVisible="{Binding #root.DataContext.IsRightPanelVisible}" />
+			</DataGrid.Columns>
+		  </DataGrid>
+		</Grid>
+	  </TabItem>
+
+	  <TabItem Header="Data">
+		<Grid RowDefinitions="Auto,*">
+		  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+			<Button Content="Compare data" Classes="accent" Command="{Binding CompareDataCommand}" />
+			<NumericUpDown Value="{Binding RowLimit}" Minimum="1" Maximum="100000" Width="140" />
+			<CheckBox Content="Only show differences" IsChecked="{Binding OnlyShowDifferences}" />
+			<ComboBox ItemsSource="{Binding DataViewModes}" SelectedItem="{Binding SelectedDataViewMode}" Width="140" />
+			<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DataStatus}" />
+		  </StackPanel>
+
+		  <DataGrid Grid.Row="1" ItemsSource="{Binding DataDiff}" IsReadOnly="True" AutoGenerateColumns="False"
+					CanUserResizeColumns="True" GridLinesVisibility="Horizontal"
+					IsVisible="{Binding IsSummaryView}">
+			<DataGrid.Styles>
+			  <Style Selector="DataGridRow">
+				<Setter Property="Background" Value="{Binding Status, Converter={StaticResource RowStatusBrush}}" />
+			  </Style>
+			</DataGrid.Styles>
+			<DataGrid.Columns>
+			  <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="220" />
+			  <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
+			  <DataGridTextColumn Header="Differences" Binding="{Binding Summary}" Width="*" />
+			</DataGrid.Columns>
+		  </DataGrid>
+
+		  <views:DataComparisonGridView Grid.Row="1" Rows="{Binding DataDiff}"
+										ShowLeft="{Binding IsLeftPanelVisible}" ShowRight="{Binding IsRightPanelVisible}"
+										IsVisible="{Binding IsSideBySideView}" />
+
+		  <Grid Grid.Row="1" ColumnDefinitions="*,*" IsVisible="{Binding IsFullDataSetsView}">
+			<Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsLeftPanelVisible}" Margin="0,0,4,0">
+			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+				<TextBlock Text="Left data" FontWeight="SemiBold" VerticalAlignment="Center" />
+				<Button Content="Load" Command="{Binding LoadLeftDataCommand}" />
+			  </StackPanel>
+			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding LeftDataStatus}" />
+			  <views:ResultGridView Grid.Row="2" ResultSet="{Binding LeftDataResult}" />
+			</Grid>
+
+			<Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsRightPanelVisible}" Margin="4,0,0,0">
+			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+				<TextBlock Text="Right data" FontWeight="SemiBold" VerticalAlignment="Center" />
+				<Button Content="Load" Command="{Binding LoadRightDataCommand}" />
+			  </StackPanel>
+			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding RightDataStatus}" />
+			  <views:ResultGridView Grid.Row="2" ResultSet="{Binding RightDataResult}" />
+			</Grid>
+		  </Grid>
+		</Grid>
+	  </TabItem>
+	</TabControl>
+  </Grid>
+</UserControl>

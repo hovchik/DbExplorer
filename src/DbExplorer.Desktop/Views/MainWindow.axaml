@@ -37,24 +37,27 @@
       <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <TabControl Margin="6" Padding="0" IsEnabled="{Binding IsConnected}">
-      <TabItem Header="Objects">
+    <TabControl Margin="6" Padding="0">
+      <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
         <views:ObjectsView DataContext="{Binding Objects}" />
       </TabItem>
-      <TabItem Header="Search names &amp; code">
+      <TabItem Header="Search names &amp; code" IsEnabled="{Binding IsConnected}">
         <views:MetadataSearchView DataContext="{Binding Search}" />
       </TabItem>
-      <TabItem Header="Search data">
+      <TabItem Header="Search data" IsEnabled="{Binding IsConnected}">
         <views:DataSearchView DataContext="{Binding DataSearch}" />
       </TabItem>
-      <TabItem Header="Query">
+      <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
         <views:QueryView DataContext="{Binding Query}" />
       </TabItem>
-      <TabItem Header="Indexes">
+      <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />
       </TabItem>
-      <TabItem Header="Locks">
+      <TabItem Header="Locks" IsEnabled="{Binding IsConnected}">
         <views:LocksView DataContext="{Binding Locks}" />
+      </TabItem>
+      <TabItem Header="Comparer">
+        <views:ComparerView DataContext="{Binding Comparer}" />
       </TabItem>
     </TabControl>
   </DockPanel>

@@ -30,6 +30,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<IndexesViewModel>();
         services.AddSingleton<LocksViewModel>();
         services.AddSingleton<QueryViewModel>();
+        services.AddSingleton<ComparerViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         var provider = services.BuildServiceProvider();

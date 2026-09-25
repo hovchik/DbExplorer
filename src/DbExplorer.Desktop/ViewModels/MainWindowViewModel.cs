@@ -27,7 +27,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DataSearchViewModel dataSearch,
         IndexesViewModel indexes,
         LocksViewModel locks,
-        QueryViewModel query)
+        QueryViewModel query,
+        ComparerViewModel comparer)
     {
         _store = store;
         _sessions = sessions;
@@ -39,7 +40,9 @@ public partial class MainWindowViewModel : ViewModelBase
         Indexes = indexes;
         Locks = locks;
         Query = query;
-        _tabs = [objects, search, dataSearch, indexes, locks, query];
+        Comparer = comparer;
+        Comparer.Profiles = Profiles;
+        _tabs = [objects, search, dataSearch, indexes, locks, query, comparer];
     }
 
     public ObjectsViewModel Objects { get; }
@@ -48,6 +51,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public IndexesViewModel Indexes { get; }
     public LocksViewModel Locks { get; }
     public QueryViewModel Query { get; }
+    public ComparerViewModel Comparer { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 

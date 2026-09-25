@@ -77,7 +77,7 @@ public partial class ObjectsViewModel(DefinitionService definitions) : ViewModel
         }
 
         Columns = obj.IsTableLike
-            ? _session.Snapshot.ColumnsOf(obj.Schema, obj.Name).OrderBy(c => c.Ordinal).ToList()
+            ? _session.Snapshot.ColumnsOf(obj.Database, obj.Schema, obj.Name).OrderBy(c => c.Ordinal).ToList()
             : [];
         Definition = "-- loading…";
 

@@ -10,11 +10,11 @@ public sealed class DefinitionService
     public async Task<string?> GetDefinitionAsync(DatabaseSession session, DbObject obj, CancellationToken ct = default)
     {
         if (obj.Type is DbObjectType.Table or DbObjectType.ForeignTable)
-            return ScriptTable(session.Provider, obj, session.Snapshot.ColumnsOf(obj.Schema, obj.Name));
+            return ScriptTable(session.Provider, obj, session.Snapshot.ColumnsOf(obj.Database, obj.Schema, obj.Name));
 
         // Served from the snapshot when possible: no server round-trip.
         var cached = session.Snapshot.Modules
-            .Where(m => m.Schema == obj.Schema && m.Name == obj.Name && m.Type == obj.Type && m.Definition is not null)
+            .Where(m => m.Database == obj.Database && m.Schema == obj.Schema && m.Name == obj.Name && m.Type == obj.Type && m.Definition is not null)
             .Select(m => m.Definition!)
             .ToList();
 

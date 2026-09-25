@@ -14,12 +14,19 @@ public sealed class SqlServerProvider : IDatabaseProvider
     private const int MetadataLockTimeoutMs = 5000;
     private const int MetadataCommandTimeoutSeconds = 120;
     private const int MaxValueLength = 400;
+    private const int MaxParallelDatabases = 4;
 
+    private readonly ConnectionProfile _profile;
     private readonly string _metaConnectionString;
     private readonly string _searchConnectionString;
 
+    /// <summary>True when no specific database was picked at connect time: every accessible database is read and merged.</summary>
+    private readonly bool _allDatabases;
+
     public SqlServerProvider(ConnectionProfile profile)
     {
+        _profile = profile;
+        _allDatabases = string.IsNullOrWhiteSpace(profile.Database);
         _metaConnectionString = SqlServerSql.BuildConnectionString(profile, SqlServerSql.MetaAppName);
         _searchConnectionString = SqlServerSql.BuildConnectionString(profile, SqlServerSql.SearchAppName);
     }
@@ -35,13 +42,13 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     public Task<IReadOnlyList<DbObject>> GetObjectsAsync(CancellationToken ct = default) =>
-        QueryAsync<DbObject>(SqlServerQueries.Objects, null, ct);
+        QueryAcrossDatabasesAsync<DbObject>(SqlServerQueries.Objects, (o, db) => o with { Database = db }, ct);
 
     public Task<IReadOnlyList<DbColumn>> GetColumnsAsync(CancellationToken ct = default) =>
-        QueryAsync<DbColumn>(SqlServerQueries.Columns, null, ct);
+        QueryAcrossDatabasesAsync<DbColumn>(SqlServerQueries.Columns, (c, db) => c with { Database = db }, ct);
 
     public Task<IReadOnlyList<DbModule>> GetModulesAsync(CancellationToken ct = default) =>
-        QueryAsync<DbModule>(SqlServerQueries.Modules, null, ct);
+        QueryAcrossDatabasesAsync<DbModule>(SqlServerQueries.Modules, (m, db) => m with { Database = db }, ct);
 
     public Task<string?> GetDefinitionAsync(DbObject obj, CancellationToken ct = default)
     {
@@ -51,24 +58,46 @@ public sealed class SqlServerProvider : IDatabaseProvider
             DbObjectType.Sequence => SqlServerQueries.SequenceDefinition,
             _ => SqlServerQueries.ObjectDefinition
         };
-        return ScalarAsync<string?>(sql, new { name = SqlServerSql.QuoteFullName(obj.Schema, obj.Name) }, ct);
+        var database = string.IsNullOrEmpty(obj.Database) ? _profile.Database : obj.Database;
+        return ScalarInDatabaseAsync<string?>(sql, new { name = SqlServerSql.QuoteFullName(obj.Schema, obj.Name) }, database, ct);
     }
 
     public async Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default)
     {
-        try
+        async Task<IReadOnlyList<DbIndex>> QueryOneAsync(string? database, CancellationToken token)
         {
-            return await QueryAsync<DbIndex>(SqlServerQueries.Indexes(true, includePhysicalStats), null, ct);
+            try
+            {
+                return await QueryInDatabaseAsync<DbIndex>(SqlServerQueries.Indexes(true, includePhysicalStats), null, database, token);
+            }
+            catch (SqlException ex) when (ex.Number is 297 or 300)
+            {
+                // No VIEW SERVER STATE / VIEW DATABASE STATE: return the catalog part only.
+                return await QueryInDatabaseAsync<DbIndex>(SqlServerQueries.Indexes(false, false), null, database, token);
+            }
         }
-        catch (SqlException ex) when (ex.Number is 297 or 300)
+
+        if (!_allDatabases)
+            return await QueryOneAsync(_profile.Database, ct);
+
+        var results = new List<DbIndex>();
+        foreach (var db in await GetAccessibleDatabasesAsync(ct))
         {
-            // No VIEW SERVER STATE / VIEW DATABASE STATE: return the catalog part only.
-            return await QueryAsync<DbIndex>(SqlServerQueries.Indexes(false, false), null, ct);
+            try
+            {
+                var rows = await QueryOneAsync(db, ct);
+                results.AddRange(rows.Select(i => i with { Database = db }));
+            }
+            catch
+            {
+                // Inaccessible database: skip it and keep going.
+            }
         }
+        return results;
     }
 
     public Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default) =>
-        QueryAsync<DbLock>(SqlServerQueries.Locks, null, ct);
+        QueryAsync<DbLock>(SqlServerQueries.Locks(_allDatabases), null, ct);
 
     public bool IsSearchable(DbColumn column, SearchTerm term)
     {
@@ -117,7 +146,10 @@ public sealed class SqlServerProvider : IDatabaseProvider
             .Append(';')
             .ToString();
 
-        await using var cn = new SqlConnection(_searchConnectionString);
+        await using var cn = new SqlConnection(
+            string.IsNullOrEmpty(table.Database) || !_allDatabases
+                ? _searchConnectionString
+                : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, table.Database));
         await cn.OpenAsync(ct);
         await using var cmd = cn.CreateCommand();
         cmd.CommandText = sql;
@@ -148,6 +180,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
                 if (reader.GetInt32(i * 2) != 1) continue;
                 results.Add(new DataMatch
                 {
+                    Database = table.Database,
                     Schema = table.Schema,
                     Table = table.Name,
                     Column = searchable[i].Name,
@@ -179,5 +212,75 @@ public sealed class SqlServerProvider : IDatabaseProvider
         return await cn.ExecuteScalarAsync<T>(new CommandDefinition(
             SqlServerSql.SessionPrefix(MetadataLockTimeoutMs) + sql, param,
             commandTimeout: MetadataCommandTimeoutSeconds, cancellationToken: ct));
+    }
+
+    private Task<IReadOnlyList<T>> QueryInDatabaseAsync<T>(string sql, object? param, string? database, CancellationToken ct) =>
+        QueryWithConnectionStringAsync<T>(sql, param,
+            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, database), ct);
+
+    private Task<T?> ScalarInDatabaseAsync<T>(string sql, object? param, string? database, CancellationToken ct) =>
+        ScalarWithConnectionStringAsync<T>(sql, param,
+            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, database), ct);
+
+    private static async Task<IReadOnlyList<T>> QueryWithConnectionStringAsync<T>(
+        string sql, object? param, string connectionString, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        var rows = await cn.QueryAsync<T>(new CommandDefinition(
+            SqlServerSql.SessionPrefix(MetadataLockTimeoutMs) + sql, param,
+            commandTimeout: MetadataCommandTimeoutSeconds, cancellationToken: ct));
+        return rows.AsList();
+    }
+
+    private static async Task<T?> ScalarWithConnectionStringAsync<T>(
+        string sql, object? param, string connectionString, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        return await cn.ExecuteScalarAsync<T>(new CommandDefinition(
+            SqlServerSql.SessionPrefix(MetadataLockTimeoutMs) + sql, param,
+            commandTimeout: MetadataCommandTimeoutSeconds, cancellationToken: ct));
+    }
+
+    /// <summary>Lists every database the current login can access, used only when no database was selected at connect time.</summary>
+    private Task<IReadOnlyList<string>> GetAccessibleDatabasesAsync(CancellationToken ct) =>
+        QueryAsync<string>(SqlServerQueries.Databases, null, ct);
+
+    /// <summary>
+    /// Runs a catalog query against the selected database, or against every accessible database when
+    /// none was selected, tagging each row with the database it came from.
+    /// </summary>
+    private async Task<IReadOnlyList<T>> QueryAcrossDatabasesAsync<T>(
+        string sql, Func<T, string, T> tag, CancellationToken ct)
+    {
+        if (!_allDatabases)
+        {
+            var rows = await QueryAsync<T>(sql, null, ct);
+            return rows.Select(r => tag(r, _profile.Database)).ToList();
+        }
+
+        var databases = await GetAccessibleDatabasesAsync(ct);
+        var results = new System.Collections.Concurrent.ConcurrentBag<T>();
+
+        await Parallel.ForEachAsync(databases, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = MaxParallelDatabases,
+            CancellationToken = ct
+        }, async (db, token) =>
+        {
+            try
+            {
+                var cs = SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, db);
+                var rows = await QueryWithConnectionStringAsync<T>(sql, null, cs, token);
+                foreach (var row in rows) results.Add(tag(row, db));
+            }
+            catch
+            {
+                // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
+            }
+        });
+
+        return results.ToList();
     }
 }

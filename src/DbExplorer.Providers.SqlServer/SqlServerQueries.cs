@@ -175,8 +175,8 @@ internal static class SqlServerQueries
             """;
     }
 
-    /// <summary>Locks in the current database plus who is blocking whom. Needs VIEW SERVER STATE.</summary>
-    public const string Locks = """
+    /// <summary>Locks in the current database (or every database when allDatabases is true) plus who is blocking whom. Needs VIEW SERVER STATE.</summary>
+    public static string Locks(bool allDatabases) => $"""
         SELECT TOP (5000)
                l.request_session_id AS [SessionId],
                es.login_name AS [LoginName],
@@ -203,7 +203,7 @@ internal static class SqlServerQueries
         LEFT JOIN sys.dm_exec_requests r ON r.session_id = l.request_session_id
         LEFT JOIN sys.dm_exec_connections c ON c.session_id = l.request_session_id
         OUTER APPLY sys.dm_exec_sql_text(COALESCE(r.sql_handle, c.most_recent_sql_handle)) t
-        WHERE l.resource_database_id = DB_ID()
+        WHERE {(allDatabases ? "1 = 1" : "l.resource_database_id = DB_ID()")}
           AND l.request_session_id <> @@SPID
         ORDER BY CASE WHEN l.request_status = 'GRANT' THEN 1 ELSE 0 END, l.request_session_id;
         """;

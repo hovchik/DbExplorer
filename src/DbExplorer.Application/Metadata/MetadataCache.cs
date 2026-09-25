@@ -13,7 +13,7 @@ namespace DbExplorer.Application.Metadata;
 /// </summary>
 public sealed class MetadataCache(AppPaths paths)
 {
-    private const string SchemaVersion = "1";
+    private const string SchemaVersion = "2";
 
     public static string CacheKey(ConnectionProfile p)
     {
@@ -63,18 +63,19 @@ public sealed class MetadataCache(AppPaths paths)
             var objects = new List<DbObject>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT schema_name, name, type, created_at, modified_at, row_count FROM objects";
+                cmd.CommandText = "SELECT database_name, schema_name, name, type, created_at, modified_at, row_count FROM objects";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
                     objects.Add(new DbObject
                     {
-                        Schema = r.GetString(0),
-                        Name = r.GetString(1),
-                        Type = Enum.TryParse<DbObjectType>(r.GetString(2), out var t) ? t : DbObjectType.Other,
-                        CreatedAt = r.IsDBNull(3) ? null : ParseDate(r.GetString(3)),
-                        ModifiedAt = r.IsDBNull(4) ? null : ParseDate(r.GetString(4)),
-                        RowCount = r.IsDBNull(5) ? null : r.GetInt64(5)
+                        Database = r.GetString(0),
+                        Schema = r.GetString(1),
+                        Name = r.GetString(2),
+                        Type = Enum.TryParse<DbObjectType>(r.GetString(3), out var t) ? t : DbObjectType.Other,
+                        CreatedAt = r.IsDBNull(4) ? null : ParseDate(r.GetString(4)),
+                        ModifiedAt = r.IsDBNull(5) ? null : ParseDate(r.GetString(5)),
+                        RowCount = r.IsDBNull(6) ? null : r.GetInt64(6)
                     });
                 }
             }
@@ -83,21 +84,22 @@ public sealed class MetadataCache(AppPaths paths)
             var columns = new List<DbColumn>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key FROM columns";
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key FROM columns";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
                     columns.Add(new DbColumn
                     {
-                        Schema = r.GetString(0),
-                        Table = r.GetString(1),
-                        Name = r.GetString(2),
-                        DataType = r.GetString(3),
-                        BaseType = r.GetString(4),
-                        IsNullable = r.GetInt64(5) != 0,
-                        Ordinal = r.GetInt32(6),
-                        IsComputed = r.GetInt64(7) != 0,
-                        IsPrimaryKey = r.GetInt64(8) != 0
+                        Database = r.GetString(0),
+                        Schema = r.GetString(1),
+                        Table = r.GetString(2),
+                        Name = r.GetString(3),
+                        DataType = r.GetString(4),
+                        BaseType = r.GetString(5),
+                        IsNullable = r.GetInt64(6) != 0,
+                        Ordinal = r.GetInt32(7),
+                        IsComputed = r.GetInt64(8) != 0,
+                        IsPrimaryKey = r.GetInt64(9) != 0
                     });
                 }
             }
@@ -106,16 +108,17 @@ public sealed class MetadataCache(AppPaths paths)
             var modules = new List<DbModule>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT schema_name, name, type, definition FROM modules";
+                cmd.CommandText = "SELECT database_name, schema_name, name, type, definition FROM modules";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
                     modules.Add(new DbModule
                     {
-                        Schema = r.GetString(0),
-                        Name = r.GetString(1),
-                        Type = Enum.TryParse<DbObjectType>(r.GetString(2), out var t) ? t : DbObjectType.Other,
-                        Definition = r.IsDBNull(3) ? null : r.GetString(3)
+                        Database = r.GetString(0),
+                        Schema = r.GetString(1),
+                        Name = r.GetString(2),
+                        Type = Enum.TryParse<DbObjectType>(r.GetString(3), out var t) ? t : DbObjectType.Other,
+                        Definition = r.IsDBNull(4) ? null : r.GetString(4)
                     });
                 }
             }
@@ -143,28 +146,28 @@ public sealed class MetadataCache(AppPaths paths)
             DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS objects;
             DROP TABLE IF EXISTS columns; DROP TABLE IF EXISTS modules;
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE objects (schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
+            CREATE TABLE objects (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
                                   created_at TEXT, modified_at TEXT, row_count INTEGER);
-            CREATE TABLE columns (schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
+            CREATE TABLE columns (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
                                   data_type TEXT NOT NULL, base_type TEXT NOT NULL, is_nullable INTEGER NOT NULL,
                                   ordinal INTEGER NOT NULL, is_computed INTEGER NOT NULL, is_primary_key INTEGER NOT NULL);
-            CREATE TABLE modules (schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, definition TEXT);
+            CREATE TABLE modules (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, definition TEXT);
             """);
 
-        BulkInsert(cn, tx, "objects", 6, s.Objects, o =>
+        BulkInsert(cn, tx, "objects", 7, s.Objects, o =>
         [
-            o.Schema, o.Name, o.Type.ToString(), FormatDate(o.CreatedAt), FormatDate(o.ModifiedAt), o.RowCount
+            o.Database, o.Schema, o.Name, o.Type.ToString(), FormatDate(o.CreatedAt), FormatDate(o.ModifiedAt), o.RowCount
         ], ct);
 
-        BulkInsert(cn, tx, "columns", 9, s.Columns, c =>
+        BulkInsert(cn, tx, "columns", 10, s.Columns, c =>
         [
-            c.Schema, c.Table, c.Name, c.DataType, c.BaseType,
+            c.Database, c.Schema, c.Table, c.Name, c.DataType, c.BaseType,
             c.IsNullable ? 1 : 0, c.Ordinal, c.IsComputed ? 1 : 0, c.IsPrimaryKey ? 1 : 0
         ], ct);
 
-        BulkInsert(cn, tx, "modules", 4, s.Modules, m =>
+        BulkInsert(cn, tx, "modules", 5, s.Modules, m =>
         [
-            m.Schema, m.Name, m.Type.ToString(), m.Definition
+            m.Database, m.Schema, m.Name, m.Type.ToString(), m.Definition
         ], ct);
 
         BulkInsert(cn, tx, "meta", 2, new[]

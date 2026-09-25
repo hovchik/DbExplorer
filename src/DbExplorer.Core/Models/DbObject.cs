@@ -3,6 +3,8 @@ namespace DbExplorer.Core.Models;
 /// <summary>A schema-level database object (table, view, procedure, function, ...).</summary>
 public sealed record DbObject
 {
+    /// <summary>Empty when the connection targets a single, already-selected database.</summary>
+    public string Database { get; init; } = "";
     public string Schema { get; init; } = "";
     public string Name { get; init; } = "";
     public DbObjectType Type { get; init; }

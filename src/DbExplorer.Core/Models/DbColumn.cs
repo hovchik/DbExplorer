@@ -2,6 +2,7 @@ namespace DbExplorer.Core.Models;
 
 public sealed record DbColumn
 {
+    public string Database { get; init; } = "";
     public string Schema { get; init; } = "";
     public string Table { get; init; } = "";
     public string Name { get; init; } = "";

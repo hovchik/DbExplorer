@@ -14,11 +14,18 @@ public sealed class PostgresProvider : IDatabaseProvider
     private const int MetadataStatementTimeoutMs = 120_000;
     private const int MetadataLockTimeoutMs = 5000;
     private const int MaxValueLength = 400;
+    private const int MaxParallelDatabases = 4;
 
+    private readonly ConnectionProfile _profile;
     private readonly NpgsqlDataSource _dataSource;
+
+    /// <summary>True when no specific database was picked at connect time: every accessible database is read and merged.</summary>
+    private readonly bool _allDatabases;
 
     public PostgresProvider(ConnectionProfile profile)
     {
+        _profile = profile;
+        _allDatabases = string.IsNullOrWhiteSpace(profile.Database);
         _dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(profile));
     }
 
@@ -30,30 +37,31 @@ public sealed class PostgresProvider : IDatabaseProvider
         await ScalarAsync<string>(PostgresQueries.ServerVersion, null, ct) ?? "";
 
     public Task<IReadOnlyList<DbObject>> GetObjectsAsync(CancellationToken ct = default) =>
-        QueryAsync<DbObject>(PostgresQueries.Objects, null, ct);
+        QueryAcrossDatabasesAsync<DbObject>(PostgresQueries.Objects, (o, db) => o with { Database = db }, ct);
 
     public Task<IReadOnlyList<DbColumn>> GetColumnsAsync(CancellationToken ct = default) =>
-        QueryAsync<DbColumn>(PostgresQueries.Columns, null, ct);
+        QueryAcrossDatabasesAsync<DbColumn>(PostgresQueries.Columns, (c, db) => c with { Database = db }, ct);
 
     public Task<IReadOnlyList<DbModule>> GetModulesAsync(CancellationToken ct = default) =>
-        QueryAsync<DbModule>(PostgresQueries.Modules, null, ct);
+        QueryAcrossDatabasesAsync<DbModule>(PostgresQueries.Modules, (m, db) => m with { Database = db }, ct);
 
     public async Task<string?> GetDefinitionAsync(DbObject obj, CancellationToken ct = default)
     {
         var args = new { schema = obj.Schema, name = obj.Name };
+        var database = string.IsNullOrEmpty(obj.Database) ? _profile.Database : obj.Database;
 
         if (obj.Type == DbObjectType.Sequence)
-            return await ScalarAsync<string?>(PostgresQueries.SequenceDefinition, args, ct);
+            return await ScalarInDatabaseAsync<string?>(PostgresQueries.SequenceDefinition, args, database, ct);
 
         // Functions can be overloaded: return every overload.
-        var defs = await QueryAsync<string?>(PostgresQueries.ModuleDefinition, args, ct);
+        var defs = await QueryInDatabaseAsync<string?>(PostgresQueries.ModuleDefinition, args, database, ct);
         var nonEmpty = defs.Where(d => !string.IsNullOrEmpty(d)).ToList();
         return nonEmpty.Count == 0 ? null : string.Join("\n\n", nonEmpty);
     }
 
     public Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default) =>
         // Fragmentation would need the pgstattuple extension, which scans the index; not used.
-        QueryAsync<DbIndex>(PostgresQueries.Indexes, null, ct);
+        QueryAcrossDatabasesAsync<DbIndex>(PostgresQueries.Indexes, (i, db) => i with { Database = db }, ct);
 
     public Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default) =>
         QueryAsync<DbLock>(PostgresQueries.Locks, null, ct);
@@ -105,7 +113,13 @@ public sealed class PostgresProvider : IDatabaseProvider
             .Append(" LIMIT @top")
             .ToString();
 
-        await using var cn = await _dataSource.OpenConnectionAsync(ct);
+        var useOwnDataSource = _allDatabases && !string.IsNullOrEmpty(table.Database) && table.Database != _profile.Database;
+        await using var scopedDataSource = useOwnDataSource
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, table.Database))
+            : null;
+        var dataSource = scopedDataSource ?? _dataSource;
+
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await cn.BeginTransactionAsync(ct);
         await ApplySettingsAsync(cn, tx, options.QueryTimeoutSeconds * 1000, options.LockTimeoutMs, ct);
 
@@ -137,6 +151,7 @@ public sealed class PostgresProvider : IDatabaseProvider
                     if (reader.IsDBNull(i * 2) || !reader.GetBoolean(i * 2)) continue;
                     results.Add(new DataMatch
                     {
+                        Database = table.Database,
                         Schema = table.Schema,
                         Table = table.Name,
                         Column = searchable[i].Name,
@@ -182,5 +197,73 @@ public sealed class PostgresProvider : IDatabaseProvider
             sql, param, tx, commandTimeout: MetadataStatementTimeoutMs / 1000 + 5, cancellationToken: ct));
         await tx.RollbackAsync(ct);
         return value;
+    }
+
+    private async Task<IReadOnlyList<T>> QueryInDatabaseAsync<T>(string sql, object? param, string database, CancellationToken ct)
+    {
+        await using var dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database));
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        await ApplySettingsAsync(cn, tx, MetadataStatementTimeoutMs, MetadataLockTimeoutMs, ct);
+        var rows = await cn.QueryAsync<T>(new CommandDefinition(
+            sql, param, tx, commandTimeout: MetadataStatementTimeoutMs / 1000 + 5, cancellationToken: ct));
+        var list = rows.AsList();
+        await tx.RollbackAsync(ct);
+        return list;
+    }
+
+    private async Task<T?> ScalarInDatabaseAsync<T>(string sql, object? param, string database, CancellationToken ct)
+    {
+        await using var dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database));
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        await ApplySettingsAsync(cn, tx, MetadataStatementTimeoutMs, MetadataLockTimeoutMs, ct);
+        var value = await cn.ExecuteScalarAsync<T>(new CommandDefinition(
+            sql, param, tx, commandTimeout: MetadataStatementTimeoutMs / 1000 + 5, cancellationToken: ct));
+        await tx.RollbackAsync(ct);
+        return value;
+    }
+
+    /// <summary>Lists every database the current login can access, used only when no database was selected at connect time.</summary>
+    private async Task<IReadOnlyList<string>> GetAccessibleDatabasesAsync(CancellationToken ct)
+    {
+        var db = string.IsNullOrWhiteSpace(_profile.Database) ? "postgres" : _profile.Database;
+        return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, db, ct);
+    }
+
+    /// <summary>
+    /// Runs a catalog query against the selected database, or against every accessible database when
+    /// none was selected, tagging each row with the database it came from.
+    /// </summary>
+    private async Task<IReadOnlyList<T>> QueryAcrossDatabasesAsync<T>(
+        string sql, Func<T, string, T> tag, CancellationToken ct)
+    {
+        if (!_allDatabases)
+        {
+            var rows = await QueryAsync<T>(sql, null, ct);
+            return rows.Select(r => tag(r, _profile.Database)).ToList();
+        }
+
+        var databases = await GetAccessibleDatabasesAsync(ct);
+        var results = new System.Collections.Concurrent.ConcurrentBag<T>();
+
+        await Parallel.ForEachAsync(databases, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = MaxParallelDatabases,
+            CancellationToken = ct
+        }, async (db, token) =>
+        {
+            try
+            {
+                var rows = await QueryInDatabaseAsync<T>(sql, null, db, token);
+                foreach (var row in rows) results.Add(tag(row, db));
+            }
+            catch
+            {
+                // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
+            }
+        });
+
+        return results.ToList();
     }
 }

@@ -3,6 +3,7 @@ namespace DbExplorer.Core.Models;
 /// <summary>A value found by the data search.</summary>
 public sealed record DataMatch
 {
+    public string Database { get; init; } = "";
     public string Schema { get; init; } = "";
     public string Table { get; init; } = "";
     public string Column { get; init; } = "";

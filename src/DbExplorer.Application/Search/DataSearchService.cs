@@ -94,7 +94,7 @@ public sealed class DataSearchService
             if (!string.IsNullOrWhiteSpace(request.TableNameFilter)
                 && !obj.Name.Contains(request.TableNameFilter.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
 
-            var columns = snapshot.ColumnsOf(obj.Schema, obj.Name).ToList();
+            var columns = snapshot.ColumnsOf(obj.Database, obj.Schema, obj.Name).ToList();
             if (!columns.Any(c => provider.IsSearchable(c, term))) continue;
 
             if (request.MaxTableRows is long max && obj.RowCount > max)
@@ -103,7 +103,7 @@ public sealed class DataSearchService
                 continue;
             }
 
-            targets.Add((new DbTableTarget(obj.Schema, obj.Name, columns), obj.RowCount ?? long.MaxValue));
+            targets.Add((new DbTableTarget(obj.Database, obj.Schema, obj.Name, columns), obj.RowCount ?? long.MaxValue));
         }
 
         // Small tables first: most results show up within seconds.

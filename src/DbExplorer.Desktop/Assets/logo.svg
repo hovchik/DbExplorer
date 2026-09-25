@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+	<linearGradient id="cyl" x1="0" y1="0" x2="0" y2="1">
+	  <stop offset="0%" stop-color="#4FC3F7"/>
+	  <stop offset="100%" stop-color="#0D47A1"/>
+	</linearGradient>
+	<linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+	  <stop offset="0%" stop-color="#FFD54F"/>
+	  <stop offset="100%" stop-color="#FF8F00"/>
+	</linearGradient>
+  </defs>
+
+  <!-- Database cylinder -->
+  <g>
+	<ellipse cx="112" cy="60" rx="76" ry="26" fill="url(#cyl)"/>
+	<path d="M36,60 L36,150 C36,166 70,179 112,179 C154,179 188,166 188,150 L188,60"
+		  fill="url(#cyl)" opacity="0.92"/>
+	<path d="M36,60 C36,76 70,89 112,89 C154,89 188,76 188,60"
+		  fill="none" stroke="#0D47A1" stroke-width="4" opacity="0.6"/>
+	<path d="M36,105 C36,121 70,134 112,134 C154,134 188,121 188,105"
+		  fill="none" stroke="#0D47A1" stroke-width="4" opacity="0.5"/>
+	<ellipse cx="112" cy="60" rx="76" ry="26" fill="none" stroke="#01579B" stroke-width="4"/>
+  </g>
+
+  <!-- Magnifying glass -->
+  <g transform="translate(120,120)">
+	<circle cx="60" cy="60" r="46" fill="none" stroke="url(#glass)" stroke-width="14"/>
+	<line x1="93" y1="93" x2="132" y2="132" stroke="url(#glass)" stroke-width="18" stroke-linecap="round"/>
+  </g>
+</svg>

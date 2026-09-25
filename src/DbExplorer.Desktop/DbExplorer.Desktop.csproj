@@ -5,7 +5,11 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>DbExplorer</AssemblyName>
+    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DbExplorer.Application\DbExplorer.Application.csproj" />
     <ProjectReference Include="..\DbExplorer.Providers.SqlServer\DbExplorer.Providers.SqlServer.csproj" />

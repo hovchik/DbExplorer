@@ -34,7 +34,7 @@ public sealed class MetadataSearchService
             {
                 ct.ThrowIfCancellationRequested();
                 if (IsMatch(regex, o.Name) && !Add(new MetadataSearchResult(
-                        MetadataMatchKind.Object, o.Schema, o.Name, o.Type, o.Type.ToString(), null)))
+                        MetadataMatchKind.Object, o.Database, o.Schema, o.Name, o.Type, o.Type.ToString(), null)))
                     return results;
             }
         }
@@ -43,16 +43,16 @@ public sealed class MetadataSearchService
         {
             var types = snapshot.Objects
                 .Where(o => o.IsTableLike)
-                .GroupBy(o => (o.Schema, o.Name))
+                .GroupBy(o => (o.Database, o.Schema, o.Name))
                 .ToDictionary(g => g.Key, g => g.First().Type);
 
             foreach (var c in snapshot.Columns)
             {
                 ct.ThrowIfCancellationRequested();
                 if (!IsMatch(regex, c.Name)) continue;
-                var type = types.GetValueOrDefault((c.Schema, c.Table), DbObjectType.Table);
+                var type = types.GetValueOrDefault((c.Database, c.Schema, c.Table), DbObjectType.Table);
                 if (!Add(new MetadataSearchResult(
-                        MetadataMatchKind.Column, c.Schema, c.Table, type, $"{c.Name}  {c.DataType}", null)))
+                        MetadataMatchKind.Column, c.Database, c.Schema, c.Table, type, $"{c.Name}  {c.DataType}", null)))
                     return results;
             }
         }
@@ -73,7 +73,7 @@ public sealed class MetadataSearchService
                     var detail = lines[i].Trim();
                     if (detail.Length > MaxDetailLength) detail = detail[..MaxDetailLength] + "…";
                     if (!Add(new MetadataSearchResult(
-                            MetadataMatchKind.Definition, m.Schema, m.Name, m.Type, detail, i + 1)))
+                            MetadataMatchKind.Definition, m.Database, m.Schema, m.Name, m.Type, detail, i + 1)))
                         return results;
                 }
             }
@@ -82,26 +82,7 @@ public sealed class MetadataSearchService
         return results;
     }
 
-    private static Regex BuildRegex(MetadataSearchQuery query)
-    {
-        var pattern = query.UseRegex ? query.Text : Regex.Escape(query.Text);
-        if (query.WholeWord) pattern = $@"\b(?:{pattern})\b";
+    private static Regex BuildRegex(MetadataSearchQuery query) => SearchTextMatcher.BuildRegex(query);
 
-        var options = RegexOptions.CultureInvariant;
-        if (!query.MatchCase) options |= RegexOptions.IgnoreCase;
-
-        return new Regex(pattern, options, TimeSpan.FromSeconds(2));
-    }
-
-    private static bool IsMatch(Regex regex, string input)
-    {
-        try
-        {
-            return regex.IsMatch(input);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return false;
-        }
-    }
+    private static bool IsMatch(Regex regex, string input) => SearchTextMatcher.IsMatch(regex, input);
 }

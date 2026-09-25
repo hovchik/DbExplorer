@@ -1,17 +1,21 @@
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
-public partial class MetadataSearchViewModel(MetadataSearchService service) : ViewModelBase, ISessionAware
+public partial class MetadataSearchViewModel(
+    MetadataSearchService service, DefinitionService definitions, IDialogService dialogs) : ViewModelBase, ISessionAware
 {
     private const int MaxResults = 5000;
 
     private DatabaseSession? _session;
     private CancellationTokenSource? _cts;
+    private MetadataSearchQuery? _lastQuery;
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private bool _searchObjects = true;
@@ -21,6 +25,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service) : Vi
     [ObservableProperty] private bool _wholeWord;
     [ObservableProperty] private bool _useRegex;
     [ObservableProperty] private IReadOnlyList<MetadataSearchResult> _results = [];
+    [ObservableProperty] private MetadataSearchResult? _selectedResult;
     [ObservableProperty] private string _status = "Searches names and source code in the local metadata snapshot — no load on the server.";
 
     public void Attach(DatabaseSession? session)
@@ -45,6 +50,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service) : Vi
         if (SearchDefinitions) scope |= MetadataSearchScope.Definitions;
 
         var query = new MetadataSearchQuery(Query, scope, MatchCase, WholeWord, UseRegex, MaxResults);
+        _lastQuery = query;
         var snapshot = _session.Snapshot;
         var sw = Stopwatch.StartNew();
         Status = "Searching…";
@@ -64,5 +70,12 @@ public partial class MetadataSearchViewModel(MetadataSearchService service) : Vi
         {
             Status = "Invalid pattern: " + ex.Message;
         }
+    }
+
+    [RelayCommand]
+    private async Task OpenResultAsync()
+    {
+        if (_session is null || SelectedResult is not { } result || _lastQuery is not { } query) return;
+        await dialogs.ShowSearchResultAsync(definitions, _session, result, query);
     }
 }

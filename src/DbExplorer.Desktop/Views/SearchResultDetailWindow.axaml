@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+		xmlns:conv="using:DbExplorer.Desktop.Converters"
+		x:Class="DbExplorer.Desktop.Views.SearchResultDetailWindow"
+		x:DataType="vm:SearchResultDetailViewModel"
+		Title="{Binding Title}"
+		Width="900" Height="650"
+		WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+	<conv:BoolToHighlightBrushConverter x:Key="HighlightBrush" />
+  </Window.Resources>
+  <DockPanel Margin="10">
+	<TextBlock DockPanel.Dock="Top" Classes="section" Text="{Binding Title}" Margin="0,0,0,6" />
+	<TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
+	<ScrollViewer Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+	  <ItemsControl Name="Linescontrol" ItemsSource="{Binding Lines}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace">
+		<ItemsControl.ItemTemplate>
+		  <DataTemplate x:DataType="vm:HighlightLine">
+			<StackPanel Orientation="Horizontal">
+			  <TextBlock Text="{Binding Number}" Width="50" Opacity="0.5" TextAlignment="Right" Margin="0,0,10,0" />
+			  <ItemsControl ItemsSource="{Binding Segments}">
+				<ItemsControl.ItemsPanel>
+				  <ItemsPanelTemplate>
+					<StackPanel Orientation="Horizontal" />
+				  </ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+				<ItemsControl.ItemTemplate>
+				  <DataTemplate x:DataType="vm:HighlightSegment">
+					<TextBlock Text="{Binding Text}"
+							   Background="{Binding IsMatch, Converter={StaticResource HighlightBrush}}" />
+				  </DataTemplate>
+				</ItemsControl.ItemTemplate>
+			  </ItemsControl>
+			</StackPanel>
+		  </DataTemplate>
+		</ItemsControl.ItemTemplate>
+	  </ItemsControl>
+	</ScrollViewer>
+  </DockPanel>
+</Window>

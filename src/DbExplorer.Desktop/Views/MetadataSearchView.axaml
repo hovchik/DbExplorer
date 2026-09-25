@@ -21,9 +21,11 @@
     </StackPanel>
     <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
     <DataGrid ItemsSource="{Binding Results}"
+              SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"
-              GridLinesVisibility="Horizontal">
+              GridLinesVisibility="Horizontal"
+              DoubleTapped="OnResultDoubleTapped">
       <DataGrid.Columns>
         <DataGridTextColumn Header="Found in" Binding="{Binding Kind}" Width="Auto" />
         <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />

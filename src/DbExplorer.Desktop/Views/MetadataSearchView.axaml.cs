@@ -20,4 +20,10 @@ public partial class MetadataSearchView : UserControl
         e.Handled = true;
         if (vm.SearchCommand.CanExecute(null)) vm.SearchCommand.Execute(null);
     }
+
+    private void OnResultDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not MetadataSearchViewModel vm) return;
+        if (vm.OpenResultCommand.CanExecute(null)) vm.OpenResultCommand.Execute(null);
+    }
 }

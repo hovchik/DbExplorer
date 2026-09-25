@@ -29,6 +29,7 @@ public enum MetadataMatchKind
 
 public sealed record MetadataSearchResult(
     MetadataMatchKind Kind,
+    string Database,
     string Schema,
     string ObjectName,
     DbObjectType ObjectType,

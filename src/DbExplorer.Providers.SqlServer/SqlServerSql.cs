@@ -14,6 +14,7 @@ public static class SqlServerSql
     /// </summary>
     public const string MetaAppName = "DbExplorer.Meta";
     public const string SearchAppName = "DbExplorer.Search";
+    public const string ScriptAppName = "DbExplorer.Script";
 
     public static readonly HashSet<string> TextTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -53,7 +54,8 @@ public static class SqlServerSql
         "SET NOCOUNT ON; SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; " +
         $"SET DEADLOCK_PRIORITY LOW; SET LOCK_TIMEOUT {Math.Max(0, lockTimeoutMs)};\n";
 
-    public static string BuildConnectionString(ConnectionProfile p, string applicationName, string? databaseOverride = null)
+    public static string BuildConnectionString(
+        ConnectionProfile p, string applicationName, string? databaseOverride = null, bool forceReadWrite = false)
     {
         var b = new SqlConnectionStringBuilder
         {
@@ -63,7 +65,7 @@ public static class SqlServerSql
             TrustServerCertificate = p.TrustServerCertificate,
             Encrypt = p.Encrypt ? SqlConnectionEncryptOption.Mandatory : SqlConnectionEncryptOption.Optional,
             ApplicationName = applicationName,
-            ApplicationIntent = p.ReadOnlyIntent ? ApplicationIntent.ReadOnly : ApplicationIntent.ReadWrite,
+            ApplicationIntent = !forceReadWrite && p.ReadOnlyIntent ? ApplicationIntent.ReadOnly : ApplicationIntent.ReadWrite,
             ConnectTimeout = 15,
             MultipleActiveResultSets = false
         };

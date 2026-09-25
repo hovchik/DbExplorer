@@ -16,6 +16,9 @@ public sealed record DbObject
 
     public string FullName => $"{Schema}.{Name}";
 
+    public bool IsRoutine => Type is DbObjectType.Procedure or DbObjectType.Function
+        or DbObjectType.ScalarFunction or DbObjectType.TableFunction;
+
     public bool IsTableLike => Type is DbObjectType.Table or DbObjectType.View
         or DbObjectType.MaterializedView or DbObjectType.ForeignTable;
 }

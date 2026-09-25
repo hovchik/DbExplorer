@@ -95,6 +95,22 @@ internal static class PostgresQueries
     public static readonly string ModuleDefinition =
         $"""SELECT m."Definition" FROM ({Modules}) m WHERE m."Schema" = @schema AND m."Name" = @name;""";
 
+    public const string RoutineParameters = """
+        SELECT r.routine_schema AS "Schema",
+               r.routine_name AS "RoutineName",
+               COALESCE(p.parameter_name, '') AS "Name",
+               p.data_type AS "DataType",
+               CASE p.parameter_mode
+                   WHEN 'IN' THEN 0 WHEN 'INOUT' THEN 1 WHEN 'OUT' THEN 2 ELSE 0 END AS "Direction",
+               false AS "HasDefault",
+               p.ordinal_position AS "Ordinal"
+        FROM information_schema.routines r
+        JOIN information_schema.parameters p
+            ON p.specific_schema = r.specific_schema AND p.specific_name = r.specific_name
+        WHERE r.routine_schema = @schema AND r.routine_name = @name
+        ORDER BY p.ordinal_position;
+        """;
+
     public const string SequenceDefinition = """
         SELECT 'CREATE SEQUENCE ' || quote_ident(schemaname) || '.' || quote_ident(sequencename)
             || ' AS ' || data_type::text

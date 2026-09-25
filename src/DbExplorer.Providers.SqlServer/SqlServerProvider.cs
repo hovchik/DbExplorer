@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Text;
 using Dapper;
 using DbExplorer.Core.Abstractions;
@@ -194,6 +195,192 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    public Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
+    {
+        var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
+        return QueryInDatabaseAsync<DbRoutineParameter>(
+            SqlServerQueries.RoutineParameters, new { schema = routine.Schema, name = routine.Name }, database, ct)
+            .ContinueWith(t => (IReadOnlyList<DbRoutineParameter>)t.Result
+                .Select(p => p with { Database = database ?? "" }).ToList(), ct);
+    }
+
+    public async Task<QueryExecutionResult> ExecuteScriptAsync(
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var connectionString = SqlServerSql.BuildConnectionString(
+            _profile, SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true);
+        var batches = SplitBatches(sql);
+
+        var resultSets = new List<QueryResultSet>();
+        var messages = new List<string>();
+        var rowsAffected = 0;
+
+        await using var cn = new SqlConnection(connectionString);
+        cn.InfoMessage += (_, e) => messages.Add(e.Message);
+        await cn.OpenAsync(ct);
+
+        foreach (var batch in batches)
+        {
+            if (string.IsNullOrWhiteSpace(batch)) continue;
+
+            await using var cmd = cn.CreateCommand();
+            cmd.CommandText = batch;
+            cmd.CommandTimeout = timeoutSeconds;
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            do
+            {
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                    var rows = new List<IReadOnlyList<object?>>();
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var row = new object?[reader.FieldCount];
+                        reader.GetValues(row!);
+                        for (var i = 0; i < row.Length; i++)
+                            if (row[i] == DBNull.Value) row[i] = null;
+                        rows.Add(row);
+                    }
+                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
+                }
+                else
+                {
+                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+                }
+            } while (await reader.NextResultAsync(ct));
+        }
+
+        return new QueryExecutionResult
+        {
+            ResultSets = resultSets,
+            RowsAffected = rowsAffected,
+            Messages = messages,
+            Elapsed = sw.Elapsed
+        };
+    }
+
+    public async Task<QueryExecutionResult> ExecuteRoutineAsync(
+        DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments,
+        int timeoutSeconds, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
+        var connectionString = SqlServerSql.BuildConnectionString(
+            _profile, SqlServerSql.ScriptAppName, database, forceReadWrite: true);
+
+        await using var cn = new SqlConnection(connectionString);
+        var messages = new List<string>();
+        cn.InfoMessage += (_, e) => messages.Add(e.Message);
+        await cn.OpenAsync(ct);
+
+        await using var cmd = cn.CreateCommand();
+        cmd.CommandTimeout = timeoutSeconds;
+
+        var isFunction = routine.Type is DbObjectType.ScalarFunction or DbObjectType.TableFunction;
+        if (isFunction)
+        {
+            var argList = string.Join(", ", parameters
+                .Where(p => p.Direction != DbParameterDirection.ReturnValue)
+                .Select(p => $"@{p.Name}"));
+            cmd.CommandText = $"SELECT {SqlServerSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
+        }
+        else
+        {
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.CommandText = SqlServerSql.QuoteFullName(routine.Schema, routine.Name);
+        }
+
+        var outputParams = new Dictionary<string, SqlParameter>();
+        foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue))
+        {
+            var sqlParam = new SqlParameter("@" + p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+            if (p.Direction == DbParameterDirection.Output || p.Direction == DbParameterDirection.InputOutput)
+            {
+                sqlParam.Direction = p.Direction == DbParameterDirection.Output
+                    ? ParameterDirection.Output
+                    : ParameterDirection.InputOutput;
+                sqlParam.Size = 4000;
+                outputParams[p.Name] = sqlParam;
+            }
+            if (!isFunction) cmd.Parameters.Add(sqlParam);
+        }
+
+        SqlParameter? returnParam = null;
+        if (!isFunction)
+        {
+            returnParam = new SqlParameter("@__return", SqlDbType.Int) { Direction = ParameterDirection.ReturnValue };
+            cmd.Parameters.Add(returnParam);
+        }
+
+        var resultSets = new List<QueryResultSet>();
+        var rowsAffected = 0;
+
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            do
+            {
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                    var rows = new List<IReadOnlyList<object?>>();
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var row = new object?[reader.FieldCount];
+                        reader.GetValues(row!);
+                        for (var i = 0; i < row.Length; i++)
+                            if (row[i] == DBNull.Value) row[i] = null;
+                        rows.Add(row);
+                    }
+                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
+                }
+                else
+                {
+                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+                }
+            } while (await reader.NextResultAsync(ct));
+        }
+
+        var outputValues = new Dictionary<string, object?>();
+        foreach (var (name, sqlParam) in outputParams)
+            outputValues[name] = sqlParam.Value == DBNull.Value ? null : sqlParam.Value;
+        if (returnParam is not null)
+            outputValues["ReturnValue"] = returnParam.Value == DBNull.Value ? null : returnParam.Value;
+
+        return new QueryExecutionResult
+        {
+            ResultSets = resultSets,
+            RowsAffected = rowsAffected,
+            Messages = messages,
+            Elapsed = sw.Elapsed,
+            OutputValues = outputValues
+        };
+    }
+
+    /// <summary>Splits a script on GO batch separators (SSMS convention); the word must be alone on its line.</summary>
+    private static IReadOnlyList<string> SplitBatches(string sql)
+    {
+        var lines = sql.Replace("\r\n", "\n").Split('\n');
+        var batches = new List<string>();
+        var current = new StringBuilder();
+
+        foreach (var line in lines)
+        {
+            if (line.Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
+            {
+                batches.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.AppendLine(line);
+            }
+        }
+        if (current.Length > 0) batches.Add(current.ToString());
+        return batches;
+    }
 
     private async Task<IReadOnlyList<T>> QueryAsync<T>(string sql, object? param, CancellationToken ct)
     {

@@ -10,6 +10,8 @@
       <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="Padding" Value="10,8" />
     </Style>
 
     <Style Selector="TextBlock.hint">

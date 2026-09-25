@@ -1,9 +1,11 @@
 using Avalonia.Controls;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Connections;
+using DbExplorer.Core.Models;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
 
@@ -16,6 +18,14 @@ public interface IDialogService
     Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,
         MetadataSearchResult result, MetadataSearchQuery query);
+
+    Task ShowRoutineExecutionAsync(
+        QueryExecutionService queryService, DatabaseSession session, DbObject routine);
+
+    Task ShowGetDataAsync(
+        QueryExecutionService queryService, DatabaseSession session, DbObject table);
+
+    Task<bool> ConfirmAsync(string message, string confirmText = "Run");
 }
 
 public sealed class DialogService(ProviderRegistry registry) : IDialogService
@@ -42,5 +52,36 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();
+    }
+
+    public async Task ShowRoutineExecutionAsync(
+        QueryExecutionService queryService, DatabaseSession session, DbObject routine)
+    {
+        var vm = new RoutineExecutionViewModel();
+        var window = new RoutineExecutionWindow { DataContext = vm };
+        _ = vm.InitializeAsync(queryService, session, routine);
+
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+    }
+
+    public async Task<bool> ConfirmAsync(string message, string confirmText = "Run")
+    {
+        var window = new ConfirmWindow(message, confirmText);
+        if (Owner is null) return false;
+        return await window.ShowDialog<bool>(Owner);
+    }
+
+    public Task ShowGetDataAsync(
+        QueryExecutionService queryService, DatabaseSession session, DbObject table)
+    {
+        var vm = new GetDataViewModel();
+        var window = new GetDataWindow { DataContext = vm };
+        vm.Initialize(queryService, session, table);
+
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+
+        return Task.CompletedTask;
     }
 }

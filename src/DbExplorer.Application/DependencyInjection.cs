@@ -1,6 +1,7 @@
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,8 @@ public static class DependencyInjection
         services.AddSingleton<MetadataSearchService>();
         services.AddSingleton<DataSearchService>();
         services.AddSingleton<SessionService>();
+        services.AddSingleton<ScriptStore>();
+        services.AddSingleton<QueryExecutionService>();
         return services;
     }
 }

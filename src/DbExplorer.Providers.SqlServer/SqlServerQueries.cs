@@ -98,6 +98,32 @@ internal static class SqlServerQueries
 
     public const string ObjectDefinition = "SELECT OBJECT_DEFINITION(OBJECT_ID(@name));";
 
+    public const string RoutineParameters = """
+        SELECT s.name AS [Schema],
+               o.name AS [RoutineName],
+               COALESCE(p.name, '') AS [Name],
+               t.name + CASE
+                   WHEN t.name IN ('varchar','char','varbinary','binary')
+                       THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length AS varchar(10)) END + ')'
+                   WHEN t.name IN ('nvarchar','nchar')
+                       THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length / 2 AS varchar(10)) END + ')'
+                   WHEN t.name IN ('decimal','numeric')
+                       THEN '(' + CAST(p.precision AS varchar(5)) + ',' + CAST(p.scale AS varchar(5)) + ')'
+                   ELSE '' END AS [DataType],
+               CASE
+                   WHEN p.parameter_id = 0 THEN 3 -- ReturnValue
+                   WHEN p.is_output = 1 THEN 2    -- Output (also covers InputOutput; SQL Server has no separate flag)
+                   ELSE 0 END AS [Direction],
+               p.has_default_value AS [HasDefault],
+               p.parameter_id AS [Ordinal]
+        FROM sys.parameters p
+        JOIN sys.objects o ON o.object_id = p.object_id
+        JOIN sys.schemas s ON s.schema_id = o.schema_id
+        JOIN sys.types t ON t.user_type_id = p.user_type_id
+        WHERE s.name = @schema AND o.name = @name
+        ORDER BY p.parameter_id;
+        """;
+
     public const string SynonymDefinition = """
         SELECT 'CREATE SYNONYM ' + QUOTENAME(SCHEMA_NAME(schema_id)) + '.' + QUOTENAME(name)
              + ' FOR ' + base_object_name + ';'

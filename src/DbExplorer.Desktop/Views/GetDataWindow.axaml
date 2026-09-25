@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+		xmlns:views="using:DbExplorer.Desktop.Views"
+		x:Class="DbExplorer.Desktop.Views.GetDataWindow"
+		x:DataType="vm:GetDataViewModel"
+		Title="{Binding Title}"
+		Width="900" Height="640"
+		WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="10">
+	<TextBlock DockPanel.Dock="Top" Classes="section" Text="{Binding Title}" Margin="0,0,0,8" />
+
+	<StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+	  <TextBlock Text="Limit rows:" VerticalAlignment="Center" />
+	  <NumericUpDown Width="130" Minimum="1" Maximum="1000000" Increment="100"
+					  FormatString="0" Value="{Binding Limit}" />
+	  <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" IsEnabled="{Binding !IsRunning}" />
+	  <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+	</StackPanel>
+
+	<TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
+
+	<TabControl ItemsSource="{Binding ResultSets}">
+	  <TabControl.ItemTemplate>
+		<DataTemplate x:DataType="vm:ResultSetView">
+		  <TextBlock Text="{Binding Title}" />
+		</DataTemplate>
+	  </TabControl.ItemTemplate>
+	  <TabControl.ContentTemplate>
+		<DataTemplate x:DataType="vm:ResultSetView">
+		  <views:ResultGridView ResultSet="{Binding}" />
+		</DataTemplate>
+	  </TabControl.ContentTemplate>
+	</TabControl>
+  </DockPanel>
+</Window>

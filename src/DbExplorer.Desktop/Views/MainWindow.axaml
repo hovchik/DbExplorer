@@ -47,6 +47,9 @@
       <TabItem Header="Search data">
         <views:DataSearchView DataContext="{Binding DataSearch}" />
       </TabItem>
+      <TabItem Header="Query">
+        <views:QueryView DataContext="{Binding Query}" />
+      </TabItem>
       <TabItem Header="Indexes">
         <views:IndexesView DataContext="{Binding Indexes}" />
       </TabItem>

@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+		xmlns:views="using:DbExplorer.Desktop.Views"
+		x:Class="DbExplorer.Desktop.Views.RoutineExecutionWindow"
+		x:DataType="vm:RoutineExecutionViewModel"
+		Title="{Binding Title}"
+		Width="820" Height="620"
+		WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="10">
+	<TextBlock DockPanel.Dock="Top" Classes="section" Text="{Binding Title}" Margin="0,0,0,8" />
+
+	<StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8" MaxHeight="220">
+	  <TextBlock Classes="hint" Text="Parameters" IsVisible="{Binding !IsLoadingParameters}" />
+	  <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+		<ItemsControl ItemsSource="{Binding Parameters}">
+		  <ItemsControl.ItemTemplate>
+			<DataTemplate x:DataType="vm:RoutineParameterInput">
+			  <Grid ColumnDefinitions="220,*" Margin="0,2">
+				<TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+				<TextBox Grid.Column="1" Text="{Binding Value}" IsReadOnly="{Binding !IsEditable}" Watermark="NULL" />
+			  </Grid>
+			</DataTemplate>
+		  </ItemsControl.ItemTemplate>
+		</ItemsControl>
+	  </ScrollViewer>
+	</StackPanel>
+
+	<StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+	  <Button Content="Run" Classes="accent" Command="{Binding RunCommand}" IsEnabled="{Binding !IsRunning}" />
+	  <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+	</StackPanel>
+
+	<TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
+	<TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,2,0,0" Text="{Binding OutputSummary}" TextWrapping="Wrap"
+			   IsVisible="{Binding OutputSummary.Length}" />
+
+	<TabControl ItemsSource="{Binding ResultSets}">
+	  <TabControl.ItemTemplate>
+		<DataTemplate x:DataType="vm:ResultSetView">
+		  <TextBlock Text="{Binding Title}" />
+		</DataTemplate>
+	  </TabControl.ItemTemplate>
+	  <TabControl.ContentTemplate>
+		<DataTemplate x:DataType="vm:ResultSetView">
+		  <views:ResultGridView ResultSet="{Binding}" />
+		</DataTemplate>
+	  </TabControl.ContentTemplate>
+	</TabControl>
+  </DockPanel>
+</Window>

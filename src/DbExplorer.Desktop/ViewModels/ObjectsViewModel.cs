@@ -1,11 +1,16 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Metadata;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
-public partial class ObjectsViewModel(DefinitionService definitions) : ViewModelBase, ISessionAware
+public partial class ObjectsViewModel(
+    DefinitionService definitions, QueryExecutionService queryService, IDialogService dialogs)
+    : ViewModelBase, ISessionAware
 {
     private const string AllTypes = "All types";
 
@@ -38,7 +43,30 @@ public partial class ObjectsViewModel(DefinitionService definitions) : ViewModel
 
     partial void OnSelectedTypeFilterChanged(string value) => ApplyFilter();
 
-    partial void OnSelectedObjectChanged(DbObject? value) => _ = LoadDetailsAsync(value);
+    partial void OnSelectedObjectChanged(DbObject? value)
+    {
+        _ = LoadDetailsAsync(value);
+        ExecuteSelectedCommand.NotifyCanExecuteChanged();
+        GetDataCommand.NotifyCanExecuteChanged();
+    }
+
+    public bool CanExecuteSelected => SelectedObject?.IsRoutine == true;
+
+    [RelayCommand(CanExecute = nameof(CanExecuteSelected))]
+    private async Task ExecuteSelectedAsync()
+    {
+        if (_session is null || SelectedObject is null || !SelectedObject.IsRoutine) return;
+        await dialogs.ShowRoutineExecutionAsync(queryService, _session, SelectedObject);
+    }
+
+    public bool CanGetData => SelectedObject?.IsTableLike == true;
+
+    [RelayCommand(CanExecute = nameof(CanGetData))]
+    private async Task GetDataAsync()
+    {
+        if (_session is null || SelectedObject is null || !SelectedObject.IsTableLike) return;
+        await dialogs.ShowGetDataAsync(queryService, _session, SelectedObject);
+    }
 
     private void ApplyFilter()
     {

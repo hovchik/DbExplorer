@@ -26,7 +26,8 @@ public partial class MainWindowViewModel : ViewModelBase
         MetadataSearchViewModel search,
         DataSearchViewModel dataSearch,
         IndexesViewModel indexes,
-        LocksViewModel locks)
+        LocksViewModel locks,
+        QueryViewModel query)
     {
         _store = store;
         _sessions = sessions;
@@ -37,7 +38,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DataSearch = dataSearch;
         Indexes = indexes;
         Locks = locks;
-        _tabs = [objects, search, dataSearch, indexes, locks];
+        Query = query;
+        _tabs = [objects, search, dataSearch, indexes, locks, query];
     }
 
     public ObjectsViewModel Objects { get; }
@@ -45,6 +47,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public DataSearchViewModel DataSearch { get; }
     public IndexesViewModel Indexes { get; }
     public LocksViewModel Locks { get; }
+    public QueryViewModel Query { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 

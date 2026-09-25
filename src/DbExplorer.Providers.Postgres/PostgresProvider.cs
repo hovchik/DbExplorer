@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Dapper;
 using DbExplorer.Core.Abstractions;
@@ -167,6 +168,138 @@ public sealed class PostgresProvider : IDatabaseProvider
     }
 
     public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
+
+    public async Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
+    {
+        var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
+        var args = new { schema = routine.Schema, name = routine.Name };
+        var rows = string.IsNullOrEmpty(database) || database == _profile.Database
+            ? await QueryAsync<DbRoutineParameter>(PostgresQueries.RoutineParameters, args, ct)
+            : await QueryInDatabaseAsync<DbRoutineParameter>(PostgresQueries.RoutineParameters, args, database, ct);
+        return rows.Select(p => p with { Database = database ?? "" }).ToList();
+    }
+
+    public async Task<QueryExecutionResult> ExecuteScriptAsync(
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var targetDatabase = database ?? _profile.Database;
+        var useOwnDataSource = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database;
+
+        await using var scopedDataSource = useOwnDataSource
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            : null;
+        var dataSource = scopedDataSource ?? _dataSource;
+
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
+
+        var resultSets = new List<QueryResultSet>();
+        var messages = new List<string>();
+        var rowsAffected = 0;
+
+        void OnNotice(object? _, NpgsqlNoticeEventArgs e) => messages.Add(e.Notice.MessageText);
+        cn.Notice += OnNotice;
+
+        try
+        {
+            await using var cmd = new NpgsqlCommand(sql, cn) { CommandTimeout = timeoutSeconds };
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            do
+            {
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                    var rows = new List<IReadOnlyList<object?>>();
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var row = new object?[reader.FieldCount];
+                        for (var i = 0; i < row.Length; i++)
+                            row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        rows.Add(row);
+                    }
+                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
+                }
+                else
+                {
+                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+                }
+            } while (await reader.NextResultAsync(ct));
+        }
+        finally
+        {
+            cn.Notice -= OnNotice;
+        }
+
+        return new QueryExecutionResult
+        {
+            ResultSets = resultSets,
+            RowsAffected = rowsAffected,
+            Messages = messages,
+            Elapsed = sw.Elapsed
+        };
+    }
+
+    public async Task<QueryExecutionResult> ExecuteRoutineAsync(
+        DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments,
+        int timeoutSeconds, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
+        var useOwnDataSource = !string.IsNullOrEmpty(database) && database != _profile.Database;
+
+        await using var scopedDataSource = useOwnDataSource
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database))
+            : null;
+        var dataSource = scopedDataSource ?? _dataSource;
+
+        var isProcedure = routine.Type == DbObjectType.Procedure;
+        var inputParams = parameters.Where(p => p.Direction != DbParameterDirection.Output).ToList();
+        var argList = string.Join(", ", inputParams.Select(p => "@" + p.Name));
+        var sql = isProcedure
+            ? $"CALL {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});"
+            : $"SELECT * FROM {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
+
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(sql, cn) { CommandTimeout = timeoutSeconds };
+
+        foreach (var p in inputParams)
+            cmd.Parameters.AddWithValue(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+
+        var resultSets = new List<QueryResultSet>();
+        var rowsAffected = 0;
+
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            do
+            {
+                if (reader.FieldCount > 0)
+                {
+                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                    var rows = new List<IReadOnlyList<object?>>();
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var row = new object?[reader.FieldCount];
+                        for (var i = 0; i < row.Length; i++)
+                            row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        rows.Add(row);
+                    }
+                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
+                }
+                else
+                {
+                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+                }
+            } while (await reader.NextResultAsync(ct));
+        }
+
+        return new QueryExecutionResult
+        {
+            ResultSets = resultSets,
+            RowsAffected = rowsAffected,
+            Messages = [],
+            Elapsed = sw.Elapsed
+        };
+    }
 
     private static async Task ApplySettingsAsync(
         NpgsqlConnection cn, NpgsqlTransaction tx, int statementTimeoutMs, int lockTimeoutMs, CancellationToken ct)

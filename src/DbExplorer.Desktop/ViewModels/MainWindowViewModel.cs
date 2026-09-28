@@ -33,7 +33,7 @@ public partial class MainWindowViewModel : ViewModelBase
         LocksViewModel locks,
         ActivityViewModel activity,
         DiagramViewModel diagram,
-        QueryViewModel query,
+        QueryWorkspaceViewModel query,
         ComparerViewModel comparer)
     {
         _store = store;
@@ -82,7 +82,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
     [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
-    public QueryViewModel Query { get; }
+    public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
@@ -115,6 +115,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
+            await Query.RestoreTabsAsync();
             foreach (var p in await _store.LoadAsync()) Profiles.Add(p);
             SelectedProfile = Profiles.FirstOrDefault();
         }
@@ -126,6 +127,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public async Task ShutdownAsync()
     {
+        await Query.SaveTabsAsync();
         foreach (var tab in _tabs) tab.Attach(null);
         await Comparer.DisposeIndependentSessionsAsync();
         if (Session is { } s) await s.DisposeAsync();

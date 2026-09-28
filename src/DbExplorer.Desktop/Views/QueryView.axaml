@@ -2,12 +2,24 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
-			 xmlns:query="using:DbExplorer.Application.Query"
+			 xmlns:ae="using:AvaloniaEdit"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
-  <Grid Margin="4" RowDefinitions="Auto,2*,6,3*,Auto">
+  <UserControl.Styles>
+	<Style Selector="Button.tool">
+	  <Setter Property="MinHeight" Value="28" />
+	  <Setter Property="Padding" Value="10,2" />
+	</Style>
+  </UserControl.Styles>
+  <Grid Margin="4" RowDefinitions="Auto,2*,Auto,6,3*,Auto">
 	<WrapPanel Grid.Row="0" Classes="toolbar">
-	  <Button Content="Execute (F5)" Classes="accent" Command="{Binding ExecuteCommand}" />
+	  <Button Content="▶ Run" Classes="accent" Click="OnRun"
+			  ToolTip.Tip="Run the selection, or the whole script when nothing is selected (F5 / Ctrl+E)" />
+	  <Button Content="▶ Statement" Classes="tool" Click="OnRunStatement"
+			  ToolTip.Tip="Run only the statement at the caret (Ctrl+Enter)" />
 	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
+	  <Button Content="Format" Classes="tool" Click="OnFormat" ToolTip.Tip="Format the selection or the whole script (Ctrl+Shift+F)" />
+	  <Button Content="-- Comment" Classes="tool" Click="OnToggleComment" ToolTip.Tip="Comment / uncomment the selected lines (Ctrl+/)" />
+	  <Button Content="Find" Classes="tool" Click="OnFind" ToolTip.Tip="Find and replace (Ctrl+F / Ctrl+H)" />
 	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
 				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
 	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
@@ -42,35 +54,22 @@
 	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
 	</WrapPanel>
 
-	<TextBox Grid.Row="1" x:Name="Editor" Classes="code" Text="{Binding Sql}"
-			 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-			 VerticalAlignment="Stretch" VerticalContentAlignment="Top"
-			 Watermark="Write a SQL query or script and click Execute…"
-			 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-			 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+	<Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+	  <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" WordWrap="False"
+					 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+					 Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+					 LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
+					 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0" />
+	</Border>
+	<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
+	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11"
+				 Text="Ctrl+Space suggestions · F5 run · Ctrl+Enter run statement · Ctrl+Shift+F format · Ctrl+/ comment · hover a name for details" />
+	  <TextBlock Grid.Column="1" x:Name="CaretInfo" Classes="hint" FontSize="11" />
+	</Grid>
 
-	<Popup Grid.Row="1" x:Name="SuggestionsPopup" PlacementTarget="{Binding #Editor}"
-		   Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False">
-	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="240" MinWidth="320">
-		<ListBox x:Name="SuggestionsList" ItemsSource="{Binding Suggestions}"
-				 SelectedIndex="0" Background="Transparent" BorderThickness="0">
-		  <ListBox.ItemTemplate>
-			<DataTemplate x:DataType="query:CompletionItem">
-			  <Grid ColumnDefinitions="64,Auto,*">
-				<TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center" />
-				<TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center" />
-				<TextBlock Grid.Column="2" Classes="hint" Text="{Binding Detail}" Margin="10,0,0,0"
-						   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-			  </Grid>
-			</DataTemplate>
-		  </ListBox.ItemTemplate>
-		</ListBox>
-	  </Border>
-	</Popup>
+	<GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />
 
-	<GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
-
-	<TabControl Grid.Row="3" ItemsSource="{Binding ResultSets}">
+	<TabControl Grid.Row="4" ItemsSource="{Binding ResultSets}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <TextBlock Text="{Binding Title}" />
@@ -84,7 +83,7 @@
 	</TabControl>
 
 	<!-- Server messages (PRINT, rows affected, per-database results): collapsed to one line until needed -->
-	<Expander Grid.Row="4" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
+	<Expander Grid.Row="5" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
 			  IsVisible="{Binding !!Messages.Count}"
 			  Header="{Binding Messages.Count, StringFormat='Messages ({0})'}">
 	  <ScrollViewer MaxHeight="160">

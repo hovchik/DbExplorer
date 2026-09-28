@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Export;
@@ -16,14 +17,51 @@ public sealed partial class DatabaseChoice(string name) : ObservableObject
     [ObservableProperty] private bool _isSelected;
 }
 
-public partial class QueryViewModel(
-    QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs)
-    : ViewModelBase, ISessionAware
+/// <summary>
+/// One query tab of the Query workspace: its editor document (text + undo history), results and messages.
+/// </summary>
+public partial class QueryViewModel : ViewModelBase, ISessionAware
 {
     private const int TimeoutSeconds = 60;
+    private readonly QueryExecutionService queryService;
+    private readonly MultiDatabaseQueryService multiQuery;
+    private readonly ScriptStore scripts;
+    private readonly IDialogService dialogs;
     private DatabaseSession? _session;
     private SqlCompletionEngine? _completion;
     private CancellationTokenSource? _runCts;
+    private bool _syncingDocument;
+
+    public QueryViewModel(QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs)
+    {
+        this.queryService = queryService;
+        this.multiQuery = multiQuery;
+        this.scripts = scripts;
+        this.dialogs = dialogs;
+        Document.TextChanged += (_, _) =>
+        {
+            if (_syncingDocument) return;
+            _syncingDocument = true;
+            Sql = Document.Text;
+            IsDirty = true;
+            _syncingDocument = false;
+        };
+    }
+
+    /// <summary>The editor's text and undo history; kept here so switching tabs keeps each tab's state.</summary>
+    public TextDocument Document { get; } = new();
+
+    [ObservableProperty] private string _title = "Query";
+    [ObservableProperty] private string? _filePath;
+    [ObservableProperty] private bool _isDirty;
+
+    public string Header => (IsDirty && FilePath is not null ? "● " : "") + Title;
+
+    partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(Header));
+    partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Header));
+
+    /// <summary>Provider of the connected session ("SqlServer"/"Postgres"), for dialect-aware editor features.</summary>
+    public string? ProviderKey => _session?.Provider.ProviderKey;
 
     [ObservableProperty] private string _sql = "";
     [ObservableProperty] private bool _isRunning;
@@ -66,17 +104,39 @@ public partial class QueryViewModel(
 
     private void OnSnapshotChanged(object? sender, EventArgs e) => RebuildCompletion();
 
-    private void RebuildCompletion() =>
-        _completion = _session is null ? null : new SqlCompletionEngine(_session.Snapshot, _session.Provider.QuoteIdentifier);
+    private void RebuildCompletion()
+    {
+        _completion = _session is null ? null : new SqlCompletionEngine(_session.Snapshot, _session.Provider.QuoteIdentifier, _session.Provider.ProviderKey);
+        OnPropertyChanged(nameof(ProviderKey));
+    }
 
     /// <summary>Completion for the caret position; see <see cref="SqlCompletionEngine"/>.</summary>
     public CompletionResult GetCompletions(string text, int caret, bool explicitRequest) =>
-        _completion?.Complete(text, caret, explicitRequest) ?? CompletionResult.Empty;
+        _completion?.Complete(text, caret, explicitRequest, max: 200) ?? CompletionResult.Empty;
+
+    /// <summary>Hover text for the identifier at <paramref name="offset"/>.</summary>
+    public string? Describe(string text, int offset) => _completion?.Describe(text, offset);
+
+    /// <summary>Replaces the whole text (open file, history) as one undoable edit.</summary>
+    public void SetText(string text, bool markClean)
+    {
+        Document.Text = text;
+        IsDirty = !markClean;
+    }
 
     private bool CanExecute => _session is not null && !IsRunning && !string.IsNullOrWhiteSpace(Sql) &&
                                (!RunOnMultipleDatabases || _allDatabases.Any(d => d.IsSelected));
 
-    partial void OnSqlChanged(string value) => ExecuteCommand.NotifyCanExecuteChanged();
+    partial void OnSqlChanged(string value)
+    {
+        if (!_syncingDocument && Document.Text != value)
+        {
+            _syncingDocument = true;
+            Document.Text = value;
+            _syncingDocument = false;
+        }
+        ExecuteCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnIsRunningChanged(bool value)
     {
@@ -147,13 +207,15 @@ public partial class QueryViewModel(
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void Cancel() => _runCts?.Cancel();
 
+    /// <summary>Runs <paramref name="part"/> (a selection or the statement at the caret) or, when null/blank, the whole script.</summary>
     [RelayCommand(CanExecute = nameof(CanExecute))]
-    private async Task ExecuteAsync()
+    private async Task ExecuteAsync(string? part)
     {
         if (_session is not { } session) return;
 
         var targets = RunOnMultipleDatabases ? _allDatabases.Where(d => d.IsSelected).Select(d => d.Name).ToList() : [];
-        var sql = Sql;
+        var sql = string.IsNullOrWhiteSpace(part) ? Sql : part;
+        if (string.IsNullOrWhiteSpace(sql)) return;
 
         if (queryService.IsPotentiallyDestructive(sql) &&
             !await ConfirmDestructiveAsync(session.Profile, Math.Max(1, targets.Count)))

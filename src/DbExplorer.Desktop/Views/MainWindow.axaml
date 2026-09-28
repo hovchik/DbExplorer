@@ -65,7 +65,7 @@
         <views:DataSearchView DataContext="{Binding DataSearch}" />
       </TabItem>
       <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
-        <views:QueryView DataContext="{Binding Query}" />
+        <views:QueryWorkspaceView DataContext="{Binding Query}" />
       </TabItem>
       <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
         <views:DiagramView DataContext="{Binding Diagram}" />

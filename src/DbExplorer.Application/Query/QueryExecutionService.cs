@@ -8,7 +8,7 @@ public sealed class QueryExecutionService
 {
     private static readonly Regex DestructiveKeyword = new(
         @"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|MERGE|EXEC|EXECUTE|CALL|GRANT|REVOKE)\b",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
 
     /// <summary>True when the script looks like it could modify data or schema (used to prompt for confirmation).</summary>
     public bool IsPotentiallyDestructive(string sql) => DestructiveKeyword.IsMatch(sql);

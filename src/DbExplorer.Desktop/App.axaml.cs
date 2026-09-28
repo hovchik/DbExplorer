@@ -47,7 +47,18 @@ public partial class App : Avalonia.Application
             var window = new MainWindow { DataContext = vm };
             provider.GetRequiredService<DialogService>().Owner = window;
             desktop.MainWindow = window;
-            desktop.Exit += (_, _) => vm.Shutdown();
+
+            var shutdownStarted = false;
+            desktop.ShutdownRequested += async (_, e) =>
+            {
+                if (shutdownStarted) return;
+                shutdownStarted = true;
+                e.Cancel = true;
+                await vm.ShutdownAsync();
+                await provider.DisposeAsync();
+                desktop.Shutdown();
+            };
+
             _ = vm.InitializeAsync();
         }
 

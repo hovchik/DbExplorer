@@ -98,7 +98,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
                 var rows = await QueryOneAsync(db, token);
                 foreach (var row in rows) results.Add(row with { Database = db });
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible database: skip it and keep going.
             }
@@ -209,13 +209,12 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    public Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
+    public async Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
     {
         var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
-        return QueryInDatabaseAsync<DbRoutineParameter>(
-            SqlServerQueries.RoutineParameters, new { schema = routine.Schema, name = routine.Name }, database, ct)
-            .ContinueWith(t => (IReadOnlyList<DbRoutineParameter>)t.Result
-                .Select(p => p with { Database = database ?? "" }).ToList(), ct);
+        var rows = await QueryInDatabaseAsync<DbRoutineParameter>(
+            SqlServerQueries.RoutineParameters, new { schema = routine.Schema, name = routine.Name }, database, ct);
+        return rows.Select(p => p with { Database = database ?? "" }).ToList();
     }
 
     public async Task<QueryExecutionResult> ExecuteScriptAsync(
@@ -478,7 +477,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
                 var rows = await QueryWithConnectionStringAsync<T>(sql, null, cs, token);
                 foreach (var row in rows) results.Add(tag(row, db));
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
             }

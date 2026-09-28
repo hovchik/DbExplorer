@@ -87,10 +87,11 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    public void Shutdown()
+    public async Task ShutdownAsync()
     {
         foreach (var tab in _tabs) tab.Attach(null);
-        Session?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        await Comparer.DisposeIndependentSessionsAsync();
+        if (Session is { } s) await s.DisposeAsync();
     }
 
     partial void OnSessionChanged(DatabaseSession? value)

@@ -108,7 +108,39 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     [ObservableProperty] private bool _isLeftPanelVisible = true;
     [ObservableProperty] private bool _isRightPanelVisible = true;
 
-    public void Attach(DatabaseSession? session) => _mainSession = session;
+    public void Attach(DatabaseSession? session)
+    {
+        // The main session is about to be disposed by the caller (or was just disconnected):
+        // drop any reference to it here so we don't operate on / re-dispose a stale session.
+        if (LeftSession is not null && LeftSession == _mainSession)
+        {
+            LeftSession = null;
+            LeftDatabases = [];
+            SelectedLeftDatabase = null;
+            LeftObjects = [];
+            SelectedLeftObject = null;
+        }
+
+        if (RightSession is not null && RightSession == _mainSession)
+        {
+            RightSession = null;
+            RightDatabases = [];
+            SelectedRightDatabase = null;
+            RightObjects = [];
+            SelectedRightObject = null;
+        }
+
+        _mainSession = session;
+        RefreshCommands();
+    }
+
+    /// <summary>Independently-connected left/right sessions (not the main one) that this tab owns
+    /// and must dispose itself; used on application shutdown.</summary>
+    public async ValueTask DisposeIndependentSessionsAsync()
+    {
+        if (LeftSession is not null && LeftSession != _mainSession) await LeftSession.DisposeAsync();
+        if (RightSession is not null && RightSession != _mainSession) await RightSession.DisposeAsync();
+    }
 
     partial void OnLeftProfileChanged(ConnectionProfile? value) => ConnectLeftCommand.NotifyCanExecuteChanged();
 

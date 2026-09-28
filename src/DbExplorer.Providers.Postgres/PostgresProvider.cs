@@ -394,7 +394,7 @@ public sealed class PostgresProvider : IDatabaseProvider
                 var rows = await QueryInDatabaseAsync<T>(sql, null, db, token);
                 foreach (var row in rows) results.Add(tag(row, db));
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
             }

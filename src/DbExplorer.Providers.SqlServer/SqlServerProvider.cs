@@ -298,7 +298,10 @@ public sealed class SqlServerProvider : IDatabaseProvider
             var argList = string.Join(", ", parameters
                 .Where(p => p.Direction != DbParameterDirection.ReturnValue)
                 .Select(p => p.Name));
-            cmd.CommandText = $"SELECT {SqlServerSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
+            var qualifiedName = SqlServerSql.QuoteFullName(routine.Schema, routine.Name);
+            cmd.CommandText = routine.Type == DbObjectType.TableFunction
+                ? $"SELECT * FROM {qualifiedName}({argList});"
+                : $"SELECT {qualifiedName}({argList});";
         }
         else
         {
@@ -318,7 +321,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
                 sqlParam.Size = 4000;
                 outputParams[p.Name] = sqlParam;
             }
-            if (!isFunction) cmd.Parameters.Add(sqlParam);
+            cmd.Parameters.Add(sqlParam);
         }
 
         SqlParameter? returnParam = null;

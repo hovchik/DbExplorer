@@ -4,14 +4,8 @@
              xmlns:models="using:DbExplorer.Core.Models"
              xmlns:conv="using:DbExplorer.Desktop.Converters"
              x:Class="DbExplorer.Desktop.Views.DiagramView">
-  <DockPanel Margin="8">
-    <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-      <WrapPanel.Styles>
-        <Style Selector="WrapPanel > :is(Control)">
-          <Setter Property="Margin" Value="0,0,8,4" />
-          <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-      </WrapPanel.Styles>
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
       <ComboBox Width="150" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
                 IsVisible="{Binding HasMultipleDatabases}" ToolTip.Tip="Database" />
       <ComboBox Width="150" ItemsSource="{Binding Scopes}" SelectedItem="{Binding Scope}">
@@ -50,9 +44,8 @@
       <Button Content="Open in Objects" Command="{Binding OpenSelectedCommand}" ToolTip.Tip="Show the selected table's columns, indexes and profile" />
       <Button Content="Copy Mermaid" Click="OnCopyMermaid" ToolTip.Tip="Copy as a Mermaid erDiagram (renders in GitHub, GitLab, Notion, Confluence…)" />
       <Button Content="Save PNG…" Click="OnSavePng" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
-
-    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
 
     <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
       <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">

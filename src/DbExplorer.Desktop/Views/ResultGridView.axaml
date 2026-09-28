@@ -2,14 +2,19 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
   <DockPanel>
-	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-	  <TextBlock x:Name="RowCountText" Grid.Column="0" Classes="hint" VerticalAlignment="Center" />
+	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+	  <TextBlock x:Name="RowCountText" Grid.Column="0" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-		<Button Content="Copy all" Padding="10,2" MinHeight="26" Click="OnCopyAll"
-				ToolTip.Tip="Copy every row as tab-separated text (pastes into Excel as cells). Ctrl+C copies the selected rows." />
-		<Button Content="Copy as INSERT" Padding="10,2" MinHeight="26" Click="OnCopyAllInsert"
-				ToolTip.Tip="Copy every row as INSERT statements" />
-		<Button Content="Export ▾" Padding="10,2" MinHeight="26">
+		<Button Classes="compact" Content="Copy ▾"
+				ToolTip.Tip="Copy every row. Ctrl+C (or right-click) copies the selected rows.">
+		  <Button.Flyout>
+			<MenuFlyout Placement="BottomEdgeAlignedRight">
+			  <MenuItem Header="All rows as text (pastes into Excel as cells)" Click="OnCopyAll" />
+			  <MenuItem Header="All rows as INSERT statements" Click="OnCopyAllInsert" />
+			</MenuFlyout>
+		  </Button.Flyout>
+		</Button>
+		<Button Classes="compact" Content="Export ▾">
 		  <Button.Flyout>
 			<MenuFlyout Placement="BottomEdgeAlignedRight">
 			  <MenuItem Header="CSV (.csv)…" Click="OnExportCsv" />

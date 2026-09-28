@@ -1,25 +1,27 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.MetadataSearchView">
-  <DockPanel Margin="8">
-    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
-      <StackPanel Orientation="Horizontal" Spacing="6">
-        <TextBox x:Name="QueryBox" Width="420" Text="{Binding Query}"
-                 Watermark="Table, column, procedure name, or text inside code…" />
-        <Button Content="Search" Classes="accent" Command="{Binding SearchCommand}" />
-      </StackPanel>
-      <Expander Classes="options" Header="Search options">
-        <WrapPanel Margin="4,10,0,2">
-          <CheckBox Content="Object names" IsChecked="{Binding SearchObjects}" />
-          <CheckBox Content="Column names" IsChecked="{Binding SearchColumns}" />
-          <CheckBox Margin="0,0,32,0" Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
-          <CheckBox Content="Match case" IsChecked="{Binding MatchCase}" />
-          <CheckBox Content="Whole word" IsChecked="{Binding WholeWord}" />
-          <CheckBox Content="Regex" IsChecked="{Binding UseRegex}" />
-        </WrapPanel>
-      </Expander>
-    </StackPanel>
-    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <TextBox x:Name="QueryBox" Width="380" Text="{Binding Query}"
+               Watermark="Table, column, procedure name, or text inside code…" />
+      <Button Content="Search" Classes="accent" Command="{Binding SearchCommand}" />
+      <Button Content="Search in ▾" ToolTip.Tip="Choose what to search: object names, column names, code">
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedLeft">
+            <StackPanel Spacing="4">
+              <CheckBox Content="Object names" IsChecked="{Binding SearchObjects}" />
+              <CheckBox Content="Column names" IsChecked="{Binding SearchColumns}" />
+              <CheckBox Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
+            </StackPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+      <CheckBox Content="Match case" IsChecked="{Binding MatchCase}" Margin="0,0,10,4" />
+      <CheckBox Content="Whole word" IsChecked="{Binding WholeWord}" Margin="0,0,10,4" />
+      <CheckBox Content="Regex" IsChecked="{Binding UseRegex}" Margin="0,0,10,4" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </WrapPanel>
     <DataGrid ItemsSource="{Binding Results}"
               SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
               IsReadOnly="True" AutoGenerateColumns="False"

@@ -4,7 +4,10 @@ public enum DiffLineKind
 {
     Equal,
     Removed,
-    Added
+    Added,
+
+    /// <summary>Placeholder for a run of unchanged lines hidden by "show only changes".</summary>
+    Skipped
 }
 
 /// <summary>One aligned row of a side-by-side text diff.</summary>

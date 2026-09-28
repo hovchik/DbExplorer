@@ -15,7 +15,7 @@
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
   </Window.Resources>
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="10,7" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
+    <Border DockPanel.Dock="Top" Padding="8,4" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Image Source="/Assets/logo.png" Width="24" Height="24" Margin="0,0,4,0" VerticalAlignment="Center" />
@@ -45,16 +45,16 @@
       </Grid>
     </Border>
 
-    <Border DockPanel.Dock="Top" Padding="12,5" IsVisible="{Binding ShowEnvironmentBanner}"
+    <Border DockPanel.Dock="Top" Padding="10,2" IsVisible="{Binding ShowEnvironmentBanner}"
             Background="{Binding ConnectedEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
       <TextBlock Text="{Binding EnvironmentBanner}" Foreground="White" FontWeight="Bold" FontSize="13" />
     </Border>
 
-    <Border DockPanel.Dock="Bottom" Padding="10,5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+    <Border DockPanel.Dock="Bottom" Padding="8,2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
       <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <TabControl Margin="6" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
+    <TabControl Margin="4,2,4,2" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
       <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
         <views:ObjectsView DataContext="{Binding Objects}" />
       </TabItem>

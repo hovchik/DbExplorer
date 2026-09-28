@@ -1,20 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.IndexesView">
-  <DockPanel Margin="8">
-    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" />
-        <TextBox Width="280" Text="{Binding FilterText}" Watermark="Filter by table, index or column…" />
-        <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
-      </StackPanel>
-      <Expander Classes="options" Header="Options">
-        <StackPanel Margin="4,10,0,2">
-          <CheckBox Content="Include fragmentation (slower)" IsChecked="{Binding IncludeFragmentation}" />
-        </StackPanel>
-      </Expander>
-    </StackPanel>
-    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <Button Content="Load" Classes="accent" Command="{Binding LoadCommand}" />
+      <TextBox Width="280" Text="{Binding FilterText}" Watermark="Filter by table, index or column…" />
+      <CheckBox Content="Include fragmentation (slower)" IsChecked="{Binding IncludeFragmentation}" Margin="0,0,8,4"
+                ToolTip.Tip="Reads sys.dm_db_index_physical_stats in LIMITED mode" />
+      <ProgressBar Width="100" MinWidth="100" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </WrapPanel>
     <DataGrid ItemsSource="{Binding Indexes}"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"

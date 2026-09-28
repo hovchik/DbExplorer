@@ -1,14 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.ObjectsView">
-  <Grid Margin="8" ColumnDefinitions="2*,6,3*">
+  <Grid Margin="4" ColumnDefinitions="2*,6,3*">
     <DockPanel Grid.Column="0">
-      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
-        <TextBox Width="240" Text="{Binding FilterText}" Watermark="Filter by schema.name…" />
-        <ComboBox Width="150" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" />
-        <ComboBox Width="150" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" />
-      </StackPanel>
-      <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Summary}" />
+      <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+        <TextBox Width="220" Text="{Binding FilterText}" Watermark="Filter by schema.name…" />
+        <ComboBox Width="130" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" ToolTip.Tip="Object type" />
+        <ComboBox Width="160" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" ToolTip.Tip="Database" />
+        <TextBlock Classes="hint" Text="{Binding Summary}" />
+      </WrapPanel>
       <DataGrid x:Name="ObjectsGrid" ItemsSource="{Binding Objects}"
                 SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
                 IsReadOnly="True" AutoGenerateColumns="False"
@@ -35,9 +35,12 @@
 
     <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
 
-    <Grid Grid.Column="2" RowDefinitions="Auto,3*,6,2*">
-      <TextBlock Grid.Row="0" Margin="0,0,0,6" FontWeight="SemiBold" Text="{Binding SelectedObject.FullName}" />
-      <TabControl Grid.Row="1">
+    <Grid Grid.Column="2" RowDefinitions="3*,6,2*">
+      <!-- The selected object's name sits on the empty right side of the tab strip -->
+      <TextBlock Grid.Row="0" Margin="380,0,4,0" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1"
+                 FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding SelectedObject.FullName}"
+                 ToolTip.Tip="{Binding SelectedObject.FullName}" Padding="0,8,0,0" />
+      <TabControl Grid.Row="0">
         <TabItem Header="Columns">
           <DataGrid ItemsSource="{Binding Columns}"
                     IsReadOnly="True" AutoGenerateColumns="False"
@@ -97,14 +100,15 @@
           </Grid>
         </TabItem>
         <TabItem Header="Profile">
-          <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="3*,6,2*">
-            <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
+          <Grid RowDefinitions="Auto,*" ColumnDefinitions="3*,6,2*">
+            <WrapPanel Grid.Row="0" Grid.ColumnSpan="3" Classes="toolbar" Margin="0,4,0,2">
               <Button Content="Profile" Classes="accent" Command="{Binding ProfileCommand}" />
-              <TextBlock Text="Sample rows" VerticalAlignment="Center" />
+              <TextBlock Text="Sample rows" />
               <NumericUpDown Width="140" Minimum="1" Maximum="10000000" Increment="10000" FormatString="N0"
                              Value="{Binding ProfileSampleRows}" />
-              <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsProfiling}" />
-            </StackPanel>
+              <ProgressBar Width="100" IsIndeterminate="True" IsVisible="{Binding IsProfiling}" />
+              <TextBlock Classes="hint" Text="{Binding ProfileStatus}" TextWrapping="Wrap" />
+            </WrapPanel>
             <DataGrid Grid.Row="1" Grid.Column="0" ItemsSource="{Binding ColumnProfiles}"
                       SelectedItem="{Binding SelectedColumnProfile, Mode=TwoWay}"
                       IsReadOnly="True" AutoGenerateColumns="False"
@@ -129,12 +133,11 @@
                 <DataGridTextColumn Header="Count" Binding="{Binding Count, StringFormat='{}{0:N0}'}" Width="Auto" />
               </DataGrid.Columns>
             </DataGrid>
-            <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Classes="hint" Margin="0,6,0,0" Text="{Binding ProfileStatus}" TextWrapping="Wrap" />
           </Grid>
         </TabItem>
       </TabControl>
-      <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
-      <TextBox Grid.Row="3" Classes="code"
+      <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
+      <TextBox Grid.Row="2" Classes="code"
                Text="{Binding Definition}"
                IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                ScrollViewer.HorizontalScrollBarVisibility="Auto"

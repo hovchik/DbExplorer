@@ -1,16 +1,16 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.DataSearchView">
-  <Grid Margin="8" RowDefinitions="Auto,Auto,Auto,*,6,Auto">
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
-      <TextBox x:Name="TermBox" Width="360" Text="{Binding Term}" Watermark="Value to find in any column…" />
-      <ComboBox Width="130" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" />
+  <Grid Margin="4" RowDefinitions="Auto,*,6,Auto">
+    <WrapPanel Grid.Row="0" Classes="toolbar">
+      <TextBox x:Name="TermBox" Width="340" Text="{Binding Term}" Watermark="Value to find in any column…" />
+      <ComboBox Width="130" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" ToolTip.Tip="Match mode" />
       <Button Content="Search" Classes="accent" Command="{Binding StartCommand}" />
       <Button Content="Cancel" Command="{Binding CancelCommand}" />
-    </StackPanel>
-
-    <Expander Grid.Row="1" Classes="options" Header="Search options" Margin="0,8,0,0">
-      <WrapPanel Margin="4,10,0,2">
+      <Button Content="Options ▾" ToolTip.Tip="Schemas, table filter, limits, timeouts and column kinds">
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedLeft">
+      <WrapPanel Margin="0,4,0,0" MaxWidth="560">
         <WrapPanel.Styles>
           <Style Selector="StackPanel.field">
             <Setter Property="Margin" Value="0,0,14,6" />
@@ -55,14 +55,14 @@
           <CheckBox Content="GUID/UUID columns" IsChecked="{Binding IncludeGuid}" />
         </StackPanel>
       </WrapPanel>
-    </Expander>
-
-    <StackPanel Grid.Row="2" Spacing="4" Margin="0,0,0,8">
-      <ProgressBar Value="{Binding Progress}" Maximum="100" />
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+      <ProgressBar Width="140" MinWidth="140" Value="{Binding Progress}" Maximum="100" />
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
-    </StackPanel>
+    </WrapPanel>
 
-    <DataGrid Grid.Row="3" ItemsSource="{Binding Matches}"
+    <DataGrid Grid.Row="1" ItemsSource="{Binding Matches}"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"
               GridLinesVisibility="Horizontal">
@@ -75,9 +75,9 @@
       </DataGrid.Columns>
     </DataGrid>
 
-    <GridSplitter Grid.Row="4" ResizeDirection="Rows" Background="Transparent" />
+    <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
 
-    <Expander Grid.Row="5" Header="Skipped tables (timeouts, locks, errors)" HorizontalAlignment="Stretch">
+    <Expander Grid.Row="3" Header="{Binding Skipped.Count, StringFormat='Skipped tables: {0} (timeouts, locks, errors)'}" HorizontalAlignment="Stretch" MinHeight="0" Padding="4">
       <DataGrid ItemsSource="{Binding Skipped}" MaxHeight="220"
                 IsReadOnly="True" AutoGenerateColumns="False" GridLinesVisibility="Horizontal">
         <DataGrid.Columns>

@@ -82,7 +82,7 @@ public static class ComparisonReportBuilder
 
         sb.Append("\n| Key | Status | Differences |\n| --- | --- | --- |\n");
         foreach (var row in rows)
-            sb.Append("| ").Append(Md(row.Key.Replace('\u0001', ','))).Append(" | ").Append(StatusText(row.Status))
+            sb.Append("| ").Append(Md(row.Key)).Append(" | ").Append(row.StatusText)
               .Append(" | ").Append(Md(row.Summary)).Append(" |\n");
         if (truncated) sb.Append($"\n_Only the first {MaxDataRows:N0} rows are listed._\n");
         return sb.ToString();
@@ -98,18 +98,17 @@ public static class ComparisonReportBuilder
         sb.Append("<p class=\"summary\">")
           .Append($"{same:N0} same · <span class=\"chg\">{different:N0} different</span> · ")
           .Append($"<span class=\"del\">{onlyLeft:N0} only in left</span> · <span class=\"add\">{onlyRight:N0} only in right</span>")
-          .Append("</p>\n<p class=\"meta\">")
-          .Append(result.UsedFallbackKey
-              ? "No primary key in common; rows matched by all common columns."
-              : "Rows matched by " + E(string.Join(", ", result.KeyColumns)) + ".")
-          .Append(result.LeftTruncated || result.RightTruncated ? " <b>At least one side hit the row limit; results are partial.</b>" : "")
           .Append("</p>\n");
+        sb.Append("<ul class=\"meta\">");
+        foreach (var note in DataNotes(result)) sb.Append("<li>").Append(E(note)).Append("</li>");
+        sb.Append("</ul>\n");
+        AppendColumnDifferencesHtml(sb, result);
 
         var rows = SelectRows(result, onlyDifferences, out var truncated);
         var columns = rows.FirstOrDefault()?.Cells.Select(c => c.Column).ToList() ?? [];
         if (rows.Count > 0)
         {
-            sb.Append("<table class=\"data\"><thead><tr><th>Status</th>");
+            sb.Append("<table class=\"data\"><thead><tr><th>Key</th><th>Status</th>");
             foreach (var c in columns) sb.Append("<th>").Append(E(c)).Append("</th>");
             sb.Append("</tr></thead><tbody>\n");
             foreach (var row in rows)
@@ -121,7 +120,7 @@ public static class ComparisonReportBuilder
                     DataRowStatus.OnlyRight => "add",
                     _ => ""
                 };
-                sb.Append("<tr class=\"").Append(cls).Append("\"><td>").Append(StatusText(row.Status)).Append("</td>");
+                sb.Append("<tr class=\"").Append(cls).Append("\"><td>").Append(E(row.Key)).Append("</td><td>").Append(row.StatusText).Append("</td>");
                 foreach (var cell in row.Cells)
                 {
                     if (row.Status == DataRowStatus.Different && cell.IsDifferent)
@@ -158,11 +157,46 @@ public static class ComparisonReportBuilder
     {
         var (same, different, onlyLeft, onlyRight) = Counts(result);
         sb.Append($"**{same:N0} same · {different:N0} different · {onlyLeft:N0} only in left · {onlyRight:N0} only in right**\n\n");
-        sb.Append(result.UsedFallbackKey
-            ? "No primary key in common; rows matched by all common columns.\n"
-            : $"Rows matched by {string.Join(", ", result.KeyColumns)}.\n");
+        foreach (var note in DataNotes(result)) sb.Append("- ").Append(Md(note)).Append('\n');
+        if (result.ColumnDifferences.Count > 0)
+        {
+            sb.Append("\n| Column | Rows that differ |\n| --- | ---: |\n");
+            foreach (var c in result.ColumnDifferences)
+                sb.Append("| ").Append(Md(c.Column)).Append(" | ").Append(c.Count.ToString("N0", CultureInfo.InvariantCulture)).Append(" |\n");
+        }
+    }
+
+    private static void AppendColumnDifferencesHtml(StringBuilder sb, DataComparisonResult result)
+    {
+        if (result.ColumnDifferences.Count == 0) return;
+        sb.Append("<table class=\"data cols\"><thead><tr><th>Column</th><th>Rows that differ</th></tr></thead><tbody>\n");
+        foreach (var c in result.ColumnDifferences)
+            sb.Append("<tr><td>").Append(E(c.Column)).Append("</td><td>").Append(c.Count.ToString("N0", CultureInfo.InvariantCulture)).Append("</td></tr>\n");
+        sb.Append("</tbody></table>\n");
+    }
+
+    /// <summary>Plain-language facts about how rows were matched and what may make the result incomplete;
+    /// shown in the app and in both report formats.</summary>
+    public static IReadOnlyList<string> DataNotes(DataComparisonResult result)
+    {
+        var notes = new List<string>
+        {
+            result.UsedFallbackKey
+                ? "No primary key in common; rows matched by all compared columns, so a changed row shows as one row only in left plus one only in right."
+                : $"Rows matched by {string.Join(", ", result.KeyColumns)}.",
+            $"{result.LeftRowCount:N0} row(s) read from left, {result.RightRowCount:N0} from right; {result.ComparedColumns.Count} column(s) compared."
+        };
         if (result.LeftTruncated || result.RightTruncated)
-            sb.Append("\n> At least one side hit the row limit; results are partial.\n");
+            notes.Add($"Row limit reached on {(result.LeftTruncated && result.RightTruncated ? "both sides" : result.LeftTruncated ? "the left" : "the right")}: results are partial, and rows past the limit may show as missing.");
+        if (result.LeftDuplicateKeys + result.RightDuplicateKeys > 0)
+            notes.Add($"Duplicate keys skipped: {result.LeftDuplicateKeys:N0} in left, {result.RightDuplicateKeys:N0} in right (only the first row per key is compared).");
+        if (result.ColumnsOnlyInLeft.Count > 0)
+            notes.Add("Columns only in left (not compared): " + string.Join(", ", result.ColumnsOnlyInLeft) + ".");
+        if (result.ColumnsOnlyInRight.Count > 0)
+            notes.Add("Columns only in right (not compared): " + string.Join(", ", result.ColumnsOnlyInRight) + ".");
+        if (result.IgnoredColumns.Count > 0)
+            notes.Add("Ignored columns: " + string.Join(", ", result.IgnoredColumns) + ".");
+        return notes;
     }
 
     private static void AppendMarkdownHeader(StringBuilder sb, ReportSide left, ReportSide right, DateTimeOffset generatedAt)
@@ -183,7 +217,8 @@ public static class ComparisonReportBuilder
             h1{font-size:20px;margin:0 0 12px}
             table{border-collapse:collapse}
             .sides td{padding:2px 12px 2px 0}.sides td:first-child{color:#666}
-            .summary{font-weight:600;margin:16px 0 4px}.meta{color:#666;margin:4px 0 12px}
+            .summary{font-weight:600;margin:16px 0 4px}.meta{color:#666;margin:4px 0 12px}ul.meta{padding-left:18px}
+            table.cols{width:auto;margin-bottom:16px}
             table.diff,table.data{width:100%;border:1px solid #ddd;font-size:12.5px}
             table.diff th,table.data th{background:#f4f4f4;text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;position:sticky;top:0}
             table.diff td,table.data td{padding:1px 8px;border-bottom:1px solid #f0f0f0;vertical-align:top}
@@ -206,14 +241,6 @@ public static class ComparisonReportBuilder
 
     private static void AppendHtmlEnd(StringBuilder sb) =>
         sb.Append("<p class=\"meta\">Generated by DB Explorer.</p>\n</body></html>\n");
-
-    private static string StatusText(DataRowStatus status) => status switch
-    {
-        DataRowStatus.Different => "Different",
-        DataRowStatus.OnlyLeft => "Only in left",
-        DataRowStatus.OnlyRight => "Only in right",
-        _ => "Same"
-    };
 
     private static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
 

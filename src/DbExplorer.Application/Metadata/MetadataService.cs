@@ -34,7 +34,22 @@ public sealed class MetadataService(MetadataCache cache)
             RefreshedAt = DateTimeOffset.Now
         };
 
-        await cache.SaveAsync(key, snapshot, ct);
+        // Persist to the local cache in the background: the caller only needs the in-memory
+        // snapshot to proceed, and blocking the UI on a disk write adds needless latency.
+        _ = PersistInBackgroundAsync(key, snapshot);
+
         return snapshot;
+    }
+
+    private async Task PersistInBackgroundAsync(string key, MetadataSnapshot snapshot)
+    {
+        try
+        {
+            await cache.SaveAsync(key, snapshot, CancellationToken.None);
+        }
+        catch
+        {
+            // Best-effort cache write; failures here should not affect the already-returned snapshot.
+        }
     }
 }

@@ -3,7 +3,13 @@
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
   <DockPanel>
 	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,2">
-	  <TextBlock x:Name="RowCountText" Grid.Column="0" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+	  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+		<TextBox x:Name="FilterBox" Width="200" MinHeight="26" Padding="6,2" FontSize="12" Watermark="Filter rows…"
+				 ToolTip.Tip="Show only rows where any cell contains this text" />
+		<TextBlock x:Name="RowCountText" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+		<TextBlock x:Name="AggregateText" Classes="hint" VerticalAlignment="Center" FontWeight="SemiBold"
+				   ToolTip.Tip="Summary of the current column over the selected rows" />
+	  </StackPanel>
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
 		<Button Classes="compact" Content="Copy ▾"
 				ToolTip.Tip="Copy every row. Ctrl+C (or right-click) copies the selected rows.">
@@ -33,6 +39,7 @@
 			  GridLinesVisibility="Horizontal">
 	  <DataGrid.ContextMenu>
 		<ContextMenu>
+		  <MenuItem Header="View cell value…" Click="OnViewCell" />
 		  <MenuItem Header="Copy cell value" Click="OnCopyCell" />
 		  <MenuItem Header="Copy selected rows" InputGesture="Ctrl+C" Click="OnCopySelected" />
 		  <MenuItem Header="Copy selected rows with header" Click="OnCopySelectedWithHeader" />

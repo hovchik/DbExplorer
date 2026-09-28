@@ -33,9 +33,15 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
 
     public Func<string, string> Quote { get; init; } = id => id;
 
+    /// <summary>More rows existed than the row limit; <see cref="TotalRowCount"/> says how many.</summary>
+    public bool IsTruncated { get; init; }
+    public long TotalRowCount { get; init; }
+
     public static ResultSetView From(string title, QueryResultSet rs, DatabaseSession session, string? sourceTable = null) =>
         new(title, rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList())
         {
+            IsTruncated = rs.IsTruncated,
+            TotalRowCount = rs.TotalRowCount,
             SourceTable = sourceTable,
             Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
             Quote = session.Provider.QuoteIdentifier

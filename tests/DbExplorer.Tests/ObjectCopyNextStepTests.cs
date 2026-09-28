@@ -82,3 +82,15 @@ public class ObjectCopyStreamingAndBatchTests
         Assert.Equal(["vOrderTotals", "usp_GetCustomer", "trg"], ordered.Skip(4));
     }
 }
+
+public class ObjectCopySchemaMappingTests
+{
+    [Fact]
+    public void Default_schemas_map_between_engines()
+    {
+        Assert.Equal("dbo", ObjectCopyService.MapSchema("public", SqlDialect.PostgresKey, SqlDialect.SqlServerKey));
+        Assert.Equal("public", ObjectCopyService.MapSchema("dbo", SqlDialect.SqlServerKey, SqlDialect.PostgresKey));
+        Assert.Equal("sales", ObjectCopyService.MapSchema("sales", SqlDialect.PostgresKey, SqlDialect.SqlServerKey));
+        Assert.Equal("public", ObjectCopyService.MapSchema("public", SqlDialect.PostgresKey, SqlDialect.PostgresKey));
+    }
+}

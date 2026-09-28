@@ -128,6 +128,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public async Task ShutdownAsync()
     {
         await Query.SaveTabsAsync();
+        await Query.RollbackOpenTransactionsAsync();
         foreach (var tab in _tabs) tab.Attach(null);
         await Comparer.DisposeIndependentSessionsAsync();
         if (Session is { } s) await s.DisposeAsync();

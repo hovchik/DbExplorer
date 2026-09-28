@@ -17,9 +17,41 @@
 	  <Button Content="▶ Statement" Classes="tool" Click="OnRunStatement"
 			  ToolTip.Tip="Run only the statement at the caret (Ctrl+Enter)" />
 	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
-	  <Button Content="Format" Classes="tool" Click="OnFormat" ToolTip.Tip="Format the selection or the whole script (Ctrl+Shift+F)" />
-	  <Button Content="-- Comment" Classes="tool" Click="OnToggleComment" ToolTip.Tip="Comment / uncomment the selected lines (Ctrl+/)" />
-	  <Button Content="Find" Classes="tool" Click="OnFind" ToolTip.Tip="Find and replace (Ctrl+F / Ctrl+H)" />
+	  <Button Content="Explain ▾" Classes="tool" ToolTip.Tip="Execution plan of the selection / statement at the caret (Ctrl+L)">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Estimated plan (does not run the query)" InputGesture="Ctrl+L" Click="OnExplain" />
+			<MenuItem Header="Explain Analyze (runs it in a transaction that is rolled back)" InputGesture="Ctrl+Shift+L" Click="OnExplainAnalyze" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
+	  <CheckBox Content="Auto-commit" IsChecked="{Binding AutoCommit}" Margin="4,0,4,4"
+				ToolTip.Tip="Off: runs happen inside a transaction that stays open until you Commit or Rollback, so you can check changes first" />
+	  <Button Content="✔ Commit" Classes="tool" Command="{Binding CommitCommand}" IsVisible="{Binding HasOpenTransaction}"
+			  ToolTip.Tip="Make the changes of the open transaction permanent" />
+	  <Button Content="↶ Rollback" Classes="tool" Command="{Binding RollbackCommand}" IsVisible="{Binding HasOpenTransaction}"
+			  ToolTip.Tip="Undo everything done since the transaction started" />
+	  <TextBlock Text="{Binding TransactionInfo}" IsVisible="{Binding HasOpenTransaction}" Foreground="#E08A00" FontWeight="SemiBold" />
+	  <Button Content="Tools ▾" Classes="tool">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Format" InputGesture="Ctrl+Shift+F" Click="OnFormat" />
+			<MenuItem Header="Comment / uncomment lines" InputGesture="Ctrl+OemQuestion" Click="OnToggleComment" />
+			<MenuItem Header="UPPER CASE selection" InputGesture="Ctrl+Shift+U" Click="OnUpperCase" />
+			<MenuItem Header="lower case selection" InputGesture="Ctrl+Alt+U" Click="OnLowerCase" />
+			<MenuItem Header="Duplicate line / selection" InputGesture="Ctrl+D" Click="OnDuplicate" />
+			<Separator />
+			<MenuItem Header="Find" InputGesture="Ctrl+F" Click="OnFind" />
+			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />
+			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
+			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
+	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4" ToolTip.Tip="Rows kept per result set (0 = all). Larger results are read to the end but not kept, so the app stays responsive.">
+		<TextBlock Text="Max rows" VerticalAlignment="Center" />
+		<NumericUpDown Value="{Binding MaxRows}" Minimum="0" Maximum="10000000" Increment="10000" FormatString="N0" Width="160" />
+	  </StackPanel>
 	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
 				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
 	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
@@ -54,6 +86,21 @@
 	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
 	</WrapPanel>
 
+	<Popup Grid.Row="1" x:Name="SignaturePopup" IsLightDismissEnabled="False" Placement="TopEdgeAlignedLeft">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
+			  BorderThickness="1" CornerRadius="4" Padding="8,4">
+		<TextBlock x:Name="SignatureText" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12" />
+	  </Border>
+	</Popup>
+	<Popup Grid.Row="1" x:Name="GoToLinePopup" IsLightDismissEnabled="True" Placement="TopEdgeAlignedRight">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
+			  BorderThickness="1" CornerRadius="4" Padding="8">
+		<StackPanel Orientation="Horizontal" Spacing="6">
+		  <TextBlock Text="Go to line" VerticalAlignment="Center" />
+		  <TextBox x:Name="GoToLineBox" Width="90" KeyDown="OnGoToLineKeyDown" />
+		</StackPanel>
+	  </Border>
+	</Popup>
 	<Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
 	  <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" WordWrap="False"
 					 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
@@ -63,7 +110,7 @@
 	</Border>
 	<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
 	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11"
-				 Text="Ctrl+Space suggestions · F5 run · Ctrl+Enter run statement · Ctrl+Shift+F format · Ctrl+/ comment · hover a name for details" />
+				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
 	  <TextBlock Grid.Column="1" x:Name="CaretInfo" Classes="hint" FontSize="11" />
 	</Grid>
 

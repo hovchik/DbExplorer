@@ -14,8 +14,9 @@ public sealed class QueryExecutionService
     public bool IsPotentiallyDestructive(string sql) => DestructiveKeyword.IsMatch(sql);
 
     public Task<QueryExecutionResult> ExecuteScriptAsync(
-        DatabaseSession session, string sql, string? database, int timeoutSeconds, CancellationToken ct = default) =>
-        session.Provider.ExecuteScriptAsync(sql, database, timeoutSeconds, ct);
+        DatabaseSession session, string sql, string? database, int timeoutSeconds, CancellationToken ct = default,
+        int maxRows = int.MaxValue) =>
+        session.Provider.ExecuteScriptAsync(sql, database, timeoutSeconds, ct, maxRows);
 
     public Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(
         DatabaseSession session, DbObject routine, CancellationToken ct = default) =>

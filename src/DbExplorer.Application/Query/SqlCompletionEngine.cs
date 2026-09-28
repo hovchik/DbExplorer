@@ -688,6 +688,45 @@ public sealed class SqlCompletionEngine
         return new CompletionItem(o.Name, insert, kind, detail);
     }
 
+    // ----- Navigation and signature help -----
+
+    /// <summary>The table/view/routine named at <paramref name="offset"/> (following aliases), for "go to definition".</summary>
+    public DbObject? ResolveObjectAt(string text, int offset)
+    {
+        var token = SqlLexer.Tokenize(text).FirstOrDefault(t => t.IsIdentifier && offset >= t.Start && offset <= t.End);
+        if (token.Text is null) return null;
+        var (statement, _) = CurrentStatement(text, offset);
+        var name = token.Identifier;
+        var qualifier = ReadQualifier(text, token.Start);
+        if (qualifier is null && ParseReferences(statement).FirstOrDefault(r => Same(r.Alias, name)) is { } aliased) return aliased.Object;
+        return Resolve(qualifier?[^1], name);
+    }
+
+    /// <summary>The signature of the built-in function whose argument list contains <paramref name="caret"/>, and which
+    /// argument (0-based) the caret is in; null outside a known function call.</summary>
+    public (string Signature, int Argument)? SignatureAt(string text, int caret)
+    {
+        caret = Math.Clamp(caret, 0, text.Length);
+        var tokens = SqlLexer.Tokenize(text[..caret]).Where(t => !t.IsTrivia).ToList();
+        var depth = 0;
+        var argument = 0;
+        for (var i = tokens.Count - 1; i >= 0; i--)
+        {
+            var t = tokens[i];
+            if (t.Kind == SqlTokenKind.CloseParen) depth++;
+            else if (t.Kind == SqlTokenKind.Comma && depth == 0) argument++;
+            else if (t.Kind == SqlTokenKind.Semicolon) return null;
+            else if (t.Kind == SqlTokenKind.OpenParen)
+            {
+                if (depth > 0) { depth--; continue; }
+                if (i == 0 || tokens[i - 1].Kind != SqlTokenKind.Word) return null;
+                var fn = _functions.FirstOrDefault(f => Same(f.Name, tokens[i - 1].Text));
+                return fn is null ? null : (fn.Signature, argument);
+            }
+        }
+        return null;
+    }
+
     // ----- Hover -----
 
     /// <summary>A short description of the identifier at <paramref name="offset"/> (object, column, alias or function), or null.</summary>

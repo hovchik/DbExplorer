@@ -65,8 +65,11 @@ public interface IDatabaseProvider : IAsyncDisposable
     /// Executes an arbitrary, possibly multi-statement, script against the given database
     /// (or the profile's default database when null) and returns every produced result set.
     /// </summary>
+    /// <param name="maxRows">Rows kept per result set; further rows are read and discarded (never cancelled, so the
+    /// rest of the script still runs) and the result set is flagged as truncated.</param>
+    /// <exception cref="SqlExecutionException">The server rejected the script; carries the error position when known.</exception>
     Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default);
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue);
 
     /// <summary>Executes a stored procedure or function call with the given argument values.</summary>
     Task<QueryExecutionResult> ExecuteRoutineAsync(

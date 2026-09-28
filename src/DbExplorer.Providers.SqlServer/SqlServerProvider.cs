@@ -289,53 +289,18 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     public async Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default)
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue)
     {
         var sw = Stopwatch.StartNew();
         var connectionString = SqlServerSql.BuildConnectionString(
             _profile, SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true);
-        var batches = SplitBatches(sql);
 
-        var resultSets = new List<QueryResultSet>();
         var messages = new List<string>();
-        var rowsAffected = 0;
-
         await using var cn = new SqlConnection(connectionString);
         cn.InfoMessage += (_, e) => messages.Add(e.Message);
         await cn.OpenAsync(ct);
 
-        foreach (var batch in batches)
-        {
-            if (string.IsNullOrWhiteSpace(batch)) continue;
-
-            await using var cmd = cn.CreateCommand();
-            cmd.CommandText = batch;
-            cmd.CommandTimeout = timeoutSeconds;
-
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            do
-            {
-                if (reader.FieldCount > 0)
-                {
-                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
-                    var rows = new List<IReadOnlyList<object?>>();
-                    while (await reader.ReadAsync(ct))
-                    {
-                        var row = new object?[reader.FieldCount];
-                        reader.GetValues(row!);
-                        for (var i = 0; i < row.Length; i++)
-                            if (row[i] == DBNull.Value) row[i] = null;
-                        rows.Add(row);
-                    }
-                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
-                }
-                else
-                {
-                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
-                }
-            } while (await reader.NextResultAsync(ct));
-        }
-
+        var (resultSets, rowsAffected) = await RunBatchesAsync(cn, null, sql, timeoutSeconds, maxRows, ct);
         return new QueryExecutionResult
         {
             ResultSets = resultSets,
@@ -343,6 +308,63 @@ public sealed class SqlServerProvider : IDatabaseProvider
             Messages = messages,
             Elapsed = sw.Elapsed
         };
+    }
+
+    /// <summary>
+    /// Runs every GO-separated batch on the connection, keeping at most <paramref name="maxRows"/> rows per result set
+    /// (the rest is read and discarded so later statements still run). Server errors are rethrown as
+    /// <see cref="SqlExecutionException"/> with the line in the whole script, not in the batch.
+    /// </summary>
+    private static async Task<(List<QueryResultSet> ResultSets, int RowsAffected)> RunBatchesAsync(
+        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, CancellationToken ct)
+    {
+        var resultSets = new List<QueryResultSet>();
+        var rowsAffected = 0;
+
+        foreach (var (batch, startLine) in SplitBatches(sql))
+        {
+            if (string.IsNullOrWhiteSpace(batch)) continue;
+
+            await using var cmd = cn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = batch;
+            cmd.CommandTimeout = timeoutSeconds;
+
+            try
+            {
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                do
+                {
+                    if (reader.FieldCount > 0)
+                    {
+                        var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                        var rows = new List<IReadOnlyList<object?>>();
+                        long total = 0;
+                        while (await reader.ReadAsync(ct))
+                        {
+                            if (++total > maxRows) continue;
+                            var row = new object?[reader.FieldCount];
+                            reader.GetValues(row!);
+                            for (var i = 0; i < row.Length; i++)
+                                if (row[i] == DBNull.Value) row[i] = null;
+                            rows.Add(row);
+                        }
+                        resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = total > maxRows });
+                    }
+                    else
+                    {
+                        rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+                    }
+                } while (await reader.NextResultAsync(ct));
+            }
+            catch (SqlException ex)
+            {
+                int? line = ex.LineNumber > 0 ? startLine + ex.LineNumber - 1 : null;
+                throw new SqlExecutionException(line is null ? ex.Message : $"Line {line}: {ex.Message}", line, null, ex);
+            }
+        }
+
+        return (resultSets, rowsAffected);
     }
 
     public async Task<QueryExecutionResult> ExecuteRoutineAsync(
@@ -490,17 +512,48 @@ public sealed class SqlServerProvider : IDatabaseProvider
         public async Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default)
         {
             var affected = 0;
-            foreach (var batch in SplitBatches(sql))
+            foreach (var (batch, startLine) in SplitBatches(sql))
             {
                 if (string.IsNullOrWhiteSpace(batch)) continue;
                 await using var cmd = connection.CreateCommand();
                 cmd.Transaction = transaction;
                 cmd.CommandText = batch;
                 cmd.CommandTimeout = timeoutSeconds;
-                var rows = await cmd.ExecuteNonQueryAsync(ct);
-                if (rows > 0) affected += rows;
+                try
+                {
+                    var rows = await cmd.ExecuteNonQueryAsync(ct);
+                    if (rows > 0) affected += rows;
+                }
+                catch (SqlException ex)
+                {
+                    int? line = ex.LineNumber > 0 ? startLine + ex.LineNumber - 1 : null;
+                    throw new SqlExecutionException(line is null ? ex.Message : $"Line {line}: {ex.Message}", line, null, ex);
+                }
             }
             return affected;
+        }
+
+        public async Task<QueryExecutionResult> QueryAsync(string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default)
+        {
+            var sw = Stopwatch.StartNew();
+            var messages = new List<string>();
+            void OnInfo(object? _, SqlInfoMessageEventArgs e) => messages.Add(e.Message);
+            connection.InfoMessage += OnInfo;
+            try
+            {
+                var (resultSets, rowsAffected) = await RunBatchesAsync(connection, transaction, sql, timeoutSeconds, maxRows, ct);
+                return new QueryExecutionResult { ResultSets = resultSets, RowsAffected = rowsAffected, Messages = messages, Elapsed = sw.Elapsed };
+            }
+            finally
+            {
+                connection.InfoMessage -= OnInfo;
+            }
+        }
+
+        public async Task RollbackAsync(CancellationToken ct = default)
+        {
+            if (transaction is not null) await transaction.RollbackAsync(ct);
+            _committed = true; // nothing left to roll back on dispose
         }
 
         public async Task CommitAsync(CancellationToken ct = default)
@@ -524,26 +577,29 @@ public sealed class SqlServerProvider : IDatabaseProvider
         }
     }
 
-    /// <summary>Splits a script on GO batch separators (SSMS convention); the word must be alone on its line.</summary>
-    private static IReadOnlyList<string> SplitBatches(string sql)
+    /// <summary>Splits a script on GO batch separators (SSMS convention); the word must be alone on its line.
+    /// Each batch comes with the 1-based script line it starts on, to map error lines back to the script.</summary>
+    private static IReadOnlyList<(string Text, int StartLine)> SplitBatches(string sql)
     {
         var lines = sql.Replace("\r\n", "\n").Split('\n');
-        var batches = new List<string>();
+        var batches = new List<(string, int)>();
         var current = new StringBuilder();
+        var startLine = 1;
 
-        foreach (var line in lines)
+        for (var i = 0; i < lines.Length; i++)
         {
-            if (line.Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
+            if (lines[i].Trim().Equals("GO", StringComparison.OrdinalIgnoreCase))
             {
-                batches.Add(current.ToString());
+                batches.Add((current.ToString(), startLine));
                 current.Clear();
+                startLine = i + 2;
             }
             else
             {
-                current.AppendLine(line);
+                current.AppendLine(lines[i]);
             }
         }
-        if (current.Length > 0) batches.Add(current.ToString());
+        if (current.Length > 0) batches.Add((current.ToString(), startLine));
         return batches;
     }
 

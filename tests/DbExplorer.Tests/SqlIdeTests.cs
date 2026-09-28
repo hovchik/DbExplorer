@@ -207,3 +207,25 @@ public class SqlScriptToolsTests
         Assert.Contains(tokens, t => t.Kind == SqlTokenKind.Operator && t.Text == "::");
     }
 }
+
+public class SqlNavigationTests
+{
+    private readonly SqlCompletionEngine _engine = new(TestSnapshots.Shop(), id => "[" + id + "]", "SqlServer");
+
+    [Fact]
+    public void Resolves_objects_through_aliases_and_schemas()
+    {
+        const string sql = "SELECT o.OrderId FROM sales.Orders o";
+        Assert.Equal("sales.Orders", _engine.ResolveObjectAt(sql, "SELECT o".Length - 1)?.FullName);
+        Assert.Equal("sales.Orders", _engine.ResolveObjectAt(sql, sql.IndexOf("Orders", StringComparison.Ordinal) + 2)?.FullName);
+        Assert.Null(_engine.ResolveObjectAt(sql, 2));
+    }
+
+    [Fact]
+    public void Signature_help_tracks_the_argument_under_the_caret()
+    {
+        Assert.Equal(("DATEADD(part, number, date)", 1), _engine.SignatureAt("SELECT DATEADD(day, ", 20));
+        Assert.Equal(("COALESCE(value, value, …)", 0), _engine.SignatureAt("SELECT COALESCE((1 + 2)", 23));
+        Assert.Null(_engine.SignatureAt("SELECT (1, ", 11));
+    }
+}

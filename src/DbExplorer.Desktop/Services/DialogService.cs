@@ -28,6 +28,12 @@ public interface IDialogService
     Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null);
 
     void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
+
+    /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
+    Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
+
+    /// <summary>Shows a (possibly long) cell value, pretty-printed when it is JSON or XML.</summary>
+    void ShowValue(string title, string value);
 }
 
 public sealed class DialogService(ProviderRegistry registry) : IDialogService
@@ -83,6 +89,21 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
         var window = new ConfirmWindow(message, confirmText, requiredText, banner);
         if (Owner is null) return false;
         return await window.ShowDialog<bool>(Owner);
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(
+        IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults)
+    {
+        if (Owner is null) return null;
+        var window = new ParametersWindow(names, defaults);
+        return await window.ShowDialog<IReadOnlyDictionary<string, string>?>(Owner);
+    }
+
+    public void ShowValue(string title, string value)
+    {
+        var window = new ValueViewerWindow(title, value);
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 
     public void ShowCommandPalette(IReadOnlyList<PaletteItem> items)

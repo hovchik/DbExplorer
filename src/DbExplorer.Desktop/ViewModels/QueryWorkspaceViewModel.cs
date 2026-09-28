@@ -41,7 +41,21 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         _scripts = scripts;
         _dialogs = dialogs;
         NewTab();
+
+        // Unsaved scratch text survives a crash: the tab list is written every 30 seconds while something changed.
+        _autosave = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _autosave.Tick += async (_, _) =>
+        {
+            var snapshot = string.Join("\u0001", Documents.Select(d => d.Title + "\u0002" + d.Sql));
+            if (snapshot == _lastSaved) return;
+            _lastSaved = snapshot;
+            await SaveTabsAsync();
+        };
+        _autosave.Start();
     }
+
+    private readonly Avalonia.Threading.DispatcherTimer _autosave;
+    private string _lastSaved = "";
 
     public ObservableCollection<QueryViewModel> Documents { get; } = [];
 
@@ -68,6 +82,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         doc.FilePath = filePath;
         doc.SetText(sql, markClean: !dirty);
         doc.Attach(_session);
+        doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
         Documents.Add(doc);
         SelectedDocument = doc;
         return doc;
@@ -81,11 +96,19 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         doc ??= SelectedDocument;
         if (doc is null) return;
-        if (doc.IsDirty && doc.FilePath is not null &&
-            !await _dialogs.ConfirmAsync($"{doc.Title} has unsaved changes. Close it anyway?", "Close without saving"))
+        var unsaved = doc.FilePath is not null ? doc.IsDirty : !string.IsNullOrWhiteSpace(doc.Sql);
+        if (unsaved && !await _dialogs.ConfirmAsync(
+                doc.FilePath is null
+                    ? $"{doc.Title} is not saved to a file. Close it and discard its text?"
+                    : $"{doc.Title} has unsaved changes. Close it anyway?",
+                "Close without saving"))
+            return;
+        if (doc.HasOpenTransaction &&
+            !await _dialogs.ConfirmAsync($"{doc.Title} has an open transaction. Closing rolls it back. Continue?", "Roll back and close"))
             return;
 
         var index = Documents.IndexOf(doc);
+        await doc.EndTransactionAsync(commit: false, reason: "tab closed");
         doc.Attach(null);
         Documents.Remove(doc);
         if (Documents.Count == 0) NewTab();
@@ -164,6 +187,13 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         {
             // A damaged tabs file must not block the application.
         }
+    }
+
+    /// <summary>On shutdown: nothing is committed implicitly.</summary>
+    public async Task RollbackOpenTransactionsAsync()
+    {
+        foreach (var doc in Documents.Where(d => d.HasOpenTransaction).ToList())
+            await doc.EndTransactionAsync(commit: false, reason: "application closed");
     }
 
     public async Task SaveTabsAsync()

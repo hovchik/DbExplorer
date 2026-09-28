@@ -98,7 +98,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         else
             warnings.Add("Table triggers are not copied (copy them separately); the script can be reviewed before running it.");
 
-        var missingParents = MissingParents(sourceSnapshot, source, targetSnapshot, a.TargetDatabase, a.TargetSchema, a.TargetName);
+        var missingParents = MissingParents(sourceSnapshot, source, targetSnapshot, a.TargetDatabase, a.TargetSchema, a.TargetName,
+            sourceProviderKey, targetProviderKey);
         if (missingParents.Count > 0)
         {
             warnings.Add($"References {missingParents.Count} table(s) missing on the right: " +
@@ -229,14 +230,29 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         };
     }
 
+    /// <summary>
+    /// The schema an object lands in on the target engine. The engines' default schemas map onto each other
+    /// (PostgreSQL <c>public</c> ↔ SQL Server <c>dbo</c>): SQL Server cannot create a schema named <c>public</c>
+    /// (a built-in role owns the name), and a <c>dbo</c> schema in PostgreSQL would be surprising.
+    /// </summary>
+    public static string MapSchema(string schema, string sourceProviderKey, string targetProviderKey) =>
+        sourceProviderKey == targetProviderKey ? schema
+        : targetProviderKey == SqlDialect.SqlServerKey && Same(schema, "public") ? "dbo"
+        : targetProviderKey == SqlDialect.PostgresKey && Same(schema, "dbo") ? "public"
+        : schema;
+
     /// <summary>Tables referenced by <paramref name="table"/> through foreign keys, directly or indirectly,
     /// that are missing on the target; ordered so every table comes after the tables it references.</summary>
     public static IReadOnlyList<DbObject> MissingParents(
         MetadataSnapshot sourceSnapshot, DbObject table, MetadataSnapshot targetSnapshot,
-        string targetDatabase, string targetSchema, string targetName)
+        string targetDatabase, string targetSchema, string targetName,
+        string? sourceProviderKey = null, string? targetProviderKey = null)
     {
         var result = new List<DbObject>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { table.FullName };
+        string Mapped(string schema) => sourceProviderKey is null || targetProviderKey is null
+            ? schema
+            : MapSchema(schema, sourceProviderKey, targetProviderKey);
 
         void Visit(DbObject child)
         {
@@ -245,10 +261,11 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                 var key = $"{fk.ReferencedSchema}.{fk.ReferencedTable}";
                 if (!visited.Add(key)) continue;
 
+                var parentSchema = Mapped(fk.ReferencedSchema);
                 var existsOnTarget = targetSnapshot.Objects.Any(o =>
                     o.Type == DbObjectType.Table && Same(o.Database, targetDatabase) &&
-                    Same(o.Schema, fk.ReferencedSchema) && Same(o.Name, fk.ReferencedTable)) ||
-                    (Same(fk.ReferencedSchema, targetSchema) && Same(fk.ReferencedTable, targetName));
+                    Same(o.Schema, parentSchema) && Same(o.Name, fk.ReferencedTable)) ||
+                    (Same(parentSchema, targetSchema) && Same(fk.ReferencedTable, targetName));
                 if (existsOnTarget) continue;
 
                 var parent = sourceSnapshot.Objects.FirstOrDefault(o =>
@@ -366,7 +383,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             : [];
 
         // Schemas first: CREATE SCHEMA is idempotent, so it is emitted whenever the cache has not seen the schema.
-        var schemas = parents.Select(p => p.Schema).Append(a.TargetSchema).Distinct(StringComparer.OrdinalIgnoreCase)
+        var schemas = parents.Select(p => MapSchema(p.Schema, c.Source.ProviderKey, c.Target.ProviderKey)).Append(a.TargetSchema).Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(s => !c.TargetSession.Snapshot.Objects.Any(o => Same(o.Database, a.TargetDatabase) && Same(o.Schema, s)));
         foreach (var schema in schemas)
             c.Add($"Create schema {schema} if missing", CopyStepKind.Schema, t.CreateSchemaIfMissing(schema));
@@ -393,7 +410,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                 foreach (var table in parents.Append(a.Source))
                 {
                     var isMain = ReferenceEquals(table, a.Source);
-                    var (schema, name) = isMain ? (a.TargetSchema, a.TargetName) : (table.Schema, table.Name);
+                    var (schema, name) = isMain ? (a.TargetSchema, a.TargetName) : (MapSchema(table.Schema, c.Source.ProviderKey, c.Target.ProviderKey), table.Name);
                     var constraints = await ConstraintsOfAsync(c, table, ct);
                     created.Add((table, schema, name, CreateTable(c, table, schema, name, constraints), constraints));
                 }
@@ -867,7 +884,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             var selfReference = Same(fk.ReferencedSchema, table.Schema) && Same(fk.ReferencedTable, table.Name);
             var (parentSchema, parentName) = selfReference ? (schema, name)
                 : Same(fk.ReferencedSchema, a.Source.Schema) && Same(fk.ReferencedTable, a.Source.Name) ? (a.TargetSchema, a.TargetName)
-                : (fk.ReferencedSchema, fk.ReferencedTable);
+                : (MapSchema(fk.ReferencedSchema, c.Source.ProviderKey, c.Target.ProviderKey), fk.ReferencedTable);
 
             var parentExists = c.CreatedTables.Contains($"{parentSchema}.{parentName}") ||
                                c.TargetSession.Snapshot.Objects.Any(o => o.Type == DbObjectType.Table && Same(o.Database, a.TargetDatabase) &&

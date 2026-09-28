@@ -3,9 +3,12 @@ using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Export;
+using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Connections;
+using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
@@ -27,13 +30,17 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private readonly MultiDatabaseQueryService multiQuery;
     private readonly ScriptStore scripts;
     private readonly IDialogService dialogs;
+    private readonly DefinitionService definitions;
     private DatabaseSession? _session;
     private SqlCompletionEngine? _completion;
     private CancellationTokenSource? _runCts;
     private bool _syncingDocument;
 
-    public QueryViewModel(QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs)
+    public QueryViewModel(
+        QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs,
+        DefinitionService definitions)
     {
+        this.definitions = definitions;
         this.queryService = queryService;
         this.multiQuery = multiQuery;
         this.scripts = scripts;
@@ -90,6 +97,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     public void Attach(DatabaseSession? session)
     {
+        // An open manual transaction belongs to the old connection: roll it back rather than leave it hanging.
+        if (_transaction is not null && !ReferenceEquals(session, _session)) _ = EndTransactionAsync(commit: false, reason: "connection changed");
         if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
         _session = session;
         if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
@@ -136,12 +145,18 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             _syncingDocument = false;
         }
         ExecuteCommand.NotifyCanExecuteChanged();
+        ExplainCommand.NotifyCanExecuteChanged();
+        ExplainAnalyzeCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsRunningChanged(bool value)
     {
         ExecuteCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        ExplainCommand.NotifyCanExecuteChanged();
+        ExplainAnalyzeCommand.NotifyCanExecuteChanged();
+        CommitCommand.NotifyCanExecuteChanged();
+        RollbackCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnRunOnMultipleDatabasesChanged(bool value)
@@ -207,19 +222,26 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void Cancel() => _runCts?.Cancel();
 
-    /// <summary>Runs <paramref name="part"/> (a selection or the statement at the caret) or, when null/blank, the whole script.</summary>
+    /// <summary>
+    /// Runs <paramref name="run"/> (a selection or the statement at the caret, with its offset in the editor) or, when
+    /// null, the whole script: asks for undeclared parameters, warns about UPDATE/DELETE without WHERE and other
+    /// destructive statements, then runs in auto-commit or inside the tab's manual transaction.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanExecute))]
-    private async Task ExecuteAsync(string? part)
+    private async Task ExecuteAsync(QueryRun? run)
     {
         if (_session is not { } session) return;
 
         var targets = RunOnMultipleDatabases ? _allDatabases.Where(d => d.IsSelected).Select(d => d.Name).ToList() : [];
-        var sql = string.IsNullOrWhiteSpace(part) ? Sql : part;
+        var sql = run is { Sql: { Length: > 0 } part } && !string.IsNullOrWhiteSpace(part) ? part : Sql;
+        var startOffset = run is { Sql.Length: > 0 } ? run.StartOffset : 0;
         if (string.IsNullOrWhiteSpace(sql)) return;
+        ErrorCleared?.Invoke();
 
-        if (queryService.IsPotentiallyDestructive(sql) &&
-            !await ConfirmDestructiveAsync(session.Profile, Math.Max(1, targets.Count)))
-            return;
+        sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
+        if (sql is null) { Status = "Not run (parameters were not given)."; return; }
+
+        if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
 
         _runCts?.Dispose();
         _runCts = new CancellationTokenSource();
@@ -230,16 +252,20 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             if (RunOnMultipleDatabases)
                 await RunOnDatabasesAsync(session, sql, targets, ct);
+            else if (!AutoCommit)
+                await RunInTransactionAsync(session, sql, ct);
             else
                 await RunOnceAsync(session, sql, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            Status = "Cancelled.";
+            Status = "Cancelled." + (HasOpenTransaction ? " The transaction is still open: Commit or Rollback." : "");
         }
         catch (Exception ex)
         {
-            Status = "Error: " + ex.Message;
+            Status = "Error: " + ex.Message + (HasOpenTransaction ? " · transaction still open" : "");
+            Messages.Add(ex.Message);
+            if (ex is SqlExecutionException { Line: { } line } located) ErrorLocated?.Invoke(startOffset, line, located.Column);
             await SafeAppendHistoryAsync(sql, succeeded: false, error: ex.Message);
         }
         finally
@@ -248,22 +274,29 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         }
     }
 
+    private int RowLimit => MaxRows <= 0 ? int.MaxValue : (int)Math.Min(MaxRows, int.MaxValue);
+
     private async Task RunOnceAsync(DatabaseSession session, string sql, CancellationToken ct)
     {
         Status = "Running…";
-        var result = await queryService.ExecuteScriptAsync(session, sql, database: null, TimeoutSeconds, ct);
+        var result = await queryService.ExecuteScriptAsync(session, sql, database: null, TimeoutSeconds, ct, RowLimit);
+        ShowResult(session, result);
+        await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
+    }
 
+    private void ShowResult(DatabaseSession session, QueryExecutionResult result, string prefix = "")
+    {
         ResultSets = result.ResultSets
-            .Select((rs, i) => ResultSetView.From($"Result set {i + 1}", rs, session))
+            .Select((rs, i) => ResultSetView.From(
+                $"Result {i + 1}" + (rs.IsTruncated ? $" (first {rs.Rows.Count:N0} of {rs.TotalRowCount:N0})" : ""), rs, session))
             .ToList();
 
         foreach (var m in result.Messages) Messages.Add(m);
-
-        Status = $"Completed in {result.Elapsed.TotalMilliseconds:N0} ms" +
-                 (result.RowsAffected > 0 ? $" · {result.RowsAffected} row(s) affected" : "") +
-                 (result.ResultSets.Count > 0 ? $" · {result.ResultSets.Count} result set(s)" : "");
-
-        await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
+        var truncated = result.ResultSets.Where(r => r.IsTruncated).ToList();
+        Status = prefix + $"Completed in {result.Elapsed.TotalMilliseconds:N0} ms" +
+                 (result.RowsAffected > 0 ? $" · {result.RowsAffected:N0} row(s) affected" : "") +
+                 (result.ResultSets.Count > 0 ? $" · {result.ResultSets.Count} result set(s)" : "") +
+                 (truncated.Count > 0 ? $" · showing the first {RowLimit:N0} rows (raise the row limit to see more)" : "");
     }
 
     private async Task RunOnDatabasesAsync(DatabaseSession session, string sql, IReadOnlyList<string> databases, CancellationToken ct)
@@ -323,14 +356,22 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         }
     }
 
-    private Task<bool> ConfirmDestructiveAsync(ConnectionProfile profile, int databaseCount)
+    /// <summary>Asks before scripts that change data or schema; lists statements that touch every row or drop objects.</summary>
+    private Task<bool> ConfirmRiskyAsync(ConnectionProfile profile, string sql, int databaseCount)
     {
+        var unsafeStatements = SqlEditorAnalysis.FindUnsafeStatements(sql);
+        if (!queryService.IsPotentiallyDestructive(sql) && unsafeStatements.Count == 0) return Task.FromResult(true);
+        if (!AutoCommit && !profile.IsProduction && unsafeStatements.Count == 0) return Task.FromResult(true); // reversible: Rollback
+
         var scope = databaseCount > 1 ? $" on {databaseCount} databases" : "";
-        const string what = "This script may modify data or schema (INSERT/UPDATE/DELETE/DROP/ALTER/EXEC/...).";
+        var what = unsafeStatements.Count > 0
+            ? "Careful:\n" + string.Join("\n", unsafeStatements.Take(8).Select(u => $"  • line {u.Line}: {u.Description}")) + "\n"
+            : "This script may modify data or schema (INSERT/UPDATE/DELETE/DROP/ALTER/EXEC/...).";
+        var tx = AutoCommit ? "" : "\nIt runs inside the open transaction, so you can still Rollback.";
         return profile.IsProduction
             ? dialogs.ConfirmAsync(
-                $"{what} You are connected to a PRODUCTION environment. Run it{scope} anyway?",
+                $"{what} You are connected to a PRODUCTION environment. Run it{scope} anyway?{tx}",
                 "Run on production", requiredText: "PRODUCTION", banner: $"PRODUCTION · {profile.DisplayName}")
-            : dialogs.ConfirmAsync($"{what} Run it{scope} anyway?", "Run anyway");
+            : dialogs.ConfirmAsync($"{what} Run it{scope} anyway?{tx}", "Run anyway");
     }
 }

@@ -64,13 +64,17 @@ public partial class ComparerViewModel
 
     partial void OnIsCopyBatchModeChanged(bool value) => RefreshCopyCommands();
 
+    private string TargetSchemaFor(DbObject obj) => LeftSession is { } l && RightSession is { } r
+        ? ObjectCopyService.MapSchema(obj.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey)
+        : obj.Schema;
+
     private void StartBatch(IEnumerable<DbObject> objects)
     {
         if (LeftSession is null) return;
         BatchItems.Clear();
         foreach (var obj in ObjectCopyService.OrderForCopy(objects, LeftSession.Snapshot))
         {
-            var analysis = AnalyzeCopy(obj, obj.Schema, obj.Name);
+            var analysis = AnalyzeCopy(obj, TargetSchemaFor(obj), obj.Name);
             var actions = analysis is null ? [] : ActionOptions(analysis);
             var selected = actions.FirstOrDefault(o => o.Action == analysis?.RecommendedAction);
             BatchItems.Add(new BatchCopyItem(obj, actions, selected, analysis?.Summary ?? "Connect both sides."));
@@ -138,7 +142,7 @@ public partial class ComparerViewModel
                 CopyStatus = $"Object {n + 1} of {items.Count}: {item.FullName}";
                 try
                 {
-                    var analysis = AnalyzeCopy(item.Source, item.Source.Schema, item.Source.Name);
+                    var analysis = AnalyzeCopy(item.Source, TargetSchemaFor(item.Source), item.Source.Name);
                     var action = item.SelectedAction!.Action;
                     if (analysis is null || !analysis.AvailableActions.Contains(action))
                     {

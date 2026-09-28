@@ -29,6 +29,10 @@ public partial class ResultGridView : UserControl
     {
         InitializeComponent();
         Grid.KeyDown += OnGridKeyDown;
+        Grid.SelectionChanged += (_, _) => UpdateAggregates();
+        Grid.CurrentCellChanged += (_, _) => UpdateAggregates();
+        Grid.DoubleTapped += (_, _) => ViewCurrentCell();
+        FilterBox.TextChanged += (_, _) => ApplyFilter();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -68,8 +72,58 @@ public partial class ResultGridView : UserControl
             });
         }
 
-        Grid.ItemsSource = (IEnumerable)resultSet.Rows;
-        RowCountText.Text = $"{resultSet.Rows.Count:N0} row(s) · {resultSet.Columns.Count:N0} column(s)";
+        FilterBox.Text = "";
+        ApplyFilter();
+    }
+
+    /// <summary>Rows containing the filter text in any cell; the count line says how many of how many.</summary>
+    private void ApplyFilter()
+    {
+        if (ResultSet is not { } rs) return;
+        var filter = FilterBox.Text?.Trim() ?? "";
+        var rows = filter.Length == 0
+            ? rs.Rows
+            : rs.Rows.Where(r => r.Values.Any(v => v is not null &&
+                (Converters.CellValueConverter.Instance.Convert(v, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture)?.ToString() ?? "")
+                    .Contains(filter, StringComparison.OrdinalIgnoreCase))).ToList();
+        Grid.ItemsSource = (IEnumerable)rows;
+
+        var count = filter.Length == 0 ? $"{rs.Rows.Count:N0} row(s)" : $"{rows.Count:N0} of {rs.Rows.Count:N0} row(s)";
+        var truncated = rs.IsTruncated ? $" · first {rs.Rows.Count:N0} of {rs.TotalRowCount:N0} (row limit)" : "";
+        RowCountText.Text = $"{count} · {rs.Columns.Count:N0} column(s){truncated}";
+        AggregateText.Text = "";
+    }
+
+    private int? CurrentColumnIndex => Grid.CurrentColumn?.Tag as int?;
+
+    private void UpdateAggregates()
+    {
+        var selected = Grid.SelectedItems.OfType<ResultRow>().ToList();
+        if (selected.Count < 2 || CurrentColumnIndex is not { } column || ResultSet is not { } rs)
+        {
+            AggregateText.Text = "";
+            return;
+        }
+        AggregateText.Text = $"{rs.Columns[column]}: " +
+                             DbExplorer.Application.Query.SelectionStatistics.Summarize(selected.Select(r => column < r.Values.Count ? r.Values[column] : null));
+    }
+
+    private void OnViewCell(object? sender, RoutedEventArgs e) => ViewCurrentCell();
+
+    /// <summary>Opens the current cell in a viewer (full text, JSON/XML indented).</summary>
+    private void ViewCurrentCell()
+    {
+        if (Grid.SelectedItem is not ResultRow row || CurrentColumnIndex is not { } column || ResultSet is not { } rs || column >= row.Values.Count) return;
+        var value = row.Values[column];
+        var text = value switch
+        {
+            null => "NULL",
+            byte[] bytes => "0x" + Convert.ToHexString(bytes),
+            _ => Converters.CellValueConverter.Instance.Convert(value, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? value.ToString() ?? ""
+        };
+        var window = new ValueViewerWindow(rs.Columns[column], text);
+        if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner);
+        else window.Show();
     }
 
     private IReadOnlyList<IReadOnlyList<object?>> AllRows() =>

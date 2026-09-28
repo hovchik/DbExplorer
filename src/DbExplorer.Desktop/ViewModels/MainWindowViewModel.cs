@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Connections;
+using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
@@ -15,6 +17,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly SessionService _sessions;
     private readonly ProviderRegistry _registry;
     private readonly IDialogService _dialogs;
+    private readonly AppSettingsService _settings;
     private readonly ISessionAware[] _tabs;
 
     public MainWindowViewModel(
@@ -22,6 +25,7 @@ public partial class MainWindowViewModel : ViewModelBase
         SessionService sessions,
         ProviderRegistry registry,
         IDialogService dialogs,
+        AppSettingsService settings,
         ObjectsViewModel objects,
         MetadataSearchViewModel search,
         DataSearchViewModel dataSearch,
@@ -34,6 +38,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _sessions = sessions;
         _registry = registry;
         _dialogs = dialogs;
+        _settings = settings;
+        _selectedTheme = settings.Theme;
         Objects = objects;
         Search = search;
         DataSearch = dataSearch;
@@ -44,6 +50,12 @@ public partial class MainWindowViewModel : ViewModelBase
         Comparer.Profiles = Profiles;
         _tabs = [objects, search, dataSearch, indexes, locks, query, comparer];
     }
+
+    public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
+
+    [ObservableProperty] private AppThemeMode _selectedTheme;
+
+    partial void OnSelectedThemeChanged(AppThemeMode value) => _settings.SetTheme(value);
 
     public ObjectsViewModel Objects { get; }
     public MetadataSearchViewModel Search { get; }

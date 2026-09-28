@@ -18,7 +18,7 @@
 
 	<Popup Grid.Row="1" x:Name="SuggestionsPopup" PlacementTarget="{Binding #Editor}"
 		   Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False">
-	  <Border Background="#1E1E1E" BorderBrush="#3A3A3A" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="180" MinWidth="180">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="180" MinWidth="180">
 		<ListBox x:Name="SuggestionsList" ItemsSource="{Binding Suggestions}"
 				 SelectedIndex="0" Background="Transparent" BorderThickness="0" />
 	  </Border>

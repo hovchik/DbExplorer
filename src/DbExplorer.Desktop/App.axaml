@@ -2,9 +2,40 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.App"
              RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="AppBorderBrush">#33000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppSubtleBackgroundBrush">#0A000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBackgroundBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBorderBrush">#33000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCodeBackgroundBrush">#F5F5F5</SolidColorBrush>
+          <SolidColorBrush x:Key="AppForegroundBrush">#DE000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppHintForegroundBrush">#8A000000</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
+          <SolidColorBrush x:Key="AppSubtleBackgroundBrush">#14FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBackgroundBrush">#FF1E1E1E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBorderBrush">#3A3A3A</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCodeBackgroundBrush">#FF1E1E1E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppForegroundBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppHintForegroundBrush">#B3FFFFFF</SolidColorBrush>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+
+    <Style Selector="Window">
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
+    <Style Selector="UserControl">
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
 
     <Style Selector="TextBox.code">
       <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
@@ -12,10 +43,12 @@
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="VerticalContentAlignment" Value="Top" />
       <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Background" Value="{DynamicResource AppCodeBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
     </Style>
 
     <Style Selector="TextBlock.hint">
-      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
       <Setter Property="FontSize" Value="12" />
     </Style>
 
@@ -71,7 +104,7 @@
     <Style Selector="DataGrid">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="BorderBrush" Value="#22808080" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
   </Application.Styles>

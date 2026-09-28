@@ -1,6 +1,8 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using DbExplorer.Application;
+using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
@@ -35,6 +37,10 @@ public partial class App : Avalonia.Application
 
         var provider = services.BuildServiceProvider();
 
+        var settings = provider.GetRequiredService<AppSettingsService>();
+        ApplyTheme(settings.Theme);
+        settings.ThemeChanged += ApplyTheme;
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var vm = provider.GetRequiredService<MainWindowViewModel>();
@@ -47,4 +53,15 @@ public partial class App : Avalonia.Application
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    private void ApplyTheme(AppThemeMode theme)
+    {
+        RequestedThemeVariant = theme switch
+        {
+            AppThemeMode.Light => ThemeVariant.Light,
+            AppThemeMode.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default
+        };
+    }
 }
+

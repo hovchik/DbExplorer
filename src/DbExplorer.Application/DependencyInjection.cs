@@ -14,6 +14,7 @@ public static class DependencyInjection
     public static IServiceCollection AddDbExplorerApplication(this IServiceCollection services)
     {
         services.AddSingleton<AppPaths>();
+        services.AddSingleton<AppSettingsService>();
         services.AddSingleton<ISecretProtector>(_ => OperatingSystem.IsWindows()
             ? new DpapiSecretProtector()
             : new NoSecretProtector());

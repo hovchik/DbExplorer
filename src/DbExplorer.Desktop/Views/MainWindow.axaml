@@ -7,7 +7,7 @@
         Width="1400" Height="860"
         WindowStartupLocation="CenterScreen">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="10,7" BorderThickness="0,0,0,1" BorderBrush="#22808080">
+    <Border DockPanel.Dock="Top" Padding="10,7" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Image Source="/Assets/logo.png" Width="24" Height="24" Margin="0,0,4,0" VerticalAlignment="Center" />
@@ -23,6 +23,8 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <ComboBox Width="110" ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme}"
+                    ToolTip.Tip="App theme" />
           <ProgressBar Width="100" VerticalAlignment="Center"
                        IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
           <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
@@ -33,7 +35,7 @@
       </Grid>
     </Border>
 
-    <Border DockPanel.Dock="Bottom" Padding="10,5" BorderThickness="0,1,0,0" BorderBrush="#22808080">
+    <Border DockPanel.Dock="Bottom" Padding="10,5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
       <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 

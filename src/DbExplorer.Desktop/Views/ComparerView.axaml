@@ -17,7 +17,7 @@
 	<Grid Grid.Row="0" ColumnDefinitions="*,Auto,*" Margin="0,0,0,8">
 	  <StackPanel Grid.Column="0" Spacing="4">
 		<CheckBox Content="Show left" IsChecked="{Binding IsLeftPanelVisible}" />
-	  <Border BorderThickness="1" BorderBrush="#22808080" Padding="8" CornerRadius="4" IsVisible="{Binding IsLeftPanelVisible}">
+	  <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Padding="8" CornerRadius="4" IsVisible="{Binding IsLeftPanelVisible}">
 		<StackPanel Spacing="6">
 		  <TextBlock Text="Left (baseline)" FontWeight="SemiBold" />
 		  <StackPanel Orientation="Horizontal" Spacing="6">
@@ -49,7 +49,7 @@
 
 	  <StackPanel Grid.Column="2" Spacing="4">
 		<CheckBox Content="Show right" IsChecked="{Binding IsRightPanelVisible}" />
-	  <Border BorderThickness="1" BorderBrush="#22808080" Padding="8" CornerRadius="4" IsVisible="{Binding IsRightPanelVisible}">
+	  <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Padding="8" CornerRadius="4" IsVisible="{Binding IsRightPanelVisible}">
 		<StackPanel Spacing="6">
 		  <TextBlock Text="Right (comparand)" FontWeight="SemiBold" />
 		  <StackPanel Orientation="Horizontal" Spacing="6">
@@ -132,7 +132,7 @@
 				</ItemsControl.ItemTemplate>
 			  </ItemsControl>
 			</ScrollViewer>
-			<GridSplitter Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#22808080" />
+			<GridSplitter Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="{DynamicResource AppBorderBrush}" />
 			<ScrollViewer Grid.Column="1" IsVisible="{Binding IsRightPanelVisible}">
 			  <ItemsControl ItemsSource="{Binding SchemaDiffRight}">
 				<ItemsControl.ItemTemplate>

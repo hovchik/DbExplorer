@@ -11,8 +11,8 @@
           <SolidColorBrush x:Key="AppPopupBackgroundBrush">#FFFFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppPopupBorderBrush">#33000000</SolidColorBrush>
           <SolidColorBrush x:Key="AppCodeBackgroundBrush">#F5F5F5</SolidColorBrush>
-          <SolidColorBrush x:Key="AppForegroundBrush">#DE000000</SolidColorBrush>
-          <SolidColorBrush x:Key="AppHintForegroundBrush">#8A000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppForegroundBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppHintForegroundBrush">#99000000</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -34,6 +34,19 @@
       <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
     </Style>
     <Style Selector="UserControl">
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
+
+    <!-- FluentTheme's default control templates don't always inherit Window.Foreground, which left
+         some text (grid cells, dropdown items) rendering with the theme's lower-contrast default
+         instead of our app foreground; pin it explicitly so it stays legible in both themes. -->
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
+    <Style Selector="DataGridCell TextBlock, DataGridColumnHeader TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
+    <Style Selector="ComboBoxItem, ListBoxItem, TabItem">
       <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
     </Style>
 

@@ -36,6 +36,8 @@ public partial class ComparerViewModel
     [ObservableProperty] private bool _copyDeleteExtra;
     [ObservableProperty] private bool _copyIndexes = true;
     [ObservableProperty] private bool _copyForeignKeys = true;
+    [ObservableProperty] private bool _copyDefaultsAndChecks = true;
+    [ObservableProperty] private bool _copyStreamRows = true;
     [ObservableProperty] private bool _copyAddMissingColumns = true;
     [ObservableProperty] private bool _copyIncludeParents;
     [ObservableProperty] private bool _copyBackupTarget;
@@ -69,6 +71,7 @@ public partial class ComparerViewModel
     public bool ShowParentsOption => ShowCreateTableOptions && _copyAnalysis?.MissingParents.Count > 0;
     public bool ShowBackupOption => IsTableCopy && _copyAnalysis?.TargetExists == true;
     public bool ShowDataOptions => IsTableCopy && SelectedAction is not null;
+    public bool ShowStreamOption => ShowDataOptions && SelectedAction != CopyAction.MergeData;
     public bool ShowRowFilter => ShowDataOptions && (SelectedAction != CopyAction.CreateObject || CopyIncludeData) &&
                                  (SelectedAction != CopyAction.DropAndRecreate || CopyIncludeData);
 
@@ -122,6 +125,8 @@ public partial class ComparerViewModel
     partial void OnCopyDeleteExtraChanged(bool value) => InvalidateCopyPlan();
     partial void OnCopyIndexesChanged(bool value) => InvalidateCopyPlan();
     partial void OnCopyForeignKeysChanged(bool value) => InvalidateCopyPlan();
+    partial void OnCopyDefaultsAndChecksChanged(bool value) => InvalidateCopyPlan();
+    partial void OnCopyStreamRowsChanged(bool value) => InvalidateCopyPlan();
     partial void OnCopyAddMissingColumnsChanged(bool value) => InvalidateCopyPlan();
     partial void OnCopyIncludeParentsChanged(bool value) => InvalidateCopyPlan();
     partial void OnCopyBackupTargetChanged(bool value) => InvalidateCopyPlan();
@@ -150,6 +155,7 @@ public partial class ComparerViewModel
         OnPropertyChanged(nameof(ShowParentsOption));
         OnPropertyChanged(nameof(ShowBackupOption));
         OnPropertyChanged(nameof(ShowDataOptions));
+        OnPropertyChanged(nameof(ShowStreamOption));
         OnPropertyChanged(nameof(ShowRowFilter));
     }
 
@@ -172,29 +178,15 @@ public partial class ComparerViewModel
             return;
         }
 
-        var left = LeftSession;
+        var analysis = AnalyzeCopy(SelectedLeftObject, CopyTargetSchema, CopyTargetName)!;
         var right = RightSession;
-        var sameServer = left == right ||
-                         (left.Profile.ProviderKey == right.Profile.ProviderKey &&
-                          string.Equals(left.Profile.Host, right.Profile.Host, StringComparison.OrdinalIgnoreCase) &&
-                          left.Profile.Port == right.Profile.Port);
-        var targetDatabase = SelectedRightDatabase ?? right.Profile.Database ?? "";
-
-        var analysis = ObjectCopyService.Analyze(
-            left.Snapshot, left.Provider.ProviderKey, SelectedLeftObject,
-            right.Snapshot, right.Provider.ProviderKey, targetDatabase,
-            CopyTargetSchema, CopyTargetName, sameServer);
 
         var previous = SelectedAction;
         _copyAnalysis = analysis;
         CopySummary = analysis.Summary;
         CopyWarnings = analysis.Warnings;
         CopyColumnInfo = DescribeColumns(analysis);
-        CopyActions = analysis.AvailableActions
-            .Select(a => new CopyActionOption(a,
-                ObjectCopyService.Humanize(a) + (a == analysis.RecommendedAction ? "  (suggested)" : ""),
-                Describe(a, analysis)))
-            .ToList();
+        CopyActions = ActionOptions(analysis);
         SelectedCopyAction = CopyActions.FirstOrDefault(o => o.Action == previous) ??
                              CopyActions.FirstOrDefault(o => o.Action == analysis.RecommendedAction);
 
@@ -202,6 +194,29 @@ public partial class ComparerViewModel
         CopyBackupTarget = analysis.TargetExists && analysis.IsTable && right.Profile.IsProduction;
         AfterCopyAnalysis();
     }
+
+    /// <summary>The left object against the selected right database under the given target name (cached metadata only).</summary>
+    private CopyAnalysis? AnalyzeCopy(DbObject source, string targetSchema, string targetName)
+    {
+        if (LeftSession is not { } left || RightSession is not { } right) return null;
+        var sameServer = left == right ||
+                         (left.Profile.ProviderKey == right.Profile.ProviderKey &&
+                          string.Equals(left.Profile.Host, right.Profile.Host, StringComparison.OrdinalIgnoreCase) &&
+                          left.Profile.Port == right.Profile.Port);
+        var targetDatabase = SelectedRightDatabase ?? right.Profile.Database ?? "";
+
+        return ObjectCopyService.Analyze(
+            left.Snapshot, left.Provider.ProviderKey, source,
+            right.Snapshot, right.Provider.ProviderKey, targetDatabase,
+            targetSchema, targetName, sameServer);
+    }
+
+    private static IReadOnlyList<CopyActionOption> ActionOptions(CopyAnalysis analysis) =>
+        analysis.AvailableActions
+            .Select(a => new CopyActionOption(a,
+                ObjectCopyService.Humanize(a) + (a == analysis.RecommendedAction ? "  (suggested)" : ""),
+                Describe(a, analysis)))
+            .ToList();
 
     private void AfterCopyAnalysis()
     {
@@ -246,6 +261,8 @@ public partial class ComparerViewModel
         DeleteExtra = CopyDeleteExtra,
         CopyIndexes = CopyIndexes,
         CopyForeignKeys = CopyForeignKeys,
+        CopyDefaultsAndChecks = CopyDefaultsAndChecks,
+        StreamRows = CopyStreamRows,
         AddMissingColumns = CopyAddMissingColumns,
         IncludeMissingParents = CopyIncludeParents,
         BackupTarget = CopyBackupTarget,
@@ -345,7 +362,7 @@ public partial class ComparerViewModel
             }
 
             var progress = new Progress<string>(message => CopyStatus = message);
-            var result = await copier.ExecuteAsync(right, plan, progress, ct);
+            var result = await copier.ExecuteAsync(left, right, plan, progress, ct);
             var done = $"{ObjectCopyService.Humanize(plan.Action)} finished in {result.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture)} s" +
                        (result.RowsAffected > 0 ? $" · {result.RowsAffected:N0} row(s) affected" : "");
             CopyStatus = done;
@@ -377,7 +394,7 @@ public partial class ComparerViewModel
         }
         catch (Exception ex)
         {
-            CopyStatus = "Error: " + ex.Message + (CopySingleTransaction ? " Nothing was changed (the transaction was rolled back)." : "");
+            CopyStatus = "Error: " + ex.Message;
         }
         finally
         {
@@ -428,12 +445,20 @@ public partial class ComparerViewModel
         RefreshCopyAnalysis();
     }
 
-    private bool CanCopyOverviewEntry => SelectedOverviewEntry?.Left is not null && !IsBusy;
+    private bool CanCopyOverviewEntry => (SelectedOverviewEntry?.Left is not null || SelectedLeftEntryCount > 0) && !IsBusy;
 
-    /// <summary>Opens the selected Overview entry on the Copy &amp; sync tab (e.g. an object only on the left).</summary>
+    /// <summary>Opens the selected Overview entry on the Copy &amp; sync tab (e.g. an object only on the left);
+    /// with several entries selected, opens them all as a batch.</summary>
     [RelayCommand(CanExecute = nameof(CanCopyOverviewEntry))]
     private void CopyOverviewEntry()
     {
+        if (SelectedLeftEntryCount > 1)
+        {
+            StartBatch(SelectedOverviewEntries.Where(e => e.Left is not null).Select(e => e.Left!));
+            return;
+        }
+
+        IsCopyBatchMode = false;
         var entry = SelectedOverviewEntry;
         if (entry?.Left is not { } left) return;
         SelectedLeftObject = LeftObjects.FirstOrDefault(o => o == left) ?? left;
@@ -446,5 +471,6 @@ public partial class ComparerViewModel
         PreviewCopyCommand.NotifyCanExecuteChanged();
         RunCopyCommand.NotifyCanExecuteChanged();
         CopyOverviewEntryCommand.NotifyCanExecuteChanged();
+        RunBatchCommand.NotifyCanExecuteChanged();
     }
 }

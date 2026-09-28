@@ -35,6 +35,16 @@ public sealed record CopyOptions
     public bool CopyIndexes { get; init; } = true;
     public bool CopyForeignKeys { get; init; } = true;
 
+    /// <summary>Copy column defaults and check constraints of created tables (defaults also for added columns).</summary>
+    public bool CopyDefaultsAndChecks { get; init; } = true;
+
+    /// <summary>Create/replace: read the left rows page by page while running, instead of loading them all when
+    /// planning. Needs a primary key; removes the row limit and keeps memory flat.</summary>
+    public bool StreamRows { get; init; } = true;
+
+    /// <summary>Rows read per page when streaming.</summary>
+    public int PageSize { get; init; } = 5_000;
+
     /// <summary>Merge/replace: columns that exist only on the left are added to the right table first.</summary>
     public bool AddMissingColumns { get; init; } = true;
 
@@ -107,7 +117,20 @@ public enum CopyStepKind
     Maintenance
 }
 
-public sealed record CopyStep(string Title, CopyStepKind Kind, string Sql);
+/// <summary>A step of the script. A streamed step has no data in <see cref="Sql"/> (only a description): its rows
+/// are read from the left page by page and inserted when the plan runs.</summary>
+public sealed record CopyStep(string Title, CopyStepKind Kind, string Sql, StreamedCopy? Stream = null);
+
+/// <summary>What a streamed step copies: left rows (in key order, optionally filtered) into the right table.</summary>
+public sealed record StreamedCopy(
+    DbObject SourceTable,
+    IReadOnlyList<DbColumn> SourceColumns,
+    string TargetSchema,
+    string TargetName,
+    IReadOnlyList<DbColumn> TargetColumns,
+    IReadOnlyList<string> KeyColumns,
+    string? RowFilter,
+    long EstimatedRows);
 
 /// <summary>A reviewed, ready-to-run script plus what it will do.</summary>
 public sealed record CopyPlan
@@ -127,6 +150,9 @@ public sealed record CopyPlan
     public long? TargetRowsRemoved { get; init; }
 
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>"schema.name" of every table this plan creates (used to link foreign keys within a batch).</summary>
+    public IReadOnlyList<string> CreatedTables { get; init; } = [];
 
     /// <summary>Everything the plan runs, wrapped in a transaction when <see cref="CopyOptions.SingleTransaction"/> is set.</summary>
     public string Script
@@ -157,6 +183,9 @@ public sealed record CopyPlan
     }
 
     public bool IsEmpty => Steps.Count == 0;
+
+    /// <summary>Streamed rows are not in <see cref="Script"/>; a saved script then only has the structure.</summary>
+    public bool HasStreamedSteps => Steps.Any(s => s.Stream is not null);
 }
 
 public sealed record CopyRunResult(int RowsAffected, TimeSpan Elapsed, IReadOnlyList<string> Messages);

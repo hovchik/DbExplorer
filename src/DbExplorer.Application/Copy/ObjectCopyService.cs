@@ -4,6 +4,7 @@ using DbExplorer.Application.Compare;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Models;
 
 namespace DbExplorer.Application.Copy;
@@ -92,9 +93,10 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             return a with { Summary = $"No columns are cached for {source.FullName}; refresh the left metadata." };
 
         if (a.CrossEngine)
-            warnings.Add("Different engines: column types are translated (see the script); defaults, check constraints and triggers are not copied.");
+            warnings.Add("Different engines: column types are translated, simple defaults (literals, current time, new uuid) are carried over; " +
+                         "other defaults, check constraints and table triggers are not copied (see the notes after Preview).");
         else
-            warnings.Add("Column defaults, check constraints and triggers of the table are not copied; the script can be edited before running it.");
+            warnings.Add("Table triggers are not copied (copy them separately); the script can be reviewed before running it.");
 
         var missingParents = MissingParents(sourceSnapshot, source, targetSnapshot, a.TargetDatabase, a.TargetSchema, a.TargetName);
         if (missingParents.Count > 0)
@@ -268,12 +270,15 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     /// <summary>Reads what the action needs (rows of both sides for a merge) and produces the script to run on the right.</summary>
     public async Task<CopyPlan> BuildPlanAsync(
         DatabaseSession sourceSession, DatabaseSession targetSession, CopyAnalysis analysis,
-        CopyAction action, CopyOptions options, IProgress<string>? progress = null, CancellationToken ct = default)
+        CopyAction action, CopyOptions options, IProgress<string>? progress = null, CancellationToken ct = default,
+        IReadOnlyCollection<string>? tablesCreatedEarlier = null)
     {
         if (!analysis.AvailableActions.Contains(action))
             throw new InvalidOperationException($"{Humanize(action)} is not possible here: {analysis.Summary}");
 
         var context = new PlanContext(sourceSession, targetSession, analysis, action, options, progress);
+        // Tables created by earlier objects of a batch are not in the right snapshot yet, but foreign keys may point at them.
+        if (tablesCreatedEarlier is not null) context.CreatedTables.UnionWith(tablesCreatedEarlier);
         if (analysis.IsTable) await PlanTableAsync(context, ct);
         else await PlanDefinitionAsync(context, ct);
 
@@ -289,7 +294,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             RowsToDelete = context.Deleted,
             RowsUnchanged = context.Unchanged,
             TargetRowsRemoved = context.Removed,
-            Notes = context.Notes
+            Notes = context.Notes,
+            CreatedTables = context.CreatedTables.Except(tablesCreatedEarlier ?? [], StringComparer.OrdinalIgnoreCase).ToList()
         };
     }
 
@@ -383,25 +389,27 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                     c.Add($"Drop {a.TargetFullName}", CopyStepKind.Structure, t.DropTable(targetTable));
                 }
 
-                var created = new List<(DbObject Source, string Schema, string Name, IReadOnlyList<DbColumn> Columns)>();
-                foreach (var parent in parents)
-                    created.Add((parent, parent.Schema, parent.Name, CreateTable(c, parent, parent.Schema, parent.Name)));
-                created.Add((a.Source, a.TargetSchema, a.TargetName, CreateTable(c, a.Source, a.TargetSchema, a.TargetName)));
+                var created = new List<(DbObject Source, string Schema, string Name, IReadOnlyList<DbColumn> Columns, DbTableConstraints Constraints)>();
+                foreach (var table in parents.Append(a.Source))
+                {
+                    var isMain = ReferenceEquals(table, a.Source);
+                    var (schema, name) = isMain ? (a.TargetSchema, a.TargetName) : (table.Schema, table.Name);
+                    var constraints = await ConstraintsOfAsync(c, table, ct);
+                    created.Add((table, schema, name, CreateTable(c, table, schema, name, constraints), constraints));
+                }
 
                 if (c.Options.IncludeData)
                 {
-                    foreach (var (table, schema, name, targetColumns) in created)
+                    foreach (var (table, schema, name, targetColumns, _) in created)
                     {
                         var isMain = ReferenceEquals(table, a.Source);
-                        var rows = await ReadSourceRowsAsync(c, table, targetColumns, isMain ? c.Options.RowFilter : null, ct);
-                        AddInserts(c, schema, name, rows.Columns, rows.TargetColumns, rows.Rows);
-                        AddSequenceReset(c, schema, name, rows.TargetColumns);
+                        await AddRowCopyAsync(c, table, schema, name, targetColumns, isMain ? c.Options.RowFilter : null, ct);
                     }
                     if (parents.Count > 0)
                         c.Notes.Add("Parent tables are copied with all their rows so the foreign keys can be created.");
                 }
 
-                foreach (var (table, schema, name, targetColumns) in created)
+                foreach (var (table, schema, name, targetColumns, _) in created)
                 {
                     if (c.Options.CopyIndexes) AddIndexes(c, table, schema, name, targetColumns);
                     if (c.Options.CopyForeignKeys) AddForeignKeys(c, table, schema, name);
@@ -410,7 +418,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
             case CopyAction.ReplaceData:
             {
-                var targetColumns = PrepareExistingTarget(c, sourceColumns);
+                var targetColumns = PrepareExistingTarget(c, sourceColumns, await ConstraintsOfAsync(c, a.Source, ct));
                 var filter = NullIfBlank(c.Options.RowFilter);
                 c.Removed = await CountAsync(c.TargetSession, t, a.TargetDatabase, targetTable, filter, ct);
                 var delete = filter is not null ? $"DELETE FROM {targetTable} WHERE {filter};"
@@ -419,9 +427,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                 c.Add(filter is null ? $"Remove every row of {a.TargetFullName}" : $"Remove the filtered rows of {a.TargetFullName}",
                     CopyStepKind.Delete, delete);
 
-                var rows = await ReadSourceRowsAsync(c, a.Source, targetColumns, filter, ct);
-                AddInserts(c, a.TargetSchema, a.TargetName, rows.Columns, rows.TargetColumns, rows.Rows);
-                AddSequenceReset(c, a.TargetSchema, a.TargetName, rows.TargetColumns);
+                await AddRowCopyAsync(c, a.Source, a.TargetSchema, a.TargetName, targetColumns, filter, ct);
                 break;
             }
 
@@ -436,7 +442,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         var a = c.Analysis;
         var t = c.Target;
         var targetTable = t.Table(a.TargetSchema, a.TargetName);
-        var targetColumns = PrepareExistingTarget(c, sourceColumns);
+        var targetColumns = PrepareExistingTarget(c, sourceColumns, await ConstraintsOfAsync(c, a.Source, ct));
         var filter = NullIfBlank(c.Options.RowFilter);
 
         var source = await ReadSourceRowsAsync(c, a.Source, targetColumns, filter, ct);
@@ -474,7 +480,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
     /// <summary>Adds the left-only columns to the existing right table when asked, and returns the right
     /// columns that receive data, in left column order.</summary>
-    private static IReadOnlyList<DbColumn> PrepareExistingTarget(PlanContext c, IReadOnlyList<DbColumn> sourceColumns)
+    private static IReadOnlyList<DbColumn> PrepareExistingTarget(
+        PlanContext c, IReadOnlyList<DbColumn> sourceColumns, DbTableConstraints sourceConstraints)
     {
         var a = c.Analysis;
         var targetTable = c.Target.Table(a.TargetSchema, a.TargetName);
@@ -497,8 +504,9 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             }
 
             var mapped = MapColumn(c, column);
+            var defaultExpression = DefaultFor(c, column, mapped, sourceConstraints);
             c.Add($"Add column {column.Name} to {a.TargetFullName}", CopyStepKind.Structure,
-                c.Target.AddColumn(targetTable, column.Name, mapped.DataType));
+                c.Target.AddColumn(targetTable, column.Name, mapped.DataType, defaultExpression));
             if (!c.Target.IsReadOnlyColumn(mapped)) result.Add(mapped with { IsIdentity = false, IsPrimaryKey = false });
         }
         return result;
@@ -513,10 +521,39 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         return column with { DataType = mapping.Type, BaseType = baseType, IsComputed = false };
     }
 
-    private static IReadOnlyList<DbColumn> CreateTable(PlanContext c, DbObject table, string schema, string name)
+    private static async Task<DbTableConstraints> ConstraintsOfAsync(PlanContext c, DbObject table, CancellationToken ct)
+    {
+        if (!c.Options.CopyDefaultsAndChecks) return DbTableConstraints.None;
+        try
+        {
+            return await c.SourceSession.Provider.GetTableConstraintsAsync(table, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            c.Notes.Add($"Defaults and check constraints of {table.FullName} could not be read ({ex.Message}); they are not copied.");
+            return DbTableConstraints.None;
+        }
+    }
+
+    /// <summary>The right-side default of a copied column, or null (reported in the notes when one is dropped).</summary>
+    private static string? DefaultFor(PlanContext c, DbColumn source, DbColumn target, DbTableConstraints constraints)
+    {
+        if (!constraints.Defaults.TryGetValue(source.Name, out var expression) || target.IsIdentity) return null;
+        if (DefaultTranslator.IsSequenceDefault(expression)) return null;
+        var translated = DefaultTranslator.Translate(expression, c.Source.ProviderKey, c.Target.ProviderKey, target.BaseType);
+        if (translated is null) c.Notes.Add($"Default of {source.Table}.{source.Name} ({expression}) has no {EngineName(c.Target)} equivalent and is not copied.");
+        return translated;
+    }
+
+    private static IReadOnlyList<DbColumn> CreateTable(PlanContext c, DbObject table, string schema, string name, DbTableConstraints constraints)
     {
         var t = c.Target;
-        var columns = ColumnsOf(c.SourceSession.Snapshot, table).Select(col => MapColumn(c, col)).ToList();
+        var sourceColumns = ColumnsOf(c.SourceSession.Snapshot, table);
+        var columns = sourceColumns.Select(col => MapColumn(c, col) with
+        {
+            // A PostgreSQL serial column (nextval default) becomes an identity column: the sequence itself is not copied.
+            IsIdentity = col.IsIdentity || (constraints.Defaults.TryGetValue(col.Name, out var d) && DefaultTranslator.IsSequenceDefault(d))
+        }).ToList();
         columns = columns.Select(col => col with
         {
             // PostgreSQL identity columns must be integers.
@@ -524,8 +561,12 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                                              || col.DataType is "integer" or "bigint" or "smallint")
         }).ToList();
 
-        var lines = columns.Select(col =>
-            $"    {t.Quote(col.Name)} {col.DataType}{(col.IsIdentity ? t.IdentityClause : "")}{(col.IsNullable ? " NULL" : " NOT NULL")}").ToList();
+        var lines = columns.Select((col, i) =>
+        {
+            var defaultExpression = DefaultFor(c, sourceColumns[i], col, constraints);
+            return $"    {t.Quote(col.Name)} {col.DataType}{(col.IsIdentity ? t.IdentityClause : "")}" +
+                   $"{(col.IsNullable ? " NULL" : " NOT NULL")}{(defaultExpression is null ? "" : " DEFAULT " + defaultExpression)}";
+        }).ToList();
 
         var keys = columns.Where(col => col.IsPrimaryKey).Select(col => t.Quote(col.Name)).ToList();
         if (keys.Count > 0)
@@ -537,6 +578,17 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             lines.Add($"    PRIMARY KEY{(nonClustered ? " NONCLUSTERED" : "")} ({string.Join(", ", keys)})");
         }
 
+        foreach (var check in constraints.Checks)
+        {
+            if (!c.SameEngine)
+            {
+                c.Notes.Add($"Check constraint {check.Name} ({check.Expression}) is engine-specific and is not copied.");
+                continue;
+            }
+            var checkName = t.TruncateIdentifier(RenameFor(check.Name, table, name));
+            lines.Add($"    CONSTRAINT {t.Quote(checkName)} CHECK ({check.Expression})");
+        }
+
         var sql = new StringBuilder()
             .Append("CREATE TABLE ").Append(t.Table(schema, name)).AppendLine(" (")
             .AppendLine(string.Join(",\n", lines))
@@ -546,6 +598,50 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         c.Add($"Create table {schema}.{name}", CopyStepKind.Structure, sql);
         c.CreatedTables.Add($"{schema}.{name}");
         return columns.Where(col => !t.IsReadOnlyColumn(col)).ToList();
+    }
+
+    private static string EngineName(SqlDialect dialect) => dialect.ProviderKey == SqlDialect.SqlServerKey ? "SQL Server" : "PostgreSQL";
+
+    /// <summary>Copies the left rows into the right table: streamed at run time when the table has a key
+    /// (no row limit, flat memory), otherwise read now and written into the script.</summary>
+    private async Task AddRowCopyAsync(
+        PlanContext c, DbObject table, string schema, string name, IReadOnlyList<DbColumn> targetColumns, string? filter, CancellationToken ct)
+    {
+        var sourceByName = ColumnsOf(c.SourceSession.Snapshot, table).ToDictionary(col => col.Name, StringComparer.OrdinalIgnoreCase);
+        var keys = sourceByName.Values.Where(col => col.IsPrimaryKey).OrderBy(col => col.Ordinal).Select(col => col.Name).ToList();
+        var transferred = targetColumns.Where(col => sourceByName.ContainsKey(col.Name)).ToList();
+        var canStream = c.Options.StreamRows && keys.Count > 0 &&
+                        keys.All(k => transferred.Any(col => Same(col.Name, k)));
+
+        if (!canStream)
+        {
+            if (c.Options.StreamRows && keys.Count == 0)
+                c.Notes.Add($"{table.FullName} has no primary key, so its rows are loaded when planning (limit {c.Options.MaxRows:N0}).");
+            var rows = await ReadSourceRowsAsync(c, table, targetColumns, filter, ct);
+            AddInserts(c, schema, name, rows.Columns, rows.TargetColumns, rows.Rows);
+            AddSequenceReset(c, schema, name, rows.TargetColumns);
+            return;
+        }
+
+        c.Progress?.Report($"Counting the rows of {table.FullName}…");
+        var count = await CountAsync(c.SourceSession, c.Source, table.Database, c.Source.Table(table.Schema, table.Name), NullIfBlank(filter), ct);
+        var stream = new StreamedCopy(
+            table,
+            transferred.Select(col => sourceByName[col.Name]).ToList(),
+            schema, name, transferred, keys, NullIfBlank(filter), count);
+
+        var select = c.Source.SelectTop(
+            string.Join(", ", stream.SourceColumns.Select(c.Source.SelectExpression)), c.Source.Table(table.Schema, table.Name),
+            stream.RowFilter, string.Join(", ", keys.Select(c.Source.Quote)), c.Options.PageSize);
+        var description =
+            $"-- {count:N0} row(s) are streamed from the left when this runs, {c.Options.PageSize:N0} per page, in key order:\n" +
+            $"--   {select.ReplaceLineEndings(" ")}\n" +
+            $"-- and inserted into {c.Target.Table(schema, name)} ({string.Join(", ", transferred.Select(col => c.Target.Quote(col.Name)))}).";
+        c.Steps.Add(new CopyStep($"Stream {count:N0} row(s) from {table.FullName} into {schema}.{name}", CopyStepKind.Insert, description, stream));
+        c.Inserted += (int)Math.Min(count, int.MaxValue);
+        if (!c.Notes.Any(n => n.StartsWith("Rows are streamed", StringComparison.Ordinal)))
+            c.Notes.Add("Rows are streamed while running, so a saved script contains the structure but not the streamed rows.");
+        AddSequenceReset(c, schema, name, transferred);
     }
 
     private sealed record SourceRows(
@@ -602,24 +698,39 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         IReadOnlyList<IReadOnlyList<object?>> rows)
     {
         if (rows.Count == 0) return;
-        var t = c.Target;
+        var batch = Math.Clamp(c.Options.BatchSize, 1, 1000);
+        var statements = BuildInsertStatements(c.Target, schema, name, columns, targetColumns, rows, batch);
+        for (var i = 0; i < statements.Count; i++)
+        {
+            var start = i * batch;
+            var end = Math.Min(start + batch, rows.Count);
+            c.Add($"Insert rows {start + 1:N0}–{end:N0} of {rows.Count:N0} into {schema}.{name}", CopyStepKind.Insert, statements[i]);
+        }
+        c.Inserted += rows.Count;
+    }
+
+    /// <summary>Multi-row INSERT statements of at most <paramref name="batchSize"/> rows (SQL Server allows 1000),
+    /// each wrapped in IDENTITY_INSERT when an identity column receives explicit values.</summary>
+    public static IReadOnlyList<string> BuildInsertStatements(
+        SqlDialect t, string schema, string name, IReadOnlyList<string> columns, IReadOnlyList<DbColumn> targetColumns,
+        IReadOnlyList<IReadOnlyList<object?>> rows, int batchSize)
+    {
         var table = t.Table(schema, name);
         var hasIdentity = targetColumns.Any(col => col.IsIdentity);
         var (before, after) = hasIdentity ? t.IdentityInsertScope(table) : ("", "");
         var prefix = $"INSERT INTO {table} ({string.Join(", ", columns.Select(t.Quote))}){(hasIdentity ? t.InsertIdentityOverride : "")} VALUES";
+        batchSize = Math.Clamp(batchSize, 1, 1000);
 
-        // SQL Server accepts at most 1000 rows per VALUES list.
-        var batch = Math.Clamp(c.Options.BatchSize, 1, 1000);
-        for (var start = 0; start < rows.Count; start += batch)
+        var result = new List<string>();
+        for (var start = 0; start < rows.Count; start += batchSize)
         {
-            var chunk = rows.Skip(start).Take(batch);
             var sql = new StringBuilder(before).AppendLine(prefix);
-            sql.AppendJoin(",\n", chunk.Select(row => "(" + string.Join(", ", row.Select((v, i) => t.Literal(v, targetColumns[i].BaseType))) + ")"));
+            sql.AppendJoin(",\n", rows.Skip(start).Take(batchSize)
+                .Select(row => "(" + string.Join(", ", row.Select((v, i) => t.Literal(v, targetColumns[i].BaseType))) + ")"));
             sql.Append(";\n").Append(after);
-            var end = Math.Min(start + batch, rows.Count);
-            c.Add($"Insert rows {start + 1:N0}–{end:N0} of {rows.Count:N0} into {schema}.{name}", CopyStepKind.Insert, sql.ToString().TrimEnd());
+            result.Add(sql.ToString().TrimEnd());
         }
-        c.Inserted += rows.Count;
+        return result;
     }
 
     private static void AddUpdates(
@@ -858,43 +969,153 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
     // ----- Execution -----
 
-    /// <summary>Runs the plan on the right side: in one transaction (all or nothing), or step by step with progress.</summary>
+    /// <summary>
+    /// Runs the plan on the right side over one connection: inside a single transaction (all or nothing) or step
+    /// by step. Streamed steps read the left rows page by page (keyset pagination on the primary key) and insert
+    /// each page before reading the next, so memory stays flat whatever the table size.
+    /// </summary>
     public async Task<CopyRunResult> ExecuteAsync(
-        DatabaseSession targetSession, CopyPlan plan, IProgress<string>? progress = null, CancellationToken ct = default)
+        DatabaseSession sourceSession, DatabaseSession targetSession, CopyPlan plan,
+        IProgress<string>? progress = null, CancellationToken ct = default)
     {
         var started = DateTime.UtcNow;
-        var database = NullIfBlank(plan.Analysis.TargetDatabase);
-        var messages = new List<string>();
         var affected = 0;
+        var transactional = plan.Options.SingleTransaction;
 
-        if (plan.Options.SingleTransaction)
+        await using var session = await targetSession.Provider.BeginScriptSessionAsync(
+            NullIfBlank(plan.Analysis.TargetDatabase), transactional, ct);
+
+        for (var i = 0; i < plan.Steps.Count; i++)
         {
-            progress?.Report($"Running {plan.Steps.Count:N0} step(s) in one transaction…");
-            var result = await queries.ExecuteScriptAsync(targetSession, plan.Script, database, plan.Options.TimeoutSeconds, ct);
-            affected = result.RowsAffected;
-            messages.AddRange(result.Messages);
-        }
-        else
-        {
-            var dialect = SqlDialect.For(plan.TargetProviderKey);
-            for (var i = 0; i < plan.Steps.Count; i++)
+            var step = plan.Steps[i];
+            var prefix = $"Step {i + 1:N0} of {plan.Steps.Count:N0}";
+            progress?.Report($"{prefix}: {step.Title}");
+            try
             {
-                var step = plan.Steps[i];
-                progress?.Report($"Step {i + 1:N0} of {plan.Steps.Count:N0}: {step.Title}");
-                try
-                {
-                    var result = await queries.ExecuteScriptAsync(targetSession, step.Sql + dialect.EndOfStep, database, plan.Options.TimeoutSeconds, ct);
-                    affected += result.RowsAffected;
-                    messages.AddRange(result.Messages);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    throw new InvalidOperationException($"Step {i + 1} ({step.Title}) failed; the steps before it were applied. {ex.Message}", ex);
-                }
+                affected += step.Stream is { } stream
+                    ? await StreamRowsAsync(sourceSession, targetSession, session, stream, plan.Options,
+                        copied => progress?.Report($"{prefix}: {copied:N0} of ≈{stream.EstimatedRows:N0} row(s) copied into {stream.TargetSchema}.{stream.TargetName}"), ct)
+                    : await session.ExecuteAsync(step.Sql, plan.Options.TimeoutSeconds, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"Step {i + 1} ({step.Title}) failed" +
+                    (transactional ? "; everything was rolled back. " : "; the steps before it were applied. ") + ex.Message, ex);
             }
         }
 
-        return new CopyRunResult(affected, DateTime.UtcNow - started, messages);
+        progress?.Report("Committing…");
+        await session.CommitAsync(ct);
+        return new CopyRunResult(affected, DateTime.UtcNow - started, []);
+    }
+
+    private async Task<int> StreamRowsAsync(
+        DatabaseSession sourceSession, DatabaseSession targetSession, IScriptSession target, StreamedCopy stream,
+        CopyOptions options, Action<long> report, CancellationToken ct)
+    {
+        var source = SqlDialect.For(sourceSession.Provider.ProviderKey);
+        var dialect = SqlDialect.For(targetSession.Provider.ProviderKey);
+        var table = source.Table(stream.SourceTable.Schema, stream.SourceTable.Name);
+        var columns = string.Join(", ", stream.SourceColumns.Select(source.SelectExpression));
+        var keyIndexes = stream.KeyColumns.Select(k => stream.SourceColumns.ToList().FindIndex(col => Same(col.Name, k))).ToList();
+        var keyColumns = keyIndexes.Select(i => stream.SourceColumns[i]).ToList();
+        var orderBy = string.Join(", ", keyColumns.Select(col => source.Quote(col.Name)));
+        var names = stream.TargetColumns.Select(col => col.Name).ToList();
+        var pageSize = Math.Max(1, options.PageSize);
+
+        IReadOnlyList<object?>? lastKey = null;
+        long copied = 0;
+        var affected = 0;
+        while (true)
+        {
+            var seek = lastKey is null ? null : KeysetPredicate(source, keyColumns, lastKey);
+            var where = (stream.RowFilter, seek) switch
+            {
+                (null, null) => null,
+                ({ } f, null) => f,
+                (null, { } k) => k,
+                ({ } f, { } k) => $"({f}) AND ({k})"
+            };
+
+            var sql = source.SelectTop(columns, table, where, orderBy, pageSize);
+            var result = await queries.ExecuteScriptAsync(sourceSession, sql, NullIfBlank(stream.SourceTable.Database), ReadTimeoutSeconds, ct);
+            var rows = result.ResultSets.FirstOrDefault()?.Rows ?? [];
+            if (rows.Count == 0) break;
+
+            foreach (var statement in BuildInsertStatements(dialect, stream.TargetSchema, stream.TargetName, names, stream.TargetColumns, rows, options.BatchSize))
+                affected += await target.ExecuteAsync(statement, options.TimeoutSeconds, ct);
+
+            copied += rows.Count;
+            report(copied);
+            if (rows.Count < pageSize) break;
+            var last = rows[^1];
+            lastKey = keyIndexes.Select(i => last[i]).ToList();
+        }
+        return affected;
+    }
+
+    /// <summary>Rows after <paramref name="lastKey"/> in key order: (k1 &gt; v1) OR (k1 = v1 AND k2 &gt; v2) ...
+    /// (spelled out because SQL Server has no row-value comparison).</summary>
+    public static string KeysetPredicate(SqlDialect dialect, IReadOnlyList<DbColumn> keyColumns, IReadOnlyList<object?> lastKey)
+    {
+        var terms = new List<string>();
+        for (var i = 0; i < keyColumns.Count; i++)
+        {
+            var parts = Enumerable.Range(0, i)
+                .Select(j => $"{dialect.Quote(keyColumns[j].Name)} = {dialect.Literal(lastKey[j], keyColumns[j].BaseType)}")
+                .Append($"{dialect.Quote(keyColumns[i].Name)} > {dialect.Literal(lastKey[i], keyColumns[i].BaseType)}");
+            terms.Add(i == 0 ? parts.Single() : "(" + string.Join(" AND ", parts) + ")");
+        }
+        return string.Join(" OR ", terms);
+    }
+
+    // ----- Batches -----
+
+    /// <summary>
+    /// Orders objects for copying so dependencies come first: sequences and synonyms, then tables with every
+    /// table after the tables it references (cycles keep their original order), then views, functions,
+    /// procedures and finally triggers.
+    /// </summary>
+    public static IReadOnlyList<DbObject> OrderForCopy(IEnumerable<DbObject> objects, MetadataSnapshot sourceSnapshot)
+    {
+        var list = objects.Distinct().ToList();
+        var tables = list.Where(o => o.Type == DbObjectType.Table).ToList();
+        var byName = tables.ToDictionary(t => t.FullName, StringComparer.OrdinalIgnoreCase);
+        var orderedTables = new List<DbObject>();
+        var state = new Dictionary<DbObject, bool>(); // false = visiting, true = done
+
+        void Visit(DbObject table)
+        {
+            if (state.ContainsKey(table)) return; // done, or a cycle: keep going
+            state[table] = false;
+            foreach (var fk in sourceSnapshot.ForeignKeysOf(table.Database, table.Schema, table.Name))
+                if (byName.TryGetValue($"{fk.ReferencedSchema}.{fk.ReferencedTable}", out var parent) && parent != table)
+                    Visit(parent);
+            state[table] = true;
+            orderedTables.Add(table);
+        }
+
+        foreach (var table in tables) Visit(table);
+
+        static int Rank(DbObjectType type) => type switch
+        {
+            DbObjectType.Sequence or DbObjectType.Synonym => 0,
+            DbObjectType.Table => 1,
+            DbObjectType.View or DbObjectType.MaterializedView => 2,
+            DbObjectType.Function or DbObjectType.ScalarFunction or DbObjectType.TableFunction => 3,
+            DbObjectType.Procedure => 4,
+            DbObjectType.Trigger => 5,
+            _ => 6
+        };
+
+        var tableOrder = orderedTables.Select((t, i) => (t, i)).ToDictionary(x => x.t, x => x.i);
+        return list
+            .Select((o, i) => (Object: o, Index: i))
+            .OrderBy(x => Rank(x.Object.Type))
+            .ThenBy(x => x.Object.Type == DbObjectType.Table ? tableOrder[x.Object] : x.Index)
+            .Select(x => x.Object)
+            .ToList();
     }
 
     /// <summary>Counts the rows on both sides (with the row filter), to confirm a copy landed.</summary>

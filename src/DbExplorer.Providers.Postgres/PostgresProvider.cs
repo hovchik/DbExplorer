@@ -402,6 +402,81 @@ public sealed class PostgresProvider : IDatabaseProvider
         };
     }
 
+    public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)
+    {
+        var targetDatabase = database ?? _profile.Database;
+        var scoped = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            : null;
+        NpgsqlConnection? cn = null;
+        try
+        {
+            cn = await (scoped ?? _dataSource).OpenConnectionAsync(ct);
+            var tx = transactional ? await cn.BeginTransactionAsync(ct) : null;
+            return new ScriptSession(cn, tx, scoped);
+        }
+        catch
+        {
+            if (cn is not null) await cn.DisposeAsync();
+            if (scoped is not null) await scoped.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default)
+    {
+        var database = string.IsNullOrEmpty(table.Database) ? _profile.Database : table.Database;
+        var args = new { name = PostgresSql.QuoteFullName(table.Schema, table.Name) };
+        var defaults = await QueryInDatabaseAsync<NameDefinition>(PostgresQueries.ColumnDefaults, args, database, ct);
+        var checks = await QueryInDatabaseAsync<NameDefinition>(PostgresQueries.CheckConstraints, args, database, ct);
+        return new DbTableConstraints
+        {
+            Defaults = defaults.Where(d => d.Definition is not null)
+                .ToDictionary(d => d.Name, d => d.Definition!, StringComparer.OrdinalIgnoreCase),
+            Checks = checks.Where(c => c.Definition is not null).Select(c => new DbCheckConstraint(c.Name, c.Definition!)).ToList()
+        };
+    }
+
+    private sealed class NameDefinition
+    {
+        public string Name { get; set; } = "";
+        public string? Definition { get; set; }
+    }
+
+    private sealed class ScriptSession(NpgsqlConnection connection, NpgsqlTransaction? transaction, NpgsqlDataSource? scoped)
+        : IScriptSession
+    {
+        private bool _committed;
+
+        public async Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default)
+        {
+            await using var cmd = new NpgsqlCommand(sql, connection, transaction) { CommandTimeout = timeoutSeconds };
+            var rows = await cmd.ExecuteNonQueryAsync(ct);
+            return Math.Max(rows, 0);
+        }
+
+        public async Task CommitAsync(CancellationToken ct = default)
+        {
+            if (transaction is not null) await transaction.CommitAsync(ct);
+            _committed = true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (transaction is not null)
+            {
+                if (!_committed)
+                {
+                    try { await transaction.RollbackAsync(); }
+                    catch (Exception) { /* connection already broken: the server discards the transaction */ }
+                }
+                await transaction.DisposeAsync();
+            }
+            await connection.DisposeAsync();
+            if (scoped is not null) await scoped.DisposeAsync();
+        }
+    }
+
     private static async Task ApplySettingsAsync(
         NpgsqlConnection cn, NpgsqlTransaction tx, int statementTimeoutMs, int lockTimeoutMs, CancellationToken ct)
     {

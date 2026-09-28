@@ -178,13 +178,14 @@
 					  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)" />
 			<Button Content="Open selected" Command="{Binding OpenOverviewEntryCommand}"
 					ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row)" />
-			<Button Content="Copy to right…" Command="{Binding CopyOverviewEntryCommand}"
-					ToolTip.Tip="Open the selected left object on the Copy &amp; sync tab: create it on the right, or merge / replace its data" />
+			<Button Content="{Binding CopyOverviewLabel}" Command="{Binding CopyOverviewEntryCommand}"
+					ToolTip.Tip="Open the selected left object(s) on the Copy &amp; sync tab: create them on the right, or merge / replace their data. Ctrl/Shift-click to select several for a batch copy" />
 			<TextBlock Classes="hint" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
 		  <DataGrid Grid.Row="2" x:Name="OverviewGrid" ItemsSource="{Binding OverviewEntries}" SelectedItem="{Binding SelectedOverviewEntry}"
 					IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
-					GridLinesVisibility="Horizontal" DoubleTapped="OnOverviewDoubleTapped" IsVisible="{Binding HasOverview}">
+					GridLinesVisibility="Horizontal" DoubleTapped="OnOverviewDoubleTapped" IsVisible="{Binding HasOverview}"
+					SelectionMode="Extended" SelectionChanged="OnOverviewSelectionChanged">
 			<DataGrid.Styles>
 			  <Style Selector="DataGridRow">
 				<Setter Property="Background" Value="{Binding Status, Converter={StaticResource CompareStatusBrush}}" />
@@ -480,7 +481,8 @@
 	  </TabItem>
 	  <!-- Create the left object on the right, or synchronize its data / definition -->
 	  <TabItem Header="Copy &amp; sync">
-		<Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+		<Panel>
+		<Grid RowDefinitions="Auto,Auto,Auto,Auto,*" IsVisible="{Binding !IsCopyBatchMode}">
 		  <!-- Where the copy goes -->
 		  <WrapPanel Grid.Row="0" Classes="toolbar">
 			<TextBlock Text="Copy the left object to" FontWeight="SemiBold" />
@@ -522,6 +524,8 @@
 						ToolTip.Tip="Create the left table's indexes (after the data, which is faster)" />
 			  <CheckBox Content="Foreign keys" IsChecked="{Binding CopyForeignKeys}" IsVisible="{Binding ShowCreateTableOptions}"
 						ToolTip.Tip="Create the foreign keys whose referenced table exists on the right (or is created by this copy)" />
+			  <CheckBox Content="Defaults &amp; checks" IsChecked="{Binding CopyDefaultsAndChecks}" IsVisible="{Binding ShowCreateTableOptions}"
+						ToolTip.Tip="Copy column defaults and check constraints. Across engines only literals, current time and new-uuid defaults are translated; check constraints need the same engine" />
 			  <CheckBox Content="Include missing parent tables" IsChecked="{Binding CopyIncludeParents}" IsVisible="{Binding ShowParentsOption}"
 						ToolTip.Tip="Also create the referenced tables that are missing on the right (with their rows), parents first, so every foreign key can be created" />
 			  <CheckBox Content="Update changed rows" IsChecked="{Binding CopyUpdateChanged}" IsVisible="{Binding ShowMergeOptions}"
@@ -548,6 +552,8 @@
 				<NumericUpDown Value="{Binding CopyMaxRows}" Minimum="1" Maximum="5000000" Increment="10000" FormatString="N0" Width="150"
 							   ToolTip.Tip="Safety limit on the rows read per side; the copy stops with a message when a table has more" />
 			  </StackPanel>
+			  <CheckBox Content="Stream rows" IsChecked="{Binding CopyStreamRows}" IsVisible="{Binding ShowStreamOption}"
+						ToolTip.Tip="Read the left rows page by page while running instead of loading them all first: no row limit and flat memory. Needs a primary key; the saved script then holds only the structure" />
 			  <CheckBox Content="One transaction" IsChecked="{Binding CopySingleTransaction}"
 						ToolTip.Tip="All or nothing: any error rolls everything back. Off: steps run one by one with progress, and completed steps stay applied" />
 			  <CheckBox Content="Verify row counts" IsChecked="{Binding CopyVerifyAfter}" IsVisible="{Binding ShowDataOptions}"
@@ -591,6 +597,66 @@
 		  <TextBlock Grid.Row="4" Classes="empty" IsVisible="{Binding !HasCopyPlan}"
 					 Text="Pick an object on the left and the target database on the right. When the object is missing on the right you can create it (with its data); when it exists you can merge the data, replace it, or drop and re-create the table. Preview shows the exact script and row counts before anything runs." />
 		</Grid>
+
+		<!-- Batch mode: several objects from the Overview tab -->
+		<Grid RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding IsCopyBatchMode}">
+		  <WrapPanel Grid.Row="0" Classes="toolbar">
+			<TextBlock Text="{Binding BatchHeader}" FontWeight="SemiBold" TextWrapping="Wrap" />
+		  </WrapPanel>
+		  <WrapPanel Grid.Row="1" Classes="toolbar">
+			<CheckBox Content="Copy data" IsChecked="{Binding CopyIncludeData}" ToolTip.Tip="Created tables get their rows too" />
+			<CheckBox Content="Indexes" IsChecked="{Binding CopyIndexes}" />
+			<CheckBox Content="Foreign keys" IsChecked="{Binding CopyForeignKeys}"
+					  ToolTip.Tip="Created only when the referenced table exists on the right or is created earlier in the batch" />
+			<CheckBox Content="Defaults &amp; checks" IsChecked="{Binding CopyDefaultsAndChecks}" />
+			<CheckBox Content="Update changed rows" IsChecked="{Binding CopyUpdateChanged}" ToolTip.Tip="For tables that are merged" />
+			<CheckBox Content="Delete rows only on the right" IsChecked="{Binding CopyDeleteExtra}" ToolTip.Tip="For tables that are merged" />
+			<CheckBox Content="Add missing columns" IsChecked="{Binding CopyAddMissingColumns}" />
+			<CheckBox Content="Back up right tables first" IsChecked="{Binding CopyBackupTarget}" />
+			<CheckBox Content="Stream rows" IsChecked="{Binding CopyStreamRows}" />
+			<CheckBox Content="One transaction per object" IsChecked="{Binding CopySingleTransaction}" />
+			<CheckBox Content="Verify row counts" IsChecked="{Binding CopyVerifyAfter}" />
+			<CheckBox Content="Continue after a failure" IsChecked="{Binding BatchContinueOnError}" />
+			<CheckBox Content="Refresh right metadata" IsChecked="{Binding CopyRefreshAfter}" />
+		  </WrapPanel>
+		  <WrapPanel Grid.Row="2" Classes="toolbar">
+			<Button Content="Run batch" Classes="accent" Command="{Binding RunBatchCommand}"
+					ToolTip.Tip="Copy the ticked objects in the order shown, after one confirmation" />
+			<Button Content="Back to single object" Command="{Binding ExitBatchCommand}" />
+			<TextBlock Classes="hint" Text="{Binding CopyStatus}" TextWrapping="Wrap" />
+		  </WrapPanel>
+		  <DataGrid Grid.Row="3" ItemsSource="{Binding BatchItems}" AutoGenerateColumns="False" CanUserSortColumns="False"
+					CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+			<DataGrid.Columns>
+			  <DataGridTemplateColumn Header="" Width="40">
+				<DataGridTemplateColumn.CellTemplate>
+				  <DataTemplate x:DataType="vm:BatchCopyItem">
+					<CheckBox IsChecked="{Binding Include}" IsEnabled="{Binding CanCopy}" HorizontalAlignment="Center" Margin="8,0,0,0" />
+				  </DataTemplate>
+				</DataGridTemplateColumn.CellTemplate>
+			  </DataGridTemplateColumn>
+			  <DataGridTextColumn Header="Object" Binding="{Binding FullName}" Width="240" IsReadOnly="True" />
+			  <DataGridTextColumn Header="Type" Binding="{Binding TypeText}" Width="110" IsReadOnly="True" />
+			  <DataGridTemplateColumn Header="Action" Width="230">
+				<DataGridTemplateColumn.CellTemplate>
+				  <DataTemplate x:DataType="vm:BatchCopyItem">
+					<ComboBox ItemsSource="{Binding Actions}" SelectedItem="{Binding SelectedAction}" IsEnabled="{Binding CanCopy}"
+							  HorizontalAlignment="Stretch" Margin="2">
+					  <ComboBox.ItemTemplate>
+						<DataTemplate x:DataType="vm:CopyActionOption">
+						  <TextBlock Text="{Binding Label}" />
+						</DataTemplate>
+					  </ComboBox.ItemTemplate>
+					</ComboBox>
+				  </DataTemplate>
+				</DataGridTemplateColumn.CellTemplate>
+			  </DataGridTemplateColumn>
+			  <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" IsReadOnly="True" />
+			  <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*" IsReadOnly="True" />
+			</DataGrid.Columns>
+		  </DataGrid>
+		</Grid>
+		</Panel>
 	  </TabItem>
 	</TabControl>
 

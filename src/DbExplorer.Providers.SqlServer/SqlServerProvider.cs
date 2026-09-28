@@ -445,6 +445,85 @@ public sealed class SqlServerProvider : IDatabaseProvider
         };
     }
 
+    public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)
+    {
+        var cn = new SqlConnection(SqlServerSql.BuildConnectionString(
+            _profile, SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true));
+        try
+        {
+            await cn.OpenAsync(ct);
+            var tx = transactional ? (SqlTransaction)await cn.BeginTransactionAsync(ct) : null;
+            return new ScriptSession(cn, tx);
+        }
+        catch
+        {
+            await cn.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default)
+    {
+        var database = string.IsNullOrEmpty(table.Database) ? _profile.Database : table.Database;
+        var args = new { name = SqlServerSql.QuoteFullName(table.Schema, table.Name) };
+        var defaults = await QueryInDatabaseAsync<NameDefinition>(SqlServerQueries.ColumnDefaults, args, database, ct);
+        var checks = await QueryInDatabaseAsync<NameDefinition>(SqlServerQueries.CheckConstraints, args, database, ct);
+        return new DbTableConstraints
+        {
+            Defaults = defaults.Where(d => d.Definition is not null)
+                .ToDictionary(d => d.Name, d => d.Definition!, StringComparer.OrdinalIgnoreCase),
+            Checks = checks.Where(c => c.Definition is not null).Select(c => new DbCheckConstraint(c.Name, c.Definition!)).ToList()
+        };
+    }
+
+    private sealed class NameDefinition
+    {
+        public string Name { get; set; } = "";
+        public string? Definition { get; set; }
+    }
+
+    /// <summary>Keeps one connection (and transaction) open across scripts; GO still separates batches.</summary>
+    private sealed class ScriptSession(SqlConnection connection, SqlTransaction? transaction) : IScriptSession
+    {
+        private bool _committed;
+
+        public async Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default)
+        {
+            var affected = 0;
+            foreach (var batch in SplitBatches(sql))
+            {
+                if (string.IsNullOrWhiteSpace(batch)) continue;
+                await using var cmd = connection.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = batch;
+                cmd.CommandTimeout = timeoutSeconds;
+                var rows = await cmd.ExecuteNonQueryAsync(ct);
+                if (rows > 0) affected += rows;
+            }
+            return affected;
+        }
+
+        public async Task CommitAsync(CancellationToken ct = default)
+        {
+            if (transaction is not null) await transaction.CommitAsync(ct);
+            _committed = true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (transaction is not null)
+            {
+                if (!_committed)
+                {
+                    try { await transaction.RollbackAsync(); }
+                    catch (Exception) { /* already rolled back by XACT_ABORT or a broken connection */ }
+                }
+                await transaction.DisposeAsync();
+            }
+            await connection.DisposeAsync();
+        }
+    }
+
     /// <summary>Splits a script on GO batch separators (SSMS convention); the word must be alone on its line.</summary>
     private static IReadOnlyList<string> SplitBatches(string sql)
     {

@@ -72,4 +72,11 @@ public interface IDatabaseProvider : IAsyncDisposable
     Task<QueryExecutionResult> ExecuteRoutineAsync(
         DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments,
         int timeoutSeconds, CancellationToken ct = default);
+
+    /// <summary>Opens a read-write connection to the database (or the profile's default when null) for running
+    /// several scripts in a row, inside one transaction when <paramref name="transactional"/> is set.</summary>
+    Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default);
+
+    /// <summary>Column defaults and check constraints of one table (catalog-only, no locks).</summary>
+    Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default);
 }

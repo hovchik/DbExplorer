@@ -27,6 +27,12 @@ public partial class ComparerView : UserControl
             vm.OpenOverviewEntryCommand.Execute(null);
     }
 
+    private void OnOverviewSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is ComparerViewModel vm && sender is DataGrid grid)
+            vm.SelectedOverviewEntries = grid.SelectedItems.OfType<DbExplorer.Application.Compare.ObjectComparisonEntry>().ToList();
+    }
+
     /// <summary>Keeps the change picked by "next / previous difference" in view.</summary>
     private void OnSchemaSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {

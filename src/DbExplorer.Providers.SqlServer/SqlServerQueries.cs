@@ -125,6 +125,20 @@ internal static class SqlServerQueries
         ORDER BY p.parameter_id;
         """;
 
+    public const string ColumnDefaults = """
+        SELECT c.name AS [Name], dc.definition AS [Definition]
+        FROM sys.default_constraints dc
+        JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+        WHERE dc.parent_object_id = OBJECT_ID(@name);
+        """;
+
+    public const string CheckConstraints = """
+        SELECT cc.name AS [Name], cc.definition AS [Definition]
+        FROM sys.check_constraints cc
+        WHERE cc.parent_object_id = OBJECT_ID(@name) AND cc.is_disabled = 0
+        ORDER BY cc.name;
+        """;
+
     public const string SynonymDefinition = """
         SELECT 'CREATE SYNONYM ' + QUOTENAME(SCHEMA_NAME(schema_id)) + '.' + QUOTENAME(name)
              + ' FOR ' + base_object_name + ';'

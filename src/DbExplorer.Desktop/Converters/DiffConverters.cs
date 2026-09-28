@@ -11,8 +11,8 @@ public sealed class DiffKindToBrushConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        DiffLineKind.Added => new SolidColorBrush(Color.FromArgb(60, 46, 160, 67)),
-        DiffLineKind.Removed => new SolidColorBrush(Color.FromArgb(60, 219, 61, 61)),
+        DiffLineKind.Added => new SolidColorBrush(Color.FromArgb(140, 46, 160, 67)),
+        DiffLineKind.Removed => new SolidColorBrush(Color.FromArgb(140, 219, 61, 61)),
         _ => Brushes.Transparent
     };
 

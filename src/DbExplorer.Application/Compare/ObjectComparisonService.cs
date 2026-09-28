@@ -15,11 +15,12 @@ public sealed class ObjectComparisonService(DefinitionService definitions, Query
     public async Task<IReadOnlyList<DiffLine>> CompareSchemaAsync(
         DatabaseSession leftSession, DbObject leftObject,
         DatabaseSession rightSession, DbObject rightObject,
+        SchemaCompareMode mode = SchemaCompareMode.LineByLine,
         CancellationToken ct = default)
     {
         var leftDefinition = await definitions.GetDefinitionAsync(leftSession, leftObject, ct) ?? "";
         var rightDefinition = await definitions.GetDefinitionAsync(rightSession, rightObject, ct) ?? "";
-        return TextDiffer.Diff(leftDefinition, rightDefinition);
+        return TextDiffer.Diff(leftDefinition, rightDefinition, mode);
     }
 
     /// <summary>Loads the full (limited) row set of a single table/view, with no comparison involved.</summary>

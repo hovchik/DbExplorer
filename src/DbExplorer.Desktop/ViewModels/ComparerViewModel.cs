@@ -27,6 +27,11 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _status = "";
 
+    [ObservableProperty] private IReadOnlyList<string> _leftDatabases = [];
+    [ObservableProperty] private IReadOnlyList<string> _rightDatabases = [];
+    [ObservableProperty] private string? _selectedLeftDatabase;
+    [ObservableProperty] private string? _selectedRightDatabase;
+
     [ObservableProperty] private IReadOnlyList<DbObject> _leftObjects = [];
     [ObservableProperty] private IReadOnlyList<DbObject> _rightObjects = [];
     [ObservableProperty] private DbObject? _selectedLeftObject;
@@ -34,6 +39,46 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
 
     [ObservableProperty] private IReadOnlyList<DiffLine> _schemaDiff = [];
     [ObservableProperty] private string _schemaStatus = "";
+
+    /// <summary>Content-mode tokens present on the left side (equal + removed), grouped into lines
+    /// so the results window can render formatted SQL scripts.</summary>
+    [ObservableProperty] private IReadOnlyList<DiffLineGroup> _schemaDiffLeft = [];
+
+    /// <summary>Content-mode tokens present on the right side (equal + added), grouped into lines
+    /// so the results window can render formatted SQL scripts.</summary>
+    [ObservableProperty] private IReadOnlyList<DiffLineGroup> _schemaDiffRight = [];
+
+    partial void OnSchemaDiffChanged(IReadOnlyList<DiffLine> value)
+    {
+        SchemaDiffLeft = GroupIntoLines(value.Where(d => d.LeftText is not null));
+        SchemaDiffRight = GroupIntoLines(value.Where(d => d.RightText is not null));
+    }
+
+    private static IReadOnlyList<DiffLineGroup> GroupIntoLines(IEnumerable<DiffLine> tokens)
+    {
+        var groups = new List<DiffLineGroup>();
+        var current = new List<DiffLine>();
+        foreach (var token in tokens)
+        {
+            current.Add(token);
+            if (token.NewLineAfter)
+            {
+                groups.Add(new DiffLineGroup { Tokens = current });
+                current = [];
+            }
+        }
+
+        if (current.Count > 0)
+            groups.Add(new DiffLineGroup { Tokens = current });
+
+        return groups;
+    }
+
+    public IReadOnlyList<SchemaCompareMode> SchemaCompareModes { get; } = Enum.GetValues<SchemaCompareMode>();
+    [ObservableProperty] private SchemaCompareMode _selectedSchemaCompareMode = SchemaCompareMode.LineByLine;
+
+    public bool IsSchemaLineView => SelectedSchemaCompareMode == SchemaCompareMode.LineByLine;
+    public bool IsSchemaContentView => SelectedSchemaCompareMode == SchemaCompareMode.Content;
 
     [ObservableProperty] private IReadOnlyList<DataComparisonRow> _dataDiff = [];
     [ObservableProperty] private string _dataStatus = "";
@@ -69,6 +114,13 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
 
     partial void OnRightProfileChanged(ConnectionProfile? value) => ConnectRightCommand.NotifyCanExecuteChanged();
 
+    partial void OnLeftSessionChanged(DatabaseSession? value) => OnPropertyChanged(nameof(IsLeftConnected));
+
+    partial void OnRightSessionChanged(DatabaseSession? value) => OnPropertyChanged(nameof(IsRightConnected));
+
+    public bool IsLeftConnected => LeftSession is not null;
+    public bool IsRightConnected => RightSession is not null;
+
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
 
     partial void OnSelectedLeftObjectChanged(DbObject? value)
@@ -85,6 +137,17 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     }
 
     partial void OnSelectedRightObjectChanged(DbObject? value) => RefreshCommands();
+
+    partial void OnSelectedSchemaCompareModeChanged(SchemaCompareMode value)
+    {
+        OnPropertyChanged(nameof(IsSchemaLineView));
+        OnPropertyChanged(nameof(IsSchemaContentView));
+        if (SchemaDiff.Count > 0) _ = CompareSchemaAsync();
+    }
+
+    partial void OnSelectedLeftDatabaseChanged(string? value) => UpdateLeftObjects();
+
+    partial void OnSelectedRightDatabaseChanged(string? value) => UpdateRightObjects();
 
     partial void OnOnlyShowDifferencesChanged(bool value) => ApplyDataFilter();
 
@@ -154,12 +217,59 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         }
     }
 
+    private bool CanDisconnectLeft => LeftSession is not null && !IsBusy;
+
+    [RelayCommand(CanExecute = nameof(CanDisconnectLeft))]
+    private async Task DisconnectLeftAsync()
+    {
+        if (LeftSession is null) return;
+        IsBusy = true;
+        try
+        {
+            if (LeftSession != _mainSession) await LeftSession.DisposeAsync();
+            LeftSession = null;
+            LeftDatabases = [];
+            SelectedLeftDatabase = null;
+            LeftObjects = [];
+            SelectedLeftObject = null;
+            Status = "Left disconnected";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanDisconnectRight => RightSession is not null && !IsBusy;
+
+    [RelayCommand(CanExecute = nameof(CanDisconnectRight))]
+    private async Task DisconnectRightAsync()
+    {
+        if (RightSession is null) return;
+        IsBusy = true;
+        try
+        {
+            if (RightSession != _mainSession) await RightSession.DisposeAsync();
+            RightSession = null;
+            RightDatabases = [];
+            SelectedRightDatabase = null;
+            RightObjects = [];
+            SelectedRightObject = null;
+            Status = "Right disconnected";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private async Task SetLeftSessionAsync(DatabaseSession session)
     {
         if (LeftSession is not null && LeftSession != _mainSession) await LeftSession.DisposeAsync();
         LeftSession = session;
-        LeftObjects = session.Snapshot.Objects;
-        SelectedLeftObject = null;
+        LeftDatabases = GetDatabases(session);
+        SelectedLeftDatabase = LeftDatabases.Count > 0 ? LeftDatabases[0] : null;
+        UpdateLeftObjects();
         RefreshCommands();
     }
 
@@ -167,9 +277,36 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     {
         if (RightSession is not null && RightSession != _mainSession) await RightSession.DisposeAsync();
         RightSession = session;
-        RightObjects = session.Snapshot.Objects;
-        SelectedRightObject = null;
+        RightDatabases = GetDatabases(session);
+        SelectedRightDatabase = RightDatabases.Count > 0 ? RightDatabases[0] : null;
+        UpdateRightObjects();
         RefreshCommands();
+    }
+
+    private static IReadOnlyList<string> GetDatabases(DatabaseSession session) =>
+        session.Snapshot.Objects
+            .Select(o => o.Database)
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private void UpdateLeftObjects()
+    {
+        var all = LeftSession?.Snapshot.Objects ?? [];
+        LeftObjects = SelectedLeftDatabase is null
+            ? all
+            : all.Where(o => string.Equals(o.Database, SelectedLeftDatabase, StringComparison.OrdinalIgnoreCase)).ToList();
+        SelectedLeftObject = null;
+    }
+
+    private void UpdateRightObjects()
+    {
+        var all = RightSession?.Snapshot.Objects ?? [];
+        RightObjects = SelectedRightDatabase is null
+            ? all
+            : all.Where(o => string.Equals(o.Database, SelectedRightDatabase, StringComparison.OrdinalIgnoreCase)).ToList();
+        SelectedRightObject = null;
     }
 
     private bool CanCompare => LeftSession is not null && RightSession is not null &&
@@ -184,13 +321,14 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         SchemaStatus = "Comparing definitions\u2026";
         try
         {
-            var diff = await comparer.CompareSchemaAsync(LeftSession, SelectedLeftObject, RightSession, SelectedRightObject);
+            var diff = await comparer.CompareSchemaAsync(LeftSession, SelectedLeftObject, RightSession, SelectedRightObject, SelectedSchemaCompareMode);
             SchemaDiff = diff;
             var added = diff.Count(d => d.Kind == DiffLineKind.Added);
             var removed = diff.Count(d => d.Kind == DiffLineKind.Removed);
+            var unit = SelectedSchemaCompareMode == SchemaCompareMode.Content ? "token(s)" : "line(s)";
             SchemaStatus = added == 0 && removed == 0
                 ? "Definitions are identical"
-                : $"{removed} line(s) only on left \u00B7 {added} line(s) only on right";
+                : $"{removed} {unit} only on left \u00B7 {added} {unit} only on right";
         }
         catch (Exception ex)
         {
@@ -315,6 +453,8 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     {
         ConnectLeftCommand.NotifyCanExecuteChanged();
         ConnectRightCommand.NotifyCanExecuteChanged();
+        DisconnectLeftCommand.NotifyCanExecuteChanged();
+        DisconnectRightCommand.NotifyCanExecuteChanged();
         UseCurrentAsLeftCommand.NotifyCanExecuteChanged();
         UseCurrentAsRightCommand.NotifyCanExecuteChanged();
         CompareSchemaCommand.NotifyCanExecuteChanged();

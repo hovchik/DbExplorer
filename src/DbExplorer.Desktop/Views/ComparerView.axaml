@@ -22,14 +22,19 @@
 		  <TextBlock Text="Left (baseline)" FontWeight="SemiBold" />
 		  <StackPanel Orientation="Horizontal" Spacing="6">
 			<ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
-					  PlaceholderText="Select a connection..." />
-			<Button Content="Connect" Command="{Binding ConnectLeftCommand}" />
+					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsLeftConnected}" />
+			<Button Content="Connect" Command="{Binding ConnectLeftCommand}" IsVisible="{Binding !IsLeftConnected}" />
+			<Button Content="Disconnect" Command="{Binding DisconnectLeftCommand}" IsVisible="{Binding IsLeftConnected}" />
 			<Button Content="Use current" Command="{Binding UseCurrentAsLeftCommand}"
 					ToolTip.Tip="Use the connection already open in the main window" />
 		  </StackPanel>
-		  <AutoCompleteBox ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
-							ValueMemberBinding="{Binding FullName}" FilterMode="Contains"
-							Watermark="Type to filter objects...">
+		  <TextBlock Text="Database" Classes="hint" />
+		  <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
+					PlaceholderText="(default)" />
+		  <AutoCompleteBox x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
+							ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
+							IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus"
+							Watermark="Click to browse or type to filter objects...">
 			<AutoCompleteBox.ItemTemplate>
 			  <DataTemplate x:DataType="models:DbObject">
 				<TextBlock Text="{Binding FullName}" />
@@ -49,14 +54,19 @@
 		  <TextBlock Text="Right (comparand)" FontWeight="SemiBold" />
 		  <StackPanel Orientation="Horizontal" Spacing="6">
 			<ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
-					  PlaceholderText="Select a connection..." />
-			<Button Content="Connect" Command="{Binding ConnectRightCommand}" />
+					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsRightConnected}" />
+			<Button Content="Connect" Command="{Binding ConnectRightCommand}" IsVisible="{Binding !IsRightConnected}" />
+			<Button Content="Disconnect" Command="{Binding DisconnectRightCommand}" IsVisible="{Binding IsRightConnected}" />
 			<Button Content="Use current" Command="{Binding UseCurrentAsRightCommand}"
 					ToolTip.Tip="Use the connection already open in the main window" />
 		  </StackPanel>
-		  <AutoCompleteBox ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
-							ValueMemberBinding="{Binding FullName}" FilterMode="Contains"
-							Watermark="Type to filter objects...">
+		  <TextBlock Text="Database" Classes="hint" />
+		  <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
+					PlaceholderText="(default)" />
+		  <AutoCompleteBox x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
+							ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
+							IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus"
+							Watermark="Click to browse or type to filter objects...">
 			<AutoCompleteBox.ItemTemplate>
 			  <DataTemplate x:DataType="models:DbObject">
 				<TextBlock Text="{Binding FullName}" />
@@ -75,9 +85,12 @@
 		<Grid RowDefinitions="Auto,*">
 		  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
 			<Button Content="Compare definitions" Classes="accent" Command="{Binding CompareSchemaCommand}" />
+			<TextBlock Text="Comparison type:" VerticalAlignment="Center" />
+			<ComboBox Width="140" ItemsSource="{Binding SchemaCompareModes}" SelectedItem="{Binding SelectedSchemaCompareMode}" />
 			<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding SchemaStatus}" />
 		  </StackPanel>
 		  <DataGrid Grid.Row="1" ItemsSource="{Binding SchemaDiff}" IsReadOnly="True" AutoGenerateColumns="False"
+					IsVisible="{Binding IsSchemaLineView}"
 					CanUserResizeColumns="True" GridLinesVisibility="Horizontal" FontFamily="Cascadia Mono, Consolas, Menlo, monospace">
 			<DataGrid.Styles>
 			  <Style Selector="DataGridRow">
@@ -95,6 +108,54 @@
 								   IsVisible="{Binding #root.DataContext.IsRightPanelVisible}" />
 			</DataGrid.Columns>
 		  </DataGrid>
+
+		  <Grid Grid.Row="1" ColumnDefinitions="*,*" IsVisible="{Binding IsSchemaContentView}">
+			<ScrollViewer Grid.Column="0" IsVisible="{Binding IsLeftPanelVisible}">
+			  <ItemsControl ItemsSource="{Binding SchemaDiffLeft}">
+				<ItemsControl.ItemTemplate>
+				  <DataTemplate x:DataType="models:DiffLineGroup">
+					<ItemsControl ItemsSource="{Binding Tokens}">
+					  <ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+						  <WrapPanel Orientation="Horizontal" />
+						</ItemsPanelTemplate>
+					  </ItemsControl.ItemsPanel>
+					  <ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="models:DiffLine">
+						  <Border Background="{Binding Kind, Converter={StaticResource DiffKindBrush}}" CornerRadius="2" Padding="3,1" Margin="1,1">
+							<TextBlock Text="{Binding LeftText}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="13" />
+						  </Border>
+						</DataTemplate>
+					  </ItemsControl.ItemTemplate>
+					</ItemsControl>
+				  </DataTemplate>
+				</ItemsControl.ItemTemplate>
+			  </ItemsControl>
+			</ScrollViewer>
+			<GridSplitter Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#22808080" />
+			<ScrollViewer Grid.Column="1" IsVisible="{Binding IsRightPanelVisible}">
+			  <ItemsControl ItemsSource="{Binding SchemaDiffRight}">
+				<ItemsControl.ItemTemplate>
+				  <DataTemplate x:DataType="models:DiffLineGroup">
+					<ItemsControl ItemsSource="{Binding Tokens}">
+					  <ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+						  <WrapPanel Orientation="Horizontal" />
+						</ItemsPanelTemplate>
+					  </ItemsControl.ItemsPanel>
+					  <ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="models:DiffLine">
+						  <Border Background="{Binding Kind, Converter={StaticResource DiffKindBrush}}" CornerRadius="2" Padding="3,1" Margin="1,1">
+							<TextBlock Text="{Binding RightText}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="13" />
+						  </Border>
+						</DataTemplate>
+					  </ItemsControl.ItemTemplate>
+					</ItemsControl>
+				  </DataTemplate>
+				</ItemsControl.ItemTemplate>
+			  </ItemsControl>
+			</ScrollViewer>
+		  </Grid>
 		</Grid>
 	  </TabItem>
 

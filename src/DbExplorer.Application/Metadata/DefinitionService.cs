@@ -14,7 +14,10 @@ public sealed class DefinitionService
 
         // Served from the snapshot when possible: no server round-trip.
         var cached = session.Snapshot.Modules
-            .Where(m => m.Database == obj.Database && m.Schema == obj.Schema && m.Name == obj.Name && m.Type == obj.Type && m.Definition is not null)
+            .Where(m => string.Equals(m.Database, obj.Database, StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(m.Schema, obj.Schema, StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(m.Name, obj.Name, StringComparison.OrdinalIgnoreCase)
+                     && m.Type == obj.Type && m.Definition is not null)
             .Select(m => m.Definition!)
             .ToList();
 

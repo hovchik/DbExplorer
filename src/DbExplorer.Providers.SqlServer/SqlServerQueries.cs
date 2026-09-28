@@ -70,7 +70,8 @@ internal static class SqlServerQueries
                c.is_nullable AS [IsNullable],
                c.column_id AS [Ordinal],
                c.is_computed AS [IsComputed],
-               CAST(CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END AS bit) AS [IsPrimaryKey]
+               CAST(CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END AS bit) AS [IsPrimaryKey],
+               c.is_identity AS [IsIdentity]
         FROM sys.columns c
         JOIN sys.objects o ON o.object_id = c.object_id
         JOIN sys.schemas s ON s.schema_id = o.schema_id

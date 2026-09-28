@@ -178,6 +178,8 @@
 					  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)" />
 			<Button Content="Open selected" Command="{Binding OpenOverviewEntryCommand}"
 					ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row)" />
+			<Button Content="Copy to right…" Command="{Binding CopyOverviewEntryCommand}"
+					ToolTip.Tip="Open the selected left object on the Copy &amp; sync tab: create it on the right, or merge / replace its data" />
 			<TextBlock Classes="hint" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
 		  <DataGrid Grid.Row="2" x:Name="OverviewGrid" ItemsSource="{Binding OverviewEntries}" SelectedItem="{Binding SelectedOverviewEntry}"
@@ -476,14 +478,128 @@
 		  </Grid>
 		</Grid>
 	  </TabItem>
+	  <!-- Create the left object on the right, or synchronize its data / definition -->
+	  <TabItem Header="Copy &amp; sync">
+		<Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+		  <!-- Where the copy goes -->
+		  <WrapPanel Grid.Row="0" Classes="toolbar">
+			<TextBlock Text="Copy the left object to" FontWeight="SemiBold" />
+			<TextBox Width="140" Text="{Binding CopyTargetSchema}" Watermark="schema"
+					 ToolTip.Tip="Schema on the right; created when missing" />
+			<TextBlock Text="." />
+			<TextBox Width="260" Text="{Binding CopyTargetName}" Watermark="name"
+					 ToolTip.Tip="Name on the right. Defaults to the left name; change it to copy a table under another name (e.g. a backup copy)" />
+			<TextBlock Classes="hint" Text="{Binding CopyTargetInfo}" TextWrapping="Wrap" />
+		  </WrapPanel>
+
+		  <!-- What was found and what is suggested -->
+		  <Border Grid.Row="1" Classes="card" Margin="0,0,0,6">
+			<StackPanel Spacing="4">
+			  <TextBlock Text="{Binding CopySummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+			  <TextBlock Classes="hint" Text="{Binding CopyColumnInfo}" TextWrapping="Wrap" IsVisible="{Binding HasCopyColumnInfo}" />
+			  <TextBlock Classes="hint" Text="{Binding CopyWarningsText}" TextWrapping="Wrap" IsVisible="{Binding HasCopyWarnings}" />
+			</StackPanel>
+		  </Border>
+
+		  <!-- Action and its options -->
+		  <StackPanel Grid.Row="2" IsVisible="{Binding HasCopyActions}">
+			<WrapPanel Classes="toolbar">
+			  <TextBlock Text="Action:" />
+			  <ComboBox Width="260" ItemsSource="{Binding CopyActions}" SelectedItem="{Binding SelectedCopyAction}">
+				<ComboBox.ItemTemplate>
+				  <DataTemplate x:DataType="vm:CopyActionOption">
+					<TextBlock Text="{Binding Label}" />
+				  </DataTemplate>
+				</ComboBox.ItemTemplate>
+			  </ComboBox>
+			  <TextBlock Classes="hint" Text="{Binding SelectedCopyActionDescription}" TextWrapping="Wrap" MaxWidth="820" />
+			</WrapPanel>
+
+			<WrapPanel Classes="toolbar">
+			  <CheckBox Content="Copy data" IsChecked="{Binding CopyIncludeData}" IsVisible="{Binding ShowCreateTableOptions}"
+						ToolTip.Tip="Copy the rows too, not only the structure" />
+			  <CheckBox Content="Indexes" IsChecked="{Binding CopyIndexes}" IsVisible="{Binding ShowCreateTableOptions}"
+						ToolTip.Tip="Create the left table's indexes (after the data, which is faster)" />
+			  <CheckBox Content="Foreign keys" IsChecked="{Binding CopyForeignKeys}" IsVisible="{Binding ShowCreateTableOptions}"
+						ToolTip.Tip="Create the foreign keys whose referenced table exists on the right (or is created by this copy)" />
+			  <CheckBox Content="Include missing parent tables" IsChecked="{Binding CopyIncludeParents}" IsVisible="{Binding ShowParentsOption}"
+						ToolTip.Tip="Also create the referenced tables that are missing on the right (with their rows), parents first, so every foreign key can be created" />
+			  <CheckBox Content="Update changed rows" IsChecked="{Binding CopyUpdateChanged}" IsVisible="{Binding ShowMergeOptions}"
+						ToolTip.Tip="Rows present on both sides with different values are overwritten with the left values" />
+			  <CheckBox Content="Delete rows only on the right" IsChecked="{Binding CopyDeleteExtra}" IsVisible="{Binding ShowMergeOptions}"
+						ToolTip.Tip="Makes the right an exact copy of the left (within the row filter)" />
+			  <CheckBox Content="Add missing columns" IsChecked="{Binding CopyAddMissingColumns}" IsVisible="{Binding ShowAddColumnsOption}"
+						ToolTip.Tip="Columns that exist only on the left are added to the right table (nullable) before the data is copied" />
+			  <CheckBox Content="Back up right table first" IsChecked="{Binding CopyBackupTarget}" IsVisible="{Binding ShowBackupOption}"
+						ToolTip.Tip="Copies the current right table to NAME_backup_yyyyMMdd_HHmmss before changing it (on by default for production)" />
+			</WrapPanel>
+
+			<WrapPanel Classes="toolbar">
+			  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowRowFilter}">
+				<TextBlock Text="Rows where" VerticalAlignment="Center" />
+				<TextBox Width="280" Text="{Binding CopyRowFilter}" Watermark="e.g. CreatedAt &gt;= '2024-01-01'"
+						 ToolTip.Tip="Optional SQL condition (without WHERE). Only matching rows are read, compared, replaced or deleted, on both sides" />
+			  </StackPanel>
+			  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowDataOptions}">
+				<TextBlock Text="Batch:" VerticalAlignment="Center" />
+				<NumericUpDown Value="{Binding CopyBatchSize}" Minimum="1" Maximum="1000" Increment="100" FormatString="N0" Width="120"
+							   ToolTip.Tip="Rows per INSERT statement / statements per batch" />
+				<TextBlock Text="Max rows:" VerticalAlignment="Center" />
+				<NumericUpDown Value="{Binding CopyMaxRows}" Minimum="1" Maximum="5000000" Increment="10000" FormatString="N0" Width="150"
+							   ToolTip.Tip="Safety limit on the rows read per side; the copy stops with a message when a table has more" />
+			  </StackPanel>
+			  <CheckBox Content="One transaction" IsChecked="{Binding CopySingleTransaction}"
+						ToolTip.Tip="All or nothing: any error rolls everything back. Off: steps run one by one with progress, and completed steps stay applied" />
+			  <CheckBox Content="Verify row counts" IsChecked="{Binding CopyVerifyAfter}" IsVisible="{Binding ShowDataOptions}"
+						ToolTip.Tip="Count the rows on both sides after the copy" />
+			  <CheckBox Content="Refresh right metadata" IsChecked="{Binding CopyRefreshAfter}"
+						ToolTip.Tip="Re-read the right catalog after the copy so the new object and columns show up everywhere" />
+			</WrapPanel>
+		  </StackPanel>
+
+		  <!-- Preview / run -->
+		  <WrapPanel Grid.Row="3" Classes="toolbar" IsVisible="{Binding HasCopyActions}">
+			<Button Content="Preview" Command="{Binding PreviewCopyCommand}"
+					ToolTip.Tip="Read what is needed and build the exact script and row counts; nothing is changed" />
+			<Button Content="Run on the right" Classes="accent" Command="{Binding RunCopyCommand}"
+					ToolTip.Tip="Run the script on the right side after a confirmation (builds it first if needed)" />
+			<Button Content="Copy script" Click="OnCopyScriptToClipboard" IsEnabled="{Binding HasCopyPlan}"
+					ToolTip.Tip="Copy the full script to the clipboard, e.g. to run it through a deployment tool" />
+			<Button Content="Save script…" Click="OnSaveCopyScript" IsEnabled="{Binding HasCopyPlan}" />
+			<TextBlock FontWeight="SemiBold" Text="{Binding CopyPlanSummary}" TextWrapping="Wrap" />
+			<TextBlock Classes="hint" Text="{Binding CopyStatus}" TextWrapping="Wrap" />
+		  </WrapPanel>
+
+		  <!-- Steps and script -->
+		  <Grid Grid.Row="4" ColumnDefinitions="380,Auto,*" IsVisible="{Binding HasCopyPlan}">
+			<Grid Grid.Column="0" RowDefinitions="*,Auto">
+			  <DataGrid ItemsSource="{Binding CopySteps}" IsReadOnly="True" AutoGenerateColumns="False"
+						CanUserResizeColumns="True" CanUserSortColumns="False" GridLinesVisibility="Horizontal">
+				<DataGrid.Columns>
+				  <DataGridTextColumn Header="Step" Binding="{Binding Title}" Width="*" />
+				  <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="Auto" />
+				</DataGrid.Columns>
+			  </DataGrid>
+			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+						 Text="{Binding CopyNotesText}" IsVisible="{Binding HasCopyNotes}" />
+			</Grid>
+			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
+			<TextBox Grid.Column="2" Classes="code" Text="{Binding CopyScriptPreview}" IsReadOnly="True"
+					 AcceptsReturn="True" TextWrapping="NoWrap"
+					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+		  </Grid>
+		  <TextBlock Grid.Row="4" Classes="empty" IsVisible="{Binding !HasCopyPlan}"
+					 Text="Pick an object on the left and the target database on the right. When the object is missing on the right you can create it (with its data); when it exists you can merge the data, replace it, or drop and re-create the table. Preview shows the exact script and row counts before anything runs." />
+		</Grid>
+	  </TabItem>
 	</TabControl>
 
 	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side -->
 	<StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Top"
-				Height="30" Margin="320,0,0,0">
+				Height="30" Margin="440,0,0,0">
 	  <ProgressBar IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
 	  <Button Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" VerticalAlignment="Center"
-			  ToolTip.Tip="Stop the running comparison (Esc)" />
+			  ToolTip.Tip="Stop the running comparison or copy (Esc)" />
 	  <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
 				 TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip.Tip="{Binding NextStepHint}"
 				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />

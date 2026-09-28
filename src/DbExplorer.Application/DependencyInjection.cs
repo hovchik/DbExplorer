@@ -1,5 +1,6 @@
 using DbExplorer.Application.Compare;
 using DbExplorer.Application.Connections;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
@@ -30,6 +31,7 @@ public static class DependencyInjection
         services.AddSingleton<QueryExecutionService>();
         services.AddSingleton<MultiDatabaseQueryService>();
         services.AddSingleton<ObjectComparisonService>();
+        services.AddSingleton<ObjectCopyService>();
         return services;
     }
 }

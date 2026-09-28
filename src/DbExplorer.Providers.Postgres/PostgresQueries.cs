@@ -56,7 +56,8 @@ internal static class PostgresQueries
                a.attnum::int AS "Ordinal",
                (a.attgenerated <> '') AS "IsComputed",
                EXISTS (SELECT 1 FROM pg_index i
-                        WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey)) AS "IsPrimaryKey"
+                        WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey)) AS "IsPrimaryKey",
+               (a.attidentity <> '') AS "IsIdentity"
         FROM pg_attribute a
         JOIN pg_class c ON c.oid = a.attrelid
         JOIN pg_namespace n ON n.oid = c.relnamespace

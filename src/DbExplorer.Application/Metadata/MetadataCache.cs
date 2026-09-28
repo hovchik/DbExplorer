@@ -13,7 +13,7 @@ namespace DbExplorer.Application.Metadata;
 /// </summary>
 public sealed class MetadataCache(AppPaths paths)
 {
-    private const string SchemaVersion = "4";
+    private const string SchemaVersion = "5";
 
     public static string CacheKey(ConnectionProfile p)
     {
@@ -84,7 +84,7 @@ public sealed class MetadataCache(AppPaths paths)
             var columns = new List<DbColumn>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key FROM columns";
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key, is_identity FROM columns";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
@@ -99,7 +99,8 @@ public sealed class MetadataCache(AppPaths paths)
                         IsNullable = r.GetInt64(6) != 0,
                         Ordinal = r.GetInt32(7),
                         IsComputed = r.GetInt64(8) != 0,
-                        IsPrimaryKey = r.GetInt64(9) != 0
+                        IsPrimaryKey = r.GetInt64(9) != 0,
+                        IsIdentity = r.GetInt64(10) != 0
                     });
                 }
             }
@@ -201,7 +202,8 @@ public sealed class MetadataCache(AppPaths paths)
                                   created_at TEXT, modified_at TEXT, row_count INTEGER);
             CREATE TABLE columns (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
                                   data_type TEXT NOT NULL, base_type TEXT NOT NULL, is_nullable INTEGER NOT NULL,
-                                  ordinal INTEGER NOT NULL, is_computed INTEGER NOT NULL, is_primary_key INTEGER NOT NULL);
+                                  ordinal INTEGER NOT NULL, is_computed INTEGER NOT NULL, is_primary_key INTEGER NOT NULL,
+                                  is_identity INTEGER NOT NULL);
             CREATE TABLE modules (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, definition TEXT);
             CREATE TABLE foreign_keys (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
                                   columns TEXT, referenced_schema TEXT NOT NULL, referenced_table TEXT NOT NULL, referenced_columns TEXT,
@@ -216,10 +218,10 @@ public sealed class MetadataCache(AppPaths paths)
             o.Database, o.Schema, o.Name, o.Type.ToString(), FormatDate(o.CreatedAt), FormatDate(o.ModifiedAt), o.RowCount
         ], ct);
 
-        BulkInsert(cn, tx, "columns", 10, s.Columns, c =>
+        BulkInsert(cn, tx, "columns", 11, s.Columns, c =>
         [
             c.Database, c.Schema, c.Table, c.Name, c.DataType, c.BaseType,
-            c.IsNullable ? 1 : 0, c.Ordinal, c.IsComputed ? 1 : 0, c.IsPrimaryKey ? 1 : 0
+            c.IsNullable ? 1 : 0, c.Ordinal, c.IsComputed ? 1 : 0, c.IsPrimaryKey ? 1 : 0, c.IsIdentity ? 1 : 0
         ], ct);
 
         BulkInsert(cn, tx, "modules", 5, s.Modules, m =>

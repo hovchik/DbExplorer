@@ -116,6 +116,26 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
 
     public bool HasNextStepHint => NextStepHint.Length > 0;
 
+    /// <summary>When false, the connection cards shrink to one summary line to leave room for results.</summary>
+    [ObservableProperty] private bool _isConnectionsExpanded = true;
+
+    public string ConnectionsToggleText => IsConnectionsExpanded ? "\u25B2 Hide connections" : "\u25BC Show connections";
+
+    partial void OnIsConnectionsExpandedChanged(bool value) => OnPropertyChanged(nameof(ConnectionsToggleText));
+
+    [RelayCommand]
+    private void ToggleConnections() => IsConnectionsExpanded = !IsConnectionsExpanded;
+
+    /// <summary>"dev · Shop · dbo.Customers": what each side compares, for the collapsed header.</summary>
+    public string LeftSummary => Summarize(LeftSession, SelectedLeftDatabase, SelectedLeftObject);
+    public string RightSummary => Summarize(RightSession, SelectedRightDatabase, SelectedRightObject);
+
+    private static string Summarize(DatabaseSession? session, string? database, DbObject? obj) =>
+        session is null
+            ? "not connected"
+            : string.Join(" \u00B7 ", new[] { session.Profile.DisplayName, database, obj?.FullName ?? "no object" }
+                .Where(p => !string.IsNullOrEmpty(p)));
+
     private static string Describe(DbObject? obj)
     {
         if (obj is null) return "";
@@ -376,6 +396,28 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     public string OnlyLeftRowsLabel => $"Only in left ({CountOf(DataRowStatus.OnlyLeft):N0})";
     public string OnlyRightRowsLabel => $"Only in right ({CountOf(DataRowStatus.OnlyRight):N0})";
     public bool HasDataResult => _lastDataResult is not null;
+
+    /// <summary>Status filters and key search only apply to the matched-row views, not to Full data sets.</summary>
+    public bool ShowDataFilters => HasDataResult && !IsFullDataSetsView;
+
+    /// <summary>The status line followed by the notes on how rows were matched, on one line.</summary>
+    public string DataInfo => string.Join(" \u00B7 ", new[] { DataStatus }.Concat(DataNotes).Where(t => !string.IsNullOrEmpty(t)));
+
+    /// <summary>"Options" plus how many are active, so a changed setting stays noticeable while the flyout is closed.</summary>
+    public string DataOptionsLabel
+    {
+        get
+        {
+            var active = (string.IsNullOrWhiteSpace(IgnoredColumnsText) ? 0 : 1) + (DataIgnoreCase ? 1 : 0) + (DataTrimWhitespace ? 1 : 0);
+            return active == 0 ? "Options \u25BE" : $"Options ({active}) \u25BE";
+        }
+    }
+
+    partial void OnDataStatusChanged(string value) => OnPropertyChanged(nameof(DataInfo));
+    partial void OnDataNotesChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(DataInfo));
+    partial void OnIgnoredColumnsTextChanged(string value) => OnPropertyChanged(nameof(DataOptionsLabel));
+    partial void OnDataIgnoreCaseChanged(bool value) => OnPropertyChanged(nameof(DataOptionsLabel));
+    partial void OnDataTrimWhitespaceChanged(bool value) => OnPropertyChanged(nameof(DataOptionsLabel));
     public bool HasColumnDifferences => ColumnDifferences.Count > 0;
     public bool HasDataColumnFilter => DataColumnFilter is not null;
 
@@ -416,6 +458,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         OnPropertyChanged(nameof(IsSummaryView));
         OnPropertyChanged(nameof(IsSideBySideView));
         OnPropertyChanged(nameof(IsFullDataSetsView));
+        OnPropertyChanged(nameof(ShowDataFilters));
     }
 
     /// <summary>Lets either side's connection panel be hidden to give the other side more room.</summary>
@@ -473,6 +516,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         OnPropertyChanged(nameof(CanExportSchemaReport));
         OnPropertyChanged(nameof(CanExportDataReport));
         OnPropertyChanged(nameof(HasDataResult));
+        OnPropertyChanged(nameof(ShowDataFilters));
     }
 
     public bool IsLeftConnected => LeftSession is not null;
@@ -511,6 +555,8 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     {
         OnPropertyChanged(nameof(NextStepHint));
         OnPropertyChanged(nameof(HasNextStepHint));
+        OnPropertyChanged(nameof(LeftSummary));
+        OnPropertyChanged(nameof(RightSummary));
     }
 
     partial void OnSelectedSchemaCompareModeChanged(SchemaCompareMode value)
@@ -522,9 +568,17 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         RecompareSchema();
     }
 
-    partial void OnSelectedLeftDatabaseChanged(string? value) => UpdateLeftObjects();
+    partial void OnSelectedLeftDatabaseChanged(string? value)
+    {
+        UpdateLeftObjects();
+        RefreshHints();
+    }
 
-    partial void OnSelectedRightDatabaseChanged(string? value) => UpdateRightObjects();
+    partial void OnSelectedRightDatabaseChanged(string? value)
+    {
+        UpdateRightObjects();
+        RefreshHints();
+    }
 
     private bool CanUseMain => _mainSession is not null && !IsBusy;
 
@@ -861,6 +915,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
             _dataSides = (Side(leftSession, leftObject), Side(rightSession, rightObject));
             OnPropertyChanged(nameof(CanExportDataReport));
             OnPropertyChanged(nameof(HasDataResult));
+            OnPropertyChanged(nameof(ShowDataFilters));
 
             DataNotes = ComparisonReportBuilder.DataNotes(result);
             ColumnDifferences = result.ColumnDifferences;
@@ -975,6 +1030,16 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         }
     }
 
+    private bool CanLoadBothData => CanLoadLeftData || CanLoadRightData;
+
+    /// <summary>Full data sets view: loads whichever sides can be loaded, one after the other.</summary>
+    [RelayCommand(CanExecute = nameof(CanLoadBothData))]
+    private async Task LoadBothDataAsync()
+    {
+        if (CanLoadLeftData) await LoadLeftDataAsync();
+        if (CanLoadRightData) await LoadRightDataAsync();
+    }
+
     private static string QualifiedName(DatabaseSession session, DbObject obj) =>
         session.Provider.QuoteIdentifier(obj.Schema) + "." + session.Provider.QuoteIdentifier(obj.Name);
 
@@ -993,6 +1058,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         CompareDataCommand.NotifyCanExecuteChanged();
         LoadLeftDataCommand.NotifyCanExecuteChanged();
         LoadRightDataCommand.NotifyCanExecuteChanged();
+        LoadBothDataCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
     }
 }

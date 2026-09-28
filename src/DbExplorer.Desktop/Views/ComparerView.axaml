@@ -25,8 +25,18 @@
 	  <Setter Property="BorderThickness" Value="1" />
 	  <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
 	  <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
-	  <Setter Property="Padding" Value="10" />
+	  <Setter Property="Padding" Value="6" />
 	  <Setter Property="CornerRadius" Value="6" />
+	</Style>
+	<Style Selector="Button.compact">
+	  <Setter Property="MinHeight" Value="26" />
+	  <Setter Property="Padding" Value="10,2" />
+	  <Setter Property="FontSize" Value="12" />
+	</Style>
+	<Style Selector="TabControl.compact TabItem">
+	  <Setter Property="FontSize" Value="14" />
+	  <Setter Property="MinHeight" Value="30" />
+	  <Setter Property="Padding" Value="10,0" />
 	</Style>
 	<Style Selector="Border.env">
 	  <Setter Property="CornerRadius" Value="4" />
@@ -39,7 +49,7 @@
 	  <Setter Property="FontWeight" Value="Bold" />
 	</Style>
 	<Style Selector="WrapPanel.toolbar > :is(Control)">
-	  <Setter Property="Margin" Value="0,0,8,6" />
+	  <Setter Property="Margin" Value="0,0,8,4" />
 	  <Setter Property="VerticalAlignment" Value="Center" />
 	</Style>
 	<Style Selector="Button.chip">
@@ -59,115 +69,109 @@
 	</Style>
   </UserControl.Styles>
 
-  <Grid Margin="8" RowDefinitions="Auto,Auto,*">
-	<!-- Connection pickers -->
-	<Grid Grid.Row="0" ColumnDefinitions="*,Auto,*" Margin="0,0,0,6">
-	  <StackPanel Grid.Column="0" Spacing="4">
-		<CheckBox Content="Show left" IsChecked="{Binding IsLeftPanelVisible}"
-				  ToolTip.Tip="Hide the left panel and left-hand result columns to give the right side more room" />
-		<Border Classes="card" IsVisible="{Binding IsLeftPanelVisible}">
-		  <StackPanel Spacing="6">
-			<StackPanel Orientation="Horizontal" Spacing="8">
-			  <TextBlock Text="Left (baseline)" FontWeight="SemiBold" VerticalAlignment="Center" />
-			  <Border Classes="env" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
-					  Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
-				<TextBlock Text="{Binding LeftEnvironmentTag}" />
-			  </Border>
-			</StackPanel>
-			<StackPanel Orientation="Horizontal" Spacing="6">
-			  <ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
-						PlaceholderText="Select a connection..." IsEnabled="{Binding !IsLeftConnected}" />
+  <Grid Margin="4,4,4,2" RowDefinitions="Auto,Auto,*">
+	<!-- Connection pickers: two compact rows per side; collapsible to a one-line summary -->
+	<Grid Grid.Row="0" ColumnDefinitions="*,Auto,*" Margin="0,0,0,4" IsVisible="{Binding IsConnectionsExpanded}">
+		<Border Grid.Column="0" Classes="card" IsVisible="{Binding IsLeftPanelVisible}">
+		  <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
+			<TextBlock Grid.Column="0" Text="Left" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
+					   ToolTip.Tip="Baseline side" />
+			<Border Grid.Column="1" Classes="env" Margin="0,0,6,0" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+					Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+			  <TextBlock Text="{Binding LeftEnvironmentTag}" />
+			</Border>
+			<ComboBox Grid.Column="2" HorizontalAlignment="Stretch" MinWidth="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
+					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsLeftConnected}" />
+			<StackPanel Grid.Column="3" Orientation="Horizontal" Margin="4,0,0,0">
 			  <Button Content="Connect" Command="{Binding ConnectLeftCommand}" IsVisible="{Binding !IsLeftConnected}" />
 			  <Button Content="Disconnect" Command="{Binding DisconnectLeftCommand}" IsVisible="{Binding IsLeftConnected}" />
-			  <Button Content="Use current" Command="{Binding UseCurrentAsLeftCommand}"
-					  ToolTip.Tip="Use the connection already open in the main window" />
 			</StackPanel>
-			<StackPanel Spacing="4" IsVisible="{Binding HasMultipleLeftDatabases}">
-			  <TextBlock Text="Database" Classes="hint" />
-			  <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
-						PlaceholderText="(default)" />
-			</StackPanel>
-			<AutoCompleteBox x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
-							 ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
-							 IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsLeftConnected}"
-							 Watermark="Click to browse or type to filter objects...">
-			  <AutoCompleteBox.ItemTemplate>
-				<DataTemplate x:DataType="models:DbObject">
-				  <Grid ColumnDefinitions="*,Auto">
-					<TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
-					<TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
-							   Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
-				  </Grid>
-				</DataTemplate>
-			  </AutoCompleteBox.ItemTemplate>
-			</AutoCompleteBox>
-			<TextBlock Classes="hint" Text="{Binding LeftObjectInfo}" IsVisible="{Binding SelectedLeftObject, Converter={x:Static ObjectConverters.IsNotNull}}" />
-		  </StackPanel>
+			<Button Grid.Column="4" Content="Use current" Margin="4,0,0,0" Command="{Binding UseCurrentAsLeftCommand}"
+					ToolTip.Tip="Use the connection already open in the main window" />
+
+			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
+						PlaceholderText="(database)" IsVisible="{Binding HasMultipleLeftDatabases}" ToolTip.Tip="Database" />
+			  <AutoCompleteBox Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
+							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
+							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsLeftConnected}"
+							   Watermark="Click to browse or type to filter objects...">
+				<AutoCompleteBox.ItemTemplate>
+				  <DataTemplate x:DataType="models:DbObject">
+					<Grid ColumnDefinitions="*,Auto">
+					  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
+					  <TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
+								 Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					</Grid>
+				  </DataTemplate>
+				</AutoCompleteBox.ItemTemplate>
+			  </AutoCompleteBox>
+			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300"
+						 TextTrimming="CharacterEllipsis" Text="{Binding LeftObjectInfo}" ToolTip.Tip="{Binding LeftObjectInfo}" />
+			</Grid>
+		  </Grid>
 		</Border>
-	  </StackPanel>
 
-	  <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,20,10,0" Spacing="6">
-		<TextBlock Text="vs" FontSize="20" HorizontalAlignment="Center" />
-		<Button Content="⇄" Classes="icon" FontSize="16" HorizontalAlignment="Center" Command="{Binding SwapSidesCommand}"
-				ToolTip.Tip="Swap sides: the right becomes the baseline" />
-	  </StackPanel>
+		<Button Grid.Column="1" Content="⇄" Classes="icon" FontSize="16" Margin="6,0" VerticalAlignment="Center"
+				Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides: the right becomes the baseline" />
 
-	  <StackPanel Grid.Column="2" Spacing="4">
-		<CheckBox Content="Show right" IsChecked="{Binding IsRightPanelVisible}"
-				  ToolTip.Tip="Hide the right panel and right-hand result columns to give the left side more room" />
-		<Border Classes="card" IsVisible="{Binding IsRightPanelVisible}">
-		  <StackPanel Spacing="6">
-			<StackPanel Orientation="Horizontal" Spacing="8">
-			  <TextBlock Text="Right (comparand)" FontWeight="SemiBold" VerticalAlignment="Center" />
-			  <Border Classes="env" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
-					  Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
-				<TextBlock Text="{Binding RightEnvironmentTag}" />
-			  </Border>
-			</StackPanel>
-			<StackPanel Orientation="Horizontal" Spacing="6">
-			  <ComboBox Width="260" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
-						PlaceholderText="Select a connection..." IsEnabled="{Binding !IsRightConnected}" />
+		<Border Grid.Column="2" Classes="card" IsVisible="{Binding IsRightPanelVisible}">
+		  <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
+			<TextBlock Grid.Column="0" Text="Right" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
+					   ToolTip.Tip="Comparand side" />
+			<Border Grid.Column="1" Classes="env" Margin="0,0,6,0" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+					Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+			  <TextBlock Text="{Binding RightEnvironmentTag}" />
+			</Border>
+			<ComboBox Grid.Column="2" HorizontalAlignment="Stretch" MinWidth="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
+					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsRightConnected}" />
+			<StackPanel Grid.Column="3" Orientation="Horizontal" Margin="4,0,0,0">
 			  <Button Content="Connect" Command="{Binding ConnectRightCommand}" IsVisible="{Binding !IsRightConnected}" />
 			  <Button Content="Disconnect" Command="{Binding DisconnectRightCommand}" IsVisible="{Binding IsRightConnected}" />
-			  <Button Content="Use current" Command="{Binding UseCurrentAsRightCommand}"
-					  ToolTip.Tip="Use the connection already open in the main window" />
 			</StackPanel>
-			<StackPanel Spacing="4" IsVisible="{Binding HasMultipleRightDatabases}">
-			  <TextBlock Text="Database" Classes="hint" />
-			  <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
-						PlaceholderText="(default)" />
-			</StackPanel>
-			<AutoCompleteBox x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
-							 ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
-							 IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsRightConnected}"
-							 Watermark="Picked automatically when the same name exists; or browse...">
-			  <AutoCompleteBox.ItemTemplate>
-				<DataTemplate x:DataType="models:DbObject">
-				  <Grid ColumnDefinitions="*,Auto">
-					<TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
-					<TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
-							   Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
-				  </Grid>
-				</DataTemplate>
-			  </AutoCompleteBox.ItemTemplate>
-			</AutoCompleteBox>
-			<TextBlock Classes="hint" Text="{Binding RightObjectInfo}" IsVisible="{Binding SelectedRightObject, Converter={x:Static ObjectConverters.IsNotNull}}" />
-		  </StackPanel>
+			<Button Grid.Column="4" Content="Use current" Margin="4,0,0,0" Command="{Binding UseCurrentAsRightCommand}"
+					ToolTip.Tip="Use the connection already open in the main window" />
+
+			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
+						PlaceholderText="(database)" IsVisible="{Binding HasMultipleRightDatabases}" ToolTip.Tip="Database" />
+			  <AutoCompleteBox Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
+							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
+							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsRightConnected}"
+							   Watermark="Picked automatically when the same name exists; or browse...">
+				<AutoCompleteBox.ItemTemplate>
+				  <DataTemplate x:DataType="models:DbObject">
+					<Grid ColumnDefinitions="*,Auto">
+					  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
+					  <TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
+								 Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					</Grid>
+				  </DataTemplate>
+				</AutoCompleteBox.ItemTemplate>
+			  </AutoCompleteBox>
+			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300"
+						 TextTrimming="CharacterEllipsis" Text="{Binding RightObjectInfo}" ToolTip.Tip="{Binding RightObjectInfo}" />
+			</Grid>
+		  </Grid>
 		</Border>
-	  </StackPanel>
 	</Grid>
 
-	<!-- Progress, status and what to do next -->
-	<StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6" MinHeight="28">
-	  <ProgressBar IsIndeterminate="True" Width="100" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
-	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" MinHeight="26" Padding="10,2"
-			  ToolTip.Tip="Stop the running comparison (Esc)" />
-	  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" />
-	  <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
-				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
+	<!-- Collapsed connections: one summary line -->
+	<StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,2" IsVisible="{Binding !IsConnectionsExpanded}">
+	  <Border Classes="env" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+			  Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+		<TextBlock Text="{Binding LeftEnvironmentTag}" />
+	  </Border>
+	  <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding LeftSummary}" />
+	  <Button Classes="compact" Content="⇄" Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides" />
+	  <Border Classes="env" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+			  Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+		<TextBlock Text="{Binding RightEnvironmentTag}" />
+	  </Border>
+	  <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding RightSummary}" />
 	</StackPanel>
 
-	<TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}">
+	<TabControl Grid.Row="2" Classes="compact" Padding="0,4,0,0" SelectedIndex="{Binding SelectedTabIndex}">
 	  <!-- Every object of both databases -->
 	  <TabItem Header="Overview">
 		<Grid RowDefinitions="Auto,Auto,*">
@@ -183,8 +187,8 @@
 					  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)" />
 			<Button Content="Open selected" Command="{Binding OpenOverviewEntryCommand}"
 					ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row)" />
+			<TextBlock Classes="hint" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
-		  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
 		  <DataGrid Grid.Row="2" x:Name="OverviewGrid" ItemsSource="{Binding OverviewEntries}" SelectedItem="{Binding SelectedOverviewEntry}"
 					IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
 					GridLinesVisibility="Horizontal" DoubleTapped="OnOverviewDoubleTapped" IsVisible="{Binding HasOverview}">
@@ -250,8 +254,8 @@
 				</MenuFlyout>
 			  </Button.Flyout>
 			</Button>
+			<TextBlock Classes="hint" Text="{Binding SchemaStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
-		  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding SchemaStatus}" TextWrapping="Wrap" />
 		  <DataGrid Grid.Row="2" x:Name="SchemaGrid" ItemsSource="{Binding SchemaDiffView}" SelectedItem="{Binding SelectedSchemaLine}"
 					IsReadOnly="True" AutoGenerateColumns="False" IsVisible="{Binding IsSchemaLineView}"
 					SelectionChanged="OnSchemaSelectionChanged"
@@ -331,8 +335,8 @@
 			<Button Content="Compare structure" Classes="accent" Command="{Binding CompareSchemaCommand}"
 					ToolTip.Tip="Compares columns (type, nullability, key, position), indexes and foreign keys from cached metadata" />
 			<CheckBox Content="Only differences" IsChecked="{Binding ShowOnlyStructureChanges}" />
+			<TextBlock Classes="hint" Text="{Binding StructureStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
-		  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding StructureStatus}" TextWrapping="Wrap" />
 		  <DataGrid Grid.Row="2" ItemsSource="{Binding StructureDiff}" IsReadOnly="True" AutoGenerateColumns="False"
 					CanUserResizeColumns="True" CanUserSortColumns="True" GridLinesVisibility="Horizontal">
 			<DataGrid.Styles>
@@ -365,19 +369,36 @@
 		<Grid RowDefinitions="Auto,*">
 		  <StackPanel Grid.Row="0">
 			<WrapPanel Classes="toolbar">
-			  <Button Content="Compare data" Classes="accent" Command="{Binding CompareDataCommand}" />
-			  <TextBlock Text="Max rows per side:" />
+			  <Button Content="Compare data" Classes="accent" Command="{Binding CompareDataCommand}" IsVisible="{Binding !IsFullDataSetsView}" />
+			  <Button Content="Load both" Classes="accent" Command="{Binding LoadBothDataCommand}" IsVisible="{Binding IsFullDataSetsView}"
+					  ToolTip.Tip="Load the rows of both tables (up to the row limit)" />
+			  <TextBlock Text="Max rows:" />
 			  <NumericUpDown Value="{Binding RowLimit}" Minimum="1" Maximum="20000" Increment="1000" FormatString="N0" Width="140"
-							 ToolTip.Tip="Rows are read in key order; capped at 20,000 per side to protect the servers" />
-			  <TextBlock Text="View:" />
-			  <ComboBox ItemsSource="{Binding DataViewModes}" SelectedItem="{Binding SelectedDataViewMode}" Width="150">
+							 ToolTip.Tip="Rows read per side, in key order; capped at 20,000 to protect the servers" />
+			  <ComboBox ItemsSource="{Binding DataViewModes}" SelectedItem="{Binding SelectedDataViewMode}" Width="160" ToolTip.Tip="View">
 				<ComboBox.ItemTemplate>
 				  <DataTemplate>
 					<TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
 				  </DataTemplate>
 				</ComboBox.ItemTemplate>
 			  </ComboBox>
-			  <Button Content="Export report ▾" IsEnabled="{Binding CanExportDataReport}">
+			  <Button Content="{Binding DataOptionsLabel}" IsVisible="{Binding !IsFullDataSetsView}"
+					  ToolTip.Tip="Ignored columns, case and whitespace handling">
+				<Button.Flyout>
+				  <Flyout Placement="BottomEdgeAlignedLeft">
+					<StackPanel Spacing="8" Width="340">
+					  <TextBlock Text="Ignore columns" Classes="section" Margin="0" />
+					  <TextBox Text="{Binding IgnoredColumnsText}" Watermark="e.g. ModifiedAt, RowVersion"
+							   ToolTip.Tip="Comma-separated column names left out of the comparison (key columns are still used to match rows)" />
+					  <CheckBox Content="Ignore case in text" IsChecked="{Binding DataIgnoreCase}" />
+					  <CheckBox Content="Trim whitespace in text" IsChecked="{Binding DataTrimWhitespace}"
+								ToolTip.Tip="Treat 'abc' and 'abc   ' as equal (e.g. CHAR padding)" />
+					  <TextBlock Classes="hint" TextWrapping="Wrap" Text="Applied on the next Compare data." />
+					</StackPanel>
+				  </Flyout>
+				</Button.Flyout>
+			  </Button>
+			  <Button Content="Export ▾" IsEnabled="{Binding CanExportDataReport}" IsVisible="{Binding !IsFullDataSetsView}">
 				<Button.Flyout>
 				  <MenuFlyout>
 					<MenuItem Header="HTML report (.html)…" Click="OnExportDataHtml" />
@@ -385,31 +406,19 @@
 				  </MenuFlyout>
 				</Button.Flyout>
 			  </Button>
+			  <StackPanel Orientation="Horizontal" IsVisible="{Binding ShowDataFilters}">
+				<CheckBox Content="{Binding DifferentRowsLabel}" IsChecked="{Binding ShowDifferentRows}" Margin="0,0,10,0" />
+				<CheckBox Content="{Binding OnlyLeftRowsLabel}" IsChecked="{Binding ShowOnlyLeftRows}" Margin="0,0,10,0" />
+				<CheckBox Content="{Binding OnlyRightRowsLabel}" IsChecked="{Binding ShowOnlyRightRows}" Margin="0,0,10,0" />
+				<CheckBox Content="{Binding SameRowsLabel}" IsChecked="{Binding ShowSameRows}" Margin="0,0,10,0" />
+				<TextBox Width="160" Text="{Binding DataKeyFilter}" Watermark="Find key..." />
+			  </StackPanel>
 			</WrapPanel>
 
-			<Expander Classes="options" Header="Comparison options" HorizontalAlignment="Stretch">
-			  <WrapPanel Classes="toolbar" Margin="4,8,0,0">
-				<TextBlock Text="Ignore columns:" />
-				<TextBox Width="320" Text="{Binding IgnoredColumnsText}" Watermark="e.g. ModifiedAt, RowVersion"
-						 ToolTip.Tip="Comma-separated column names left out of the comparison (key columns are still used to match rows)" />
-				<CheckBox Content="Ignore case in text" IsChecked="{Binding DataIgnoreCase}" />
-				<CheckBox Content="Trim whitespace in text" IsChecked="{Binding DataTrimWhitespace}"
-						  ToolTip.Tip="Treat 'abc' and 'abc   ' as equal (e.g. CHAR padding)" />
-			  </WrapPanel>
-			</Expander>
-
-			<StackPanel IsVisible="{Binding HasDataResult}" Spacing="2">
-			  <WrapPanel Classes="toolbar">
-				<TextBlock Text="Show:" />
-				<CheckBox Content="{Binding DifferentRowsLabel}" IsChecked="{Binding ShowDifferentRows}" />
-				<CheckBox Content="{Binding OnlyLeftRowsLabel}" IsChecked="{Binding ShowOnlyLeftRows}" />
-				<CheckBox Content="{Binding OnlyRightRowsLabel}" IsChecked="{Binding ShowOnlyRightRows}" />
-				<CheckBox Content="{Binding SameRowsLabel}" IsChecked="{Binding ShowSameRows}" />
-				<TextBox Width="200" Text="{Binding DataKeyFilter}" Watermark="Find key..." />
-			  </WrapPanel>
-
+			<WrapPanel IsVisible="{Binding !IsFullDataSetsView}" Margin="0,0,0,4">
+			  <WrapPanel IsVisible="{Binding ShowDataFilters}" Margin="0,0,12,0">
 			  <WrapPanel IsVisible="{Binding HasColumnDifferences}">
-				<TextBlock Classes="hint" Text="Columns that differ (click to filter):" VerticalAlignment="Center" Margin="0,0,8,4" />
+				<TextBlock Classes="hint" Text="Differing columns:" VerticalAlignment="Center" Margin="0,0,6,4" />
 				<ItemsControl ItemsSource="{Binding ColumnDifferences}">
 				  <ItemsControl.ItemsPanel>
 					<ItemsPanelTemplate>
@@ -418,7 +427,8 @@
 				  </ItemsControl.ItemsPanel>
 				  <ItemsControl.ItemTemplate>
 					<DataTemplate x:DataType="models:ColumnDifferenceCount">
-					  <Button Classes="chip" Command="{Binding #root.DataContext.FilterByColumnCommand}" CommandParameter="{Binding Column}">
+					  <Button Classes="chip" Command="{Binding #root.DataContext.FilterByColumnCommand}" CommandParameter="{Binding Column}"
+							  ToolTip.Tip="Show only rows where this column differs (click again to clear)">
 						<TextBlock>
 						  <Run Text="{Binding Column}" FontWeight="SemiBold" />
 						  <Run Text="{Binding Count, StringFormat=' {0:N0}'}" />
@@ -427,20 +437,11 @@
 					</DataTemplate>
 				  </ItemsControl.ItemTemplate>
 				</ItemsControl>
-				<Button Classes="chip" Content="✕ Clear column filter" IsVisible="{Binding HasDataColumnFilter}"
-						Command="{Binding FilterByColumnCommand}" />
+				<Button Classes="chip" Content="✕ Clear" IsVisible="{Binding HasDataColumnFilter}" Command="{Binding FilterByColumnCommand}" />
 			  </WrapPanel>
-
-			  <ItemsControl ItemsSource="{Binding DataNotes}" Margin="0,2,0,2">
-				<ItemsControl.ItemTemplate>
-				  <DataTemplate>
-					<TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding StringFormat='• {0}'}" />
-				  </DataTemplate>
-				</ItemsControl.ItemTemplate>
-			  </ItemsControl>
-			</StackPanel>
-
-			<TextBlock Classes="hint" Margin="0,2,0,6" Text="{Binding DataStatus}" TextWrapping="Wrap" />
+			  </WrapPanel>
+			  <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,0,4" Text="{Binding DataInfo}" TextWrapping="Wrap" />
+			</WrapPanel>
 		  </StackPanel>
 
 		  <DataGrid Grid.Row="1" ItemsSource="{Binding DataDiff}" IsReadOnly="True" AutoGenerateColumns="False"
@@ -464,26 +465,45 @@
 										IsVisible="{Binding IsSideBySideView}" />
 
 		  <Grid Grid.Row="1" ColumnDefinitions="*,*" IsVisible="{Binding IsFullDataSetsView}">
-			<Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsLeftPanelVisible}" Margin="0,0,4,0">
-			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
-				<TextBlock Text="Left data" FontWeight="SemiBold" VerticalAlignment="Center" />
-				<Button Content="Load" Command="{Binding LoadLeftDataCommand}" />
+			<Grid Grid.Column="0" RowDefinitions="Auto,*" IsVisible="{Binding IsLeftPanelVisible}" Margin="0,0,4,0">
+			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+				<TextBlock Text="Left" FontWeight="SemiBold" VerticalAlignment="Center" />
+				<Button Classes="compact" Content="Load" Command="{Binding LoadLeftDataCommand}" />
+				<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding LeftDataStatus}" />
 			  </StackPanel>
-			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding LeftDataStatus}" />
-			  <views:ResultGridView Grid.Row="2" ResultSet="{Binding LeftDataResult}" />
+			  <views:ResultGridView Grid.Row="1" ResultSet="{Binding LeftDataResult}" />
 			</Grid>
 
-			<Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsRightPanelVisible}" Margin="4,0,0,0">
-			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
-				<TextBlock Text="Right data" FontWeight="SemiBold" VerticalAlignment="Center" />
-				<Button Content="Load" Command="{Binding LoadRightDataCommand}" />
+			<Grid Grid.Column="1" RowDefinitions="Auto,*" IsVisible="{Binding IsRightPanelVisible}" Margin="4,0,0,0">
+			  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+				<TextBlock Text="Right" FontWeight="SemiBold" VerticalAlignment="Center" />
+				<Button Classes="compact" Content="Load" Command="{Binding LoadRightDataCommand}" />
+				<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding RightDataStatus}" />
 			  </StackPanel>
-			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,0,0,6" Text="{Binding RightDataStatus}" />
-			  <views:ResultGridView Grid.Row="2" ResultSet="{Binding RightDataResult}" />
+			  <views:ResultGridView Grid.Row="1" ResultSet="{Binding RightDataResult}" />
 			</Grid>
 		  </Grid>
 		</Grid>
 	  </TabItem>
 	</TabControl>
+
+	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side -->
+	<StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Top"
+				Height="30" Margin="320,0,0,0">
+	  <ProgressBar IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
+	  <Button Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" VerticalAlignment="Center"
+			  ToolTip.Tip="Stop the running comparison (Esc)" />
+	  <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
+				 TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip.Tip="{Binding NextStepHint}"
+				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
+	  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis" MaxWidth="420"
+				 ToolTip.Tip="{Binding Status}" />
+	  <CheckBox Content="Left" IsChecked="{Binding IsLeftPanelVisible}" Margin="0"
+				ToolTip.Tip="Show the left side (panel and result columns)" />
+	  <CheckBox Content="Right" IsChecked="{Binding IsRightPanelVisible}" Margin="0"
+				ToolTip.Tip="Show the right side (panel and result columns)" />
+	  <Button Classes="compact" Content="{Binding ConnectionsToggleText}" Command="{Binding ToggleConnectionsCommand}" VerticalAlignment="Center"
+			  ToolTip.Tip="Collapse the connection panels to give the results more room" />
+	</StackPanel>
   </Grid>
 </UserControl>

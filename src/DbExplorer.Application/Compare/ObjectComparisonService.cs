@@ -65,6 +65,10 @@ public sealed class ObjectComparisonService(DefinitionService definitions, Query
         var usedFallbackKey = keyColumns.Count == 0;
         if (usedFallbackKey) keyColumns = commonColumns;
 
+        // Rows beyond MaxKeyedRows would be silently dropped from ToKeyedDictionary; cap the
+        // fetch itself so the truncation flags below stay accurate and no row is dropped unflagged.
+        rowLimit = Math.Min(rowLimit, MaxKeyedRows);
+
         var leftSql = BuildSelect(leftObject, commonColumns, keyColumns, rowLimit, leftSession.Provider.ProviderKey, leftSession.Provider.QuoteIdentifier);
         var rightSql = BuildSelect(rightObject, commonColumns, keyColumns, rowLimit, rightSession.Provider.ProviderKey, rightSession.Provider.QuoteIdentifier);
 

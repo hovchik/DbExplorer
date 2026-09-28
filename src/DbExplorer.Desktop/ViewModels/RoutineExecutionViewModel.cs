@@ -69,7 +69,12 @@ public partial class RoutineExecutionViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    private bool CanRun => !IsRunning && !IsLoadingParameters;
+
+    partial void OnIsRunningChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
+    partial void OnIsLoadingParametersChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task RunAsync()
     {
         if (_service is null || _session is null || _routine is null) return;

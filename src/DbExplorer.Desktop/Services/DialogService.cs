@@ -54,7 +54,7 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
         else window.Show();
     }
 
-    public async Task ShowRoutineExecutionAsync(
+    public Task ShowRoutineExecutionAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject routine)
     {
         var vm = new RoutineExecutionViewModel();
@@ -63,6 +63,7 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();
+        return Task.CompletedTask;
     }
 
     public async Task<bool> ConfirmAsync(string message, string confirmText = "Run")

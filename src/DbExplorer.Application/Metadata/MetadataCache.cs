@@ -181,7 +181,7 @@ public sealed class MetadataCache(AppPaths paths)
                 RefreshedAt = DateTimeOffset.Parse(refreshed, CultureInfo.InvariantCulture)
             };
         }
-        catch (SqliteException)
+        catch (Exception ex) when (ex is SqliteException or FormatException or InvalidCastException or ArgumentException)
         {
             return null; // corrupt or old cache: fall back to the server
         }

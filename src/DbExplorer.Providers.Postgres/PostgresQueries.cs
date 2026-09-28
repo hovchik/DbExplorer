@@ -102,7 +102,7 @@ internal static class PostgresQueries
                p.data_type AS "DataType",
                CASE p.parameter_mode
                    WHEN 'IN' THEN 0 WHEN 'INOUT' THEN 1 WHEN 'OUT' THEN 2 ELSE 0 END AS "Direction",
-               false AS "HasDefault",
+               (p.parameter_default IS NOT NULL) AS "HasDefault",
                p.ordinal_position AS "Ordinal"
         FROM information_schema.routines r
         JOIN information_schema.parameters p

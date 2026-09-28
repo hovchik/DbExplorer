@@ -27,7 +27,12 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _encrypt = draft.Encrypt;
         _trustServerCertificate = draft.TrustServerCertificate;
         _readOnlyIntent = draft.ReadOnlyIntent;
+        _environment = draft.Environment;
     }
+
+    public IReadOnlyList<ConnectionEnvironment> Environments { get; } = Enum.GetValues<ConnectionEnvironment>();
+
+    [ObservableProperty] private ConnectionEnvironment _environment;
 
     public IReadOnlyList<IDatabaseProviderFactory> Providers { get; }
     public ObservableCollection<string> Databases { get; } = [];
@@ -135,6 +140,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         SavePassword = SavePassword,
         Encrypt = Encrypt,
         TrustServerCertificate = TrustServerCertificate,
-        ReadOnlyIntent = ReadOnlyIntent && CanUseReadOnlyIntent
+        ReadOnlyIntent = ReadOnlyIntent && CanUseReadOnlyIntent,
+        Environment = Environment
     };
 }

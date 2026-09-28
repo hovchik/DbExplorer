@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
@@ -23,7 +24,23 @@ public sealed partial class RoutineParameterInput : ObservableObject
 /// <summary>A grid-friendly wrapper around one row of a <see cref="QueryResultSet"/>.</summary>
 public sealed record ResultRow(IReadOnlyList<object?> Values);
 
-public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, IReadOnlyList<ResultRow> Rows);
+public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, IReadOnlyList<ResultRow> Rows)
+{
+    /// <summary>Qualified, quoted table the rows came from; used as the target of "Copy as INSERT".</summary>
+    public string? SourceTable { get; init; }
+
+    public SqlDialect Dialect { get; init; }
+
+    public Func<string, string> Quote { get; init; } = id => id;
+
+    public static ResultSetView From(string title, QueryResultSet rs, DatabaseSession session, string? sourceTable = null) =>
+        new(title, rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList())
+        {
+            SourceTable = sourceTable,
+            Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
+            Quote = session.Provider.QuoteIdentifier
+        };
+}
 
 public partial class RoutineExecutionViewModel : ViewModelBase
 {
@@ -33,6 +50,9 @@ public partial class RoutineExecutionViewModel : ViewModelBase
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private IReadOnlyList<ResultSetView> _resultSets = [];
     [ObservableProperty] private string _outputSummary = "";
+
+    /// <summary>Asked before each run (set for procedures on production connections).</summary>
+    public Func<Task<bool>>? ConfirmBeforeRun { get; set; }
 
     public ObservableCollection<RoutineParameterInput> Parameters { get; } = [];
 
@@ -78,6 +98,7 @@ public partial class RoutineExecutionViewModel : ViewModelBase
     private async Task RunAsync()
     {
         if (_service is null || _session is null || _routine is null) return;
+        if (ConfirmBeforeRun is not null && !await ConfirmBeforeRun()) return;
 
         IsRunning = true;
         Status = "Running…";
@@ -91,8 +112,7 @@ public partial class RoutineExecutionViewModel : ViewModelBase
                 _session, _routine, _routineParameters, arguments, timeoutSeconds: 60);
 
             ResultSets = result.ResultSets
-                .Select((rs, i) => new ResultSetView(
-                    $"Result set {i + 1}", rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList()))
+                .Select((rs, i) => ResultSetView.From($"Result set {i + 1}", rs, _session))
                 .ToList();
 
             foreach (var p in Parameters)

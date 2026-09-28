@@ -25,7 +25,9 @@ public interface IDialogService
     Task ShowGetDataAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject table);
 
-    Task<bool> ConfirmAsync(string message, string confirmText = "Run");
+    Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null);
+
+    void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
 }
 
 public sealed class DialogService(ProviderRegistry registry) : IDialogService
@@ -59,6 +61,16 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         var vm = new RoutineExecutionViewModel();
         var window = new RoutineExecutionWindow { DataContext = vm };
+        if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
+        {
+            vm.ConfirmBeforeRun = async () =>
+            {
+                var dialog = new ConfirmWindow(
+                    $"Stored procedures can modify data. Run {routine.FullName} on PRODUCTION?",
+                    "Run on production", requiredText: "PRODUCTION", banner: $"PRODUCTION · {session.Profile.DisplayName}");
+                return await dialog.ShowDialog<bool>(window);
+            };
+        }
         _ = vm.InitializeAsync(queryService, session, routine);
 
         if (Owner is not null) window.Show(Owner);
@@ -66,11 +78,18 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
         return Task.CompletedTask;
     }
 
-    public async Task<bool> ConfirmAsync(string message, string confirmText = "Run")
+    public async Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null)
     {
-        var window = new ConfirmWindow(message, confirmText);
+        var window = new ConfirmWindow(message, confirmText, requiredText, banner);
         if (Owner is null) return false;
         return await window.ShowDialog<bool>(Owner);
+    }
+
+    public void ShowCommandPalette(IReadOnlyList<PaletteItem> items)
+    {
+        if (Owner is null) return;
+        var window = new CommandPaletteWindow { DataContext = new CommandPaletteViewModel(items) };
+        window.Show(Owner);
     }
 
     public Task ShowGetDataAsync(

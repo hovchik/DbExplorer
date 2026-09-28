@@ -31,6 +31,8 @@ public partial class App : Avalonia.Application
         services.AddSingleton<DataSearchViewModel>();
         services.AddSingleton<IndexesViewModel>();
         services.AddSingleton<LocksViewModel>();
+        services.AddSingleton<ActivityViewModel>();
+        services.AddSingleton<DiagramViewModel>();
         services.AddSingleton<QueryViewModel>();
         services.AddSingleton<ComparerViewModel>();
         services.AddSingleton<MainWindowViewModel>();

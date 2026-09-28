@@ -31,6 +31,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DataSearchViewModel dataSearch,
         IndexesViewModel indexes,
         LocksViewModel locks,
+        ActivityViewModel activity,
+        DiagramViewModel diagram,
         QueryViewModel query,
         ComparerViewModel comparer)
     {
@@ -45,10 +47,23 @@ public partial class MainWindowViewModel : ViewModelBase
         DataSearch = dataSearch;
         Indexes = indexes;
         Locks = locks;
+        Activity = activity;
+        Diagram = diagram;
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
-        _tabs = [objects, search, dataSearch, indexes, locks, query, comparer];
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, query, comparer];
+
+        objects.ShowInDiagramRequested += table =>
+        {
+            SelectedTab = AppTab.Diagram;
+            diagram.ShowTable(table);
+        };
+        diagram.OpenObjectRequested += table =>
+        {
+            SelectedTab = AppTab.Objects;
+            objects.Reveal(table);
+        };
     }
 
     public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
@@ -62,6 +77,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public DataSearchViewModel DataSearch { get; }
     public IndexesViewModel Indexes { get; }
     public LocksViewModel Locks { get; }
+    public ActivityViewModel Activity { get; }
+    public DiagramViewModel Diagram { get; }
+
+    /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
+    [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
     public QueryViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
 
@@ -73,6 +93,23 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty] private string _statusText = "Not connected";
 
     public bool IsConnected => Session is not null;
+
+    public ConnectionEnvironment ConnectedEnvironment => Session?.Profile.Environment ?? ConnectionEnvironment.None;
+
+    public bool ShowEnvironmentBanner => ConnectedEnvironment != ConnectionEnvironment.None;
+
+    public string EnvironmentBanner => Session is not { } s ? "" : s.Profile.Environment switch
+    {
+        ConnectionEnvironment.Production => $"PRODUCTION · {s.Profile.DisplayName} · changes here affect live data",
+        ConnectionEnvironment.Staging => $"STAGING · {s.Profile.DisplayName}",
+        ConnectionEnvironment.Test => $"TEST · {s.Profile.DisplayName}",
+        ConnectionEnvironment.Development => $"DEVELOPMENT · {s.Profile.DisplayName}",
+        _ => ""
+    };
+
+    public string WindowTitle => Session is { } s
+        ? $"DB Explorer — {s.Profile}"
+        : "DB Explorer";
 
     public async Task InitializeAsync()
     {
@@ -97,6 +134,10 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnSessionChanged(DatabaseSession? value)
     {
         OnPropertyChanged(nameof(IsConnected));
+        OnPropertyChanged(nameof(ConnectedEnvironment));
+        OnPropertyChanged(nameof(ShowEnvironmentBanner));
+        OnPropertyChanged(nameof(EnvironmentBanner));
+        OnPropertyChanged(nameof(WindowTitle));
         foreach (var tab in _tabs) tab.Attach(value);
         RefreshCommands();
     }
@@ -210,6 +251,77 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private void OpenCommandPalette() => _dialogs.ShowCommandPalette(BuildPaletteItems());
+
+    private IReadOnlyList<PaletteItem> BuildPaletteItems()
+    {
+        var items = new List<PaletteItem>();
+
+        void Command(string title, System.Windows.Input.ICommand command, string? subtitle = null)
+        {
+            if (command.CanExecute(null))
+                items.Add(new PaletteItem(title, subtitle, PaletteItemKind.Command, _ => command.Execute(null)));
+        }
+
+        Command("Refresh metadata", RefreshMetadataCommand, "re-read the catalog");
+        Command("Disconnect", DisconnectCommand, Session?.Profile.ToString());
+        Command("Connect", ConnectCommand, SelectedProfile?.ToString());
+        Command("New connection…", NewConnectionCommand);
+        Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
+
+        if (!IsConnected && !IsBusy)
+        {
+            foreach (var profile in Profiles.ToList())
+            {
+                items.Add(new PaletteItem($"Connect to {profile}", profile.Host, PaletteItemKind.Command, _ =>
+                {
+                    SelectedProfile = profile;
+                    if (ConnectCommand.CanExecute(null)) ConnectCommand.Execute(null);
+                }));
+            }
+        }
+
+        foreach (var theme in ThemeModes)
+            items.Add(new PaletteItem($"Theme: {theme}", null, PaletteItemKind.Command, _ => SelectedTheme = theme));
+
+        foreach (var tab in Enum.GetValues<AppTab>())
+        {
+            if (!IsConnected && tab != AppTab.Comparer) continue;
+            var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
+            items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
+        }
+
+        if (Session is { } session)
+        {
+            var multipleDatabases = session.Snapshot.Objects.Select(o => o.Database).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+            foreach (var obj in session.Snapshot.Objects.Where(o => o.Type != DbObjectType.Trigger))
+            {
+                var title = multipleDatabases && !string.IsNullOrEmpty(obj.Database) ? $"{obj.Database}.{obj.FullName}" : obj.FullName;
+                var subtitle = obj.Type + (obj.RowCount is long rows ? $" · {rows:N0} rows" : "");
+                items.Add(new PaletteItem(title, subtitle, PaletteItemKind.Object, modifier => OpenObject(obj, modifier)));
+            }
+        }
+
+        return items;
+    }
+
+    private void OpenObject(DbObject obj, PaletteModifier modifier)
+    {
+        if (modifier == PaletteModifier.Shift && obj.Type is DbObjectType.Table or DbObjectType.ForeignTable)
+        {
+            SelectedTab = AppTab.Diagram;
+            Diagram.ShowTable(obj);
+            return;
+        }
+
+        SelectedTab = AppTab.Objects;
+        Objects.Reveal(obj);
+        if (modifier != PaletteModifier.Control) return;
+        if (obj.IsTableLike && Objects.GetDataCommand.CanExecute(null)) Objects.GetDataCommand.Execute(null);
+        else if (obj.IsRoutine && Objects.ExecuteSelectedCommand.CanExecute(null)) Objects.ExecuteSelectedCommand.Execute(null);
+    }
+
     private static string BuildStatus(DatabaseSession s) =>
         $"{s.Profile} · {s.ServerVersion} · {s.Snapshot.Objects.Count:N0} objects, " +
         $"{s.Snapshot.Columns.Count:N0} columns · metadata from {s.Snapshot.RefreshedAt:g}";
@@ -235,4 +347,17 @@ public partial class MainWindowViewModel : ViewModelBase
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
     }
+}
+
+public enum AppTab
+{
+    Objects,
+    SearchNamesAndCode,
+    SearchData,
+    Query,
+    Diagram,
+    Indexes,
+    Locks,
+    Activity,
+    Comparer
 }

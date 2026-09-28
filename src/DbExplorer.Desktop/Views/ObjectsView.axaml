@@ -9,7 +9,7 @@
         <ComboBox Width="150" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" />
       </StackPanel>
       <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Summary}" />
-      <DataGrid ItemsSource="{Binding Objects}"
+      <DataGrid x:Name="ObjectsGrid" ItemsSource="{Binding Objects}"
                 SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
                 IsReadOnly="True" AutoGenerateColumns="False"
                 CanUserResizeColumns="True" CanUserSortColumns="True"
@@ -19,6 +19,7 @@
           <ContextMenu>
             <MenuItem Header="Execute…" Command="{Binding ExecuteSelectedCommand}" />
             <MenuItem Header="Get Data…" Command="{Binding GetDataCommand}" />
+            <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" />
           </ContextMenu>
         </DataGrid.ContextMenu>
         <DataGrid.Columns>
@@ -34,7 +35,7 @@
 
     <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
 
-    <Grid Grid.Column="2" RowDefinitions="Auto,*,6,2*">
+    <Grid Grid.Column="2" RowDefinitions="Auto,3*,6,2*">
       <TextBlock Grid.Row="0" Margin="0,0,0,6" FontWeight="SemiBold" Text="{Binding SelectedObject.FullName}" />
       <TabControl Grid.Row="1">
         <TabItem Header="Columns">
@@ -93,6 +94,42 @@
                 <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding IsDisabled}" Width="Auto" />
               </DataGrid.Columns>
             </DataGrid>
+          </Grid>
+        </TabItem>
+        <TabItem Header="Profile">
+          <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="3*,6,2*">
+            <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
+              <Button Content="Profile" Classes="accent" Command="{Binding ProfileCommand}" />
+              <TextBlock Text="Sample rows" VerticalAlignment="Center" />
+              <NumericUpDown Width="140" Minimum="1" Maximum="10000000" Increment="10000" FormatString="N0"
+                             Value="{Binding ProfileSampleRows}" />
+              <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsProfiling}" />
+            </StackPanel>
+            <DataGrid Grid.Row="1" Grid.Column="0" ItemsSource="{Binding ColumnProfiles}"
+                      SelectedItem="{Binding SelectedColumnProfile, Mode=TwoWay}"
+                      IsReadOnly="True" AutoGenerateColumns="False"
+                      CanUserResizeColumns="True" CanUserSortColumns="True" GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Column" Binding="{Binding Column}" Width="140" />
+                <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto" />
+                <DataGridTextColumn Header="Null %" Binding="{Binding NullPercent, StringFormat='{}{0:N1}'}" Width="Auto" />
+                <DataGridTextColumn Header="Nulls" Binding="{Binding NullCount, StringFormat='{}{0:N0}'}" Width="Auto" />
+                <DataGridTextColumn Header="Distinct" Binding="{Binding DistinctCount, StringFormat='{}{0:N0}'}" Width="Auto" />
+                <DataGridCheckBoxColumn Header="Unique" Binding="{Binding LooksUnique}" Width="Auto" />
+                <DataGridTextColumn Header="Min" Binding="{Binding MinValue}" Width="120" />
+                <DataGridTextColumn Header="Max" Binding="{Binding MaxValue}" Width="120" />
+              </DataGrid.Columns>
+            </DataGrid>
+            <GridSplitter Grid.Row="1" Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+            <DataGrid Grid.Row="1" Grid.Column="2" ItemsSource="{Binding TopValues}"
+                      IsReadOnly="True" AutoGenerateColumns="False"
+                      CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Most frequent value" Binding="{Binding Value, TargetNullValue='NULL'}" Width="*" />
+                <DataGridTextColumn Header="Count" Binding="{Binding Count, StringFormat='{}{0:N0}'}" Width="Auto" />
+              </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Classes="hint" Margin="0,6,0,0" Text="{Binding ProfileStatus}" TextWrapping="Wrap" />
           </Grid>
         </TabItem>
       </TabControl>

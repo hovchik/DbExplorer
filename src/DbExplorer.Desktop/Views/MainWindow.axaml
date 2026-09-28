@@ -2,10 +2,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="using:DbExplorer.Desktop.Views"
         x:Class="DbExplorer.Desktop.Views.MainWindow"
-        Title="DB Explorer"
+        Title="{Binding WindowTitle}"
         Icon="/Assets/logo.ico"
         Width="1400" Height="860"
+        xmlns:conv="using:DbExplorer.Desktop.Converters"
         WindowStartupLocation="CenterScreen">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
+    <KeyBinding Gesture="Ctrl+P" Command="{Binding OpenCommandPaletteCommand}" />
+  </Window.KeyBindings>
+  <Window.Resources>
+    <conv:EnumToIndexConverter x:Key="EnumToIndex" />
+  </Window.Resources>
   <DockPanel>
     <Border DockPanel.Dock="Top" Padding="10,7" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -23,6 +31,8 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Content="Go to…  Ctrl+K" Command="{Binding OpenCommandPaletteCommand}"
+                  ToolTip.Tip="Jump to any table, view, procedure, tab or command" />
           <ComboBox Width="110" ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme}"
                     ToolTip.Tip="App theme" />
           <ProgressBar Width="100" VerticalAlignment="Center"
@@ -35,11 +45,16 @@
       </Grid>
     </Border>
 
+    <Border DockPanel.Dock="Top" Padding="12,5" IsVisible="{Binding ShowEnvironmentBanner}"
+            Background="{Binding ConnectedEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+      <TextBlock Text="{Binding EnvironmentBanner}" Foreground="White" FontWeight="Bold" FontSize="13" />
+    </Border>
+
     <Border DockPanel.Dock="Bottom" Padding="10,5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
       <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <TabControl Margin="6" Padding="0">
+    <TabControl Margin="6" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
       <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
         <views:ObjectsView DataContext="{Binding Objects}" />
       </TabItem>
@@ -52,11 +67,17 @@
       <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
         <views:QueryView DataContext="{Binding Query}" />
       </TabItem>
+      <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
+        <views:DiagramView DataContext="{Binding Diagram}" />
+      </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />
       </TabItem>
       <TabItem Header="Locks" IsEnabled="{Binding IsConnected}">
         <views:LocksView DataContext="{Binding Locks}" />
+      </TabItem>
+      <TabItem Header="Activity" IsEnabled="{Binding IsConnected}">
+        <views:ActivityView DataContext="{Binding Activity}" />
       </TabItem>
       <TabItem Header="Comparer">
         <views:ComparerView DataContext="{Binding Comparer}" />

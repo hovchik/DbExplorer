@@ -8,6 +8,10 @@ public partial class ObjectsView : UserControl
     public ObjectsView()
     {
         InitializeComponent();
+        ObjectsGrid.SelectionChanged += (_, _) =>
+        {
+            if (ObjectsGrid.SelectedItem is { } item) ObjectsGrid.ScrollIntoView(item, null);
+        };
     }
 
     private void OnObjectsDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)

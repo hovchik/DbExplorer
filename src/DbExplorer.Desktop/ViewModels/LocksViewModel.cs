@@ -1,6 +1,7 @@
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Diagnostics;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
 
@@ -29,6 +30,16 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private bool _blockingOnly;
     [ObservableProperty] private IReadOnlyList<DbLock> _locks = [];
     [ObservableProperty] private DbLock? _selectedLock;
+    [ObservableProperty] private bool _showTree;
+    [ObservableProperty] private IReadOnlyList<BlockingNode> _blockingTree = [];
+    [ObservableProperty] private BlockingNode? _selectedNode;
+    [ObservableProperty] private string? _selectedSql;
+
+    partial void OnSelectedLockChanged(DbLock? value) => SelectedSql = value?.SqlText;
+
+    partial void OnSelectedNodeChanged(BlockingNode? value) => SelectedSql = value?.SqlText;
+
+    partial void OnShowTreeChanged(bool value) => SelectedSql = value ? SelectedNode?.SqlText : SelectedLock?.SqlText;
     [ObservableProperty] private string _status = "Needs VIEW SERVER STATE on SQL Server.";
 
     public void Attach(DatabaseSession? session)
@@ -37,6 +48,7 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
         AutoRefresh = false;
         _all = [];
         Locks = [];
+        BlockingTree = [];
         RefreshCommand.NotifyCanExecuteChanged();
     }
 
@@ -82,7 +94,11 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
         if (BlockingOnly) q = q.Where(l => l.IsWaiting || l.BlockedBy is not null || blockers.Contains(l.SessionId));
 
         Locks = q.ToList();
+        var previous = SelectedNode?.SessionId;
+        BlockingTree = BlockingChainBuilder.Build(_all);
+        SelectedNode = BlockingTree.FirstOrDefault(n => n.SessionId == previous);
         var waiting = _all.Count(l => l.IsWaiting);
-        Status = $"{Locks.Count:N0} locks shown · {waiting:N0} waiting · {blockers.Count:N0} blocking sessions · {DateTime.Now:T}";
+        var heads = BlockingTree.Count == 0 ? "" : " · head blockers: " + string.Join(", ", BlockingTree.Select(n => n.SessionId));
+        Status = $"{Locks.Count:N0} locks shown · {waiting:N0} waiting · {blockers.Count:N0} blocking sessions{heads} · {DateTime.Now:T}";
     }
 }

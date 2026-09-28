@@ -7,11 +7,21 @@ SQL Server is the primary engine; PostgreSQL is included as a second provider to
 
 | Tab | What it does |
 |---|---|
-| **Objects** | Tables, views, procedures, functions, triggers, sequences, synonyms. Filter by name and type; columns and source code of the selected object. |
+| **Objects** | Tables, views, procedures, functions, triggers, sequences, synonyms. Filter by name and type; columns, indexes, foreign keys and source code of the selected object. **Profile** computes null %, distinct count, min/max per column over a sample (one read-only scan) and the most frequent values of a column. |
 | **Search names & code** | Finds any object name, column name, or text inside procedure/function/view/trigger code (match case, whole word, regex, line numbers). Runs against a local metadata snapshot, so it puts **zero load** on the server. |
 | **Search data** | Finds a value in every text column (LIKE / ILIKE), numeric column (exact) and GUID/UUID column across all tables, with the primary key of each matching row. |
+| **Query** | Ad-hoc scripts with context-aware completion (aliases, `schema.` and `alias.` qualifiers, Ctrl+Space), cancel, and **Run on multiple databases**: the same script on every selected database, results stacked with a `Database` column. |
+| **Diagram** | ER diagram built from the cached foreign keys (no server round-trip): around one table (N hops) or a whole schema. Copy as Mermaid, save as PNG. |
 | **Indexes** | Key and included columns, filters, size, rows, usage (seeks/scans/updates), fragmentation (SQL Server, optional). |
-| **Locks** | Current locks, waiting sessions, who blocks whom, the blocker's SQL, auto-refresh. |
+| **Locks** | Current locks, waiting sessions, the blocker's SQL, auto-refresh, and a **blocking tree** (head blocker → blocked sessions, cycle-safe). |
+| **Activity** | **Running now**: executing requests (and SQL Server sessions sleeping inside an open transaction) with elapsed/CPU/reads/waits/blocker. **Top queries**: most expensive cached statements by CPU, duration, reads or executions (plan cache on SQL Server, `pg_stat_statements` on PostgreSQL). |
+| **Comparer** | Schema or data diff of an object between two connections; export either as a self-contained HTML or Markdown report. |
+
+Everywhere:
+
+- **Result grids** — Ctrl+C / context menu copy (cell, rows, rows with header, rows as INSERT), *Copy all*, and export to CSV, Excel (.xlsx), JSON, Markdown or an INSERT script. CSV neutralizes spreadsheet formulas in text values.
+- **Command palette** — Ctrl+K (or Ctrl+P): fuzzy-jump to any table/view/routine, tab or command. Enter opens the object, Shift+Enter shows a table in the diagram, Ctrl+Enter gets data / executes.
+- **Environment tags** — mark a connection as Development, Test, Staging or Production. The window shows a colored banner and title tag; on Production, write scripts and stored procedures require typing `PRODUCTION` to confirm.
 
 ## Build and run
 
@@ -48,11 +58,13 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 - Every batch starts with `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SET LOCK_TIMEOUT n; SET DEADLOCK_PRIORITY LOW`. No shared locks are taken on data, a blocked query fails in `n` ms instead of queueing, and the app always loses a deadlock.
 - Metadata and data search use separate connection pools (different `Application Name`), and every batch re-applies its settings.
 - `ApplicationIntent=ReadOnly` is on by default, so Availability Group listeners route the app to a readable secondary.
+- Column profiling reads only the first *N* rows (default 10,000) of one table in a single statement, on the data-search connection pool with the same session prefix and a statement timeout.
+- Activity and top queries read DMVs only (`sys.dm_exec_requests`, `sys.dm_exec_query_stats`); top queries resolve `sql_text` only for the rows returned.
 - Data search: one query per table (`WHERE col1 LIKE @p OR col2 LIKE @p OR …`, `TOP (@n)`), a command timeout, bounded parallelism (default 3), smallest tables first. A table that hits the lock timeout (error 1222) or the query timeout is listed under *Skipped tables* and the search moves on.
 - Fragmentation uses `sys.dm_db_index_physical_stats` in `LIMITED` mode.
 
 **PostgreSQL**
-- MVCC readers never block writers. Each query runs in its own transaction with `SET TRANSACTION READ ONLY; SET LOCAL statement_timeout; SET LOCAL lock_timeout`, then rolls back.
+- MVCC readers never block writers. Each query runs in its own transaction with `SET TRANSACTION READ ONLY; SET LOCAL statement_timeout; SET LOCAL lock_timeout`, then rolls back. Column profiling uses the same read-only transaction.
 
 **Caveats**
 - READ UNCOMMITTED can return uncommitted or duplicated rows. For finding where a value lives that is acceptable; do not use the results as exact counts.
@@ -60,24 +72,25 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 
 ## Required permissions
 
-SQL Server: `CONNECT`, `VIEW DEFINITION` (to see code), `SELECT` on the tables to search, `VIEW DATABASE STATE` (index usage and fragmentation) and `VIEW SERVER STATE` (locks). Without the last two, the Indexes tab falls back to catalog-only data and the Locks tab shows the permission error.
+SQL Server: `CONNECT`, `VIEW DEFINITION` (to see code), `SELECT` on the tables to search or profile, `VIEW DATABASE STATE` (index usage and fragmentation) and `VIEW SERVER STATE` (locks, activity, top queries). Without the last two, the Indexes tab falls back to catalog-only data and the Locks/Activity tabs show the permission error.
 
-PostgreSQL: `CONNECT` and `SELECT`; `pg_read_all_stats` or superuser to see other users' queries in the Locks tab.
+PostgreSQL: `CONNECT` and `SELECT`; `pg_read_all_stats` or superuser to see other users' queries in the Locks and Activity tabs. *Top queries* needs the `pg_stat_statements` extension (`shared_preload_libraries = 'pg_stat_statements'`, then `CREATE EXTENSION pg_stat_statements;`).
 
 ## Adding another engine (e.g. MySQL, Oracle)
 
 1. Create `src/DbExplorer.Providers.MySql` referencing `DbExplorer.Core`.
-2. Implement `IDatabaseProviderFactory` (key, display name, default port, `ListDatabasesAsync`) and `IDatabaseProvider` (catalog queries, `IsSearchable`, `SearchTableAsync`). Follow the rules in the interface comment: read-only, lock timeouts, statement timeouts.
+2. Implement `IDatabaseProviderFactory` (key, display name, default port, `ListDatabasesAsync`) and `IDatabaseProvider` (catalog queries, `IsSearchable`, `SearchTableAsync`, activity/top-query DMVs, `ProfileTableAsync`/`GetTopValuesAsync`). Follow the rules in the interface comment: read-only, lock timeouts, statement timeouts.
 3. Add an `AddMySqlProvider()` extension and call it in `App.axaml.cs` next to `AddSqlServerProvider()`.
 
 Nothing else changes: the connection dialog, tabs, caches and searches pick the new engine up through DI.
 
 ## Security
 
-Connections are stored in `connections.json` in the app data folder. Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect.
+Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect.
 
 ## Known limitations
 
 - Fragmentation is not reported for PostgreSQL (would require `pgstattuple`, which scans the index).
-- XML, JSON, binary and spatial columns are not included in data search.
+- XML, JSON, binary and spatial columns are not included in data search. Profiling reports only null counts for xml/text/image/spatial columns on SQL Server.
+- The Query tab's *Run on multiple databases* confirms once for the whole batch; each database runs independently and a failure on one does not stop the others.
 - Table scripts in the Objects tab are generated from catalog metadata (columns + primary key), not full DDL.

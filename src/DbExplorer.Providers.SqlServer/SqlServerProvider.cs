@@ -112,6 +112,77 @@ public sealed class SqlServerProvider : IDatabaseProvider
     public Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default) =>
         QueryAcrossDatabasesAsync<DbForeignKey>(SqlServerQueries.ForeignKeys, (f, db) => f with { Database = db }, ct);
 
+    public Task<IReadOnlyList<DbActiveRequest>> GetActiveRequestsAsync(CancellationToken ct = default) =>
+        QueryAsync<DbActiveRequest>(SqlServerDiagnostics.ActiveRequests, null, ct);
+
+    public Task<IReadOnlyList<DbQueryStat>> GetTopQueriesAsync(QueryStatOrder order, int top, CancellationToken ct = default) =>
+        QueryAsync<DbQueryStat>(SqlServerDiagnostics.TopQueries(order), new { top = Math.Clamp(top, 1, 1000) }, ct);
+
+    public ColumnProfileLevel GetProfileLevel(DbColumn column) => SqlServerDiagnostics.ProfileLevel(column);
+
+    public async Task<TableProfile> ProfileTableAsync(
+        DbObject table, IReadOnlyList<DbColumn> columns, int sampleRows, DataSearchOptions options, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        await using var cn = await OpenSearchConnectionAsync(table.Database, ct);
+        await using var cmd = cn.CreateCommand();
+        cmd.CommandText = SqlServerSql.SessionPrefix(options.LockTimeoutMs) +
+                          SqlServerDiagnostics.ProfileTable(table.Schema, table.Name, columns);
+        cmd.CommandTimeout = options.QueryTimeoutSeconds;
+        cmd.Parameters.Add(new SqlParameter("@n", SqlDbType.Int) { Value = Math.Max(1, sampleRows) });
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return new TableProfile { SampleLimit = sampleRows };
+
+        var total = reader.GetInt64(0);
+        var profiles = columns.Select((c, i) =>
+        {
+            var o = 1 + i * 4;
+            var nonNull = reader.IsDBNull(o) ? 0 : reader.GetInt64(o);
+            return new ColumnProfile
+            {
+                Column = c.Name,
+                DataType = c.DataType,
+                NonNullCount = nonNull,
+                NullCount = total - nonNull,
+                DistinctCount = reader.IsDBNull(o + 1) ? null : reader.GetInt64(o + 1),
+                MinValue = reader.IsDBNull(o + 2) ? null : reader.GetString(o + 2),
+                MaxValue = reader.IsDBNull(o + 3) ? null : reader.GetString(o + 3)
+            };
+        }).ToList();
+
+        return new TableProfile { SampledRows = total, SampleLimit = sampleRows, Columns = profiles, Elapsed = sw.Elapsed };
+    }
+
+    public async Task<IReadOnlyList<ValueFrequency>> GetTopValuesAsync(
+        DbObject table, DbColumn column, int sampleRows, int top, DataSearchOptions options, CancellationToken ct = default)
+    {
+        var sql = SqlServerSql.SessionPrefix(options.LockTimeoutMs) +
+                  SqlServerDiagnostics.TopValues(table.Schema, table.Name, column);
+        await using var cn = await OpenSearchConnectionAsync(table.Database, ct);
+        var rows = await cn.QueryAsync<ValueFrequency>(new CommandDefinition(
+            sql, new { n = Math.Max(1, sampleRows), top = Math.Clamp(top, 1, 1000) },
+            commandTimeout: options.QueryTimeoutSeconds, cancellationToken: ct));
+        return rows.AsList();
+    }
+
+    private async Task<SqlConnection> OpenSearchConnectionAsync(string? database, CancellationToken ct)
+    {
+        var cn = new SqlConnection(string.IsNullOrEmpty(database) || !_allDatabases
+            ? _searchConnectionString
+            : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, database));
+        try
+        {
+            await cn.OpenAsync(ct);
+            return cn;
+        }
+        catch
+        {
+            await cn.DisposeAsync();
+            throw;
+        }
+    }
+
 
     public bool IsSearchable(DbColumn column, SearchTerm term)
     {

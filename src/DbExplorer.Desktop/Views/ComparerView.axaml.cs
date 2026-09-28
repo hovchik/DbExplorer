@@ -1,5 +1,6 @@
 using System.Text;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using DbExplorer.Desktop.ViewModels;
@@ -18,6 +19,18 @@ public partial class ComparerView : UserControl
     private void OnObjectPickerGotFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is AutoCompleteBox box) box.IsDropDownOpen = true;
+    }
+
+    private void OnOverviewDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is ComparerViewModel vm && vm.OpenOverviewEntryCommand.CanExecute(null))
+            vm.OpenOverviewEntryCommand.Execute(null);
+    }
+
+    /// <summary>Keeps the change picked by "next / previous difference" in view.</summary>
+    private void OnSchemaSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (SchemaGrid.SelectedItem is { } item) SchemaGrid.ScrollIntoView(item, null);
     }
 
     private async void OnExportSchemaHtml(object? sender, RoutedEventArgs e) => await ExportAsync(schema: true, html: true);

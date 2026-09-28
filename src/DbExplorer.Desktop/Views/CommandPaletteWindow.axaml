@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        x:Class="DbExplorer.Desktop.Views.CommandPaletteWindow"
+        x:DataType="vm:CommandPaletteViewModel"
+        Title="Go to…"
+        Width="680" Height="460"
+        SystemDecorations="BorderOnly"
+        ShowInTaskbar="False"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <Border Padding="10" Background="{DynamicResource AppPopupBackgroundBrush}"
+          BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1">
+    <DockPanel>
+      <TextBox x:Name="QueryBox" DockPanel.Dock="Top" Text="{Binding Query}" FontSize="15"
+               Watermark="Type a table, view, procedure, tab or command…" Margin="0,0,0,8" />
+      <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="2,8,0,0"
+                 Text="Enter: open · Shift+Enter: show in diagram (tables) · Ctrl+Enter: get data / execute · Esc: close" />
+      <ListBox x:Name="ResultsList" ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}"
+               Background="Transparent" BorderThickness="0">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:PaletteItem">
+            <Grid ColumnDefinitions="80,*,Auto">
+              <TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Subtitle}" Margin="12,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </Border>
+</Window>

@@ -2,13 +2,20 @@
 		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 		x:Class="DbExplorer.Desktop.Views.ConfirmWindow"
 		Title="Confirm"
-		Width="440" SizeToContent="Height"
+		Width="460" SizeToContent="Height"
 		WindowStartupLocation="CenterOwner"
 		CanResize="False">
   <StackPanel Margin="16" Spacing="14">
+	<Border x:Name="Banner" IsVisible="False" Background="#C62828" CornerRadius="4" Padding="10,6">
+	  <TextBlock x:Name="BannerText" Foreground="White" FontWeight="Bold" />
+	</Border>
 	<TextBlock x:Name="MessageText" TextWrapping="Wrap" />
+	<StackPanel x:Name="TypePanel" Spacing="6" IsVisible="False">
+	  <TextBlock x:Name="TypePrompt" Classes="hint" TextWrapping="Wrap" />
+	  <TextBox x:Name="TypeBox" />
+	</StackPanel>
 	<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-	  <Button Content="Cancel" Click="OnCancel" />
+	  <Button Content="Cancel" Click="OnCancel" IsCancel="True" />
 	  <Button x:Name="ConfirmButton" Content="Run" Classes="accent" Click="OnConfirm" />
 	</StackPanel>
   </StackPanel>

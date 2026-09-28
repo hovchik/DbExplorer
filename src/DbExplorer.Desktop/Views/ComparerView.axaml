@@ -87,6 +87,14 @@
 			<Button Content="Compare definitions" Classes="accent" Command="{Binding CompareSchemaCommand}" />
 			<TextBlock Text="Comparison type:" VerticalAlignment="Center" />
 			<ComboBox Width="140" ItemsSource="{Binding SchemaCompareModes}" SelectedItem="{Binding SelectedSchemaCompareMode}" />
+			<Button Content="Export report ▾" IsEnabled="{Binding CanExportSchemaReport}">
+			  <Button.Flyout>
+				<MenuFlyout>
+				  <MenuItem Header="HTML report (.html)…" Click="OnExportSchemaHtml" />
+				  <MenuItem Header="Markdown report (.md)…" Click="OnExportSchemaMarkdown" />
+				</MenuFlyout>
+			  </Button.Flyout>
+			</Button>
 			<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding SchemaStatus}" />
 		  </StackPanel>
 		  <DataGrid Grid.Row="1" ItemsSource="{Binding SchemaDiff}" IsReadOnly="True" AutoGenerateColumns="False"
@@ -166,6 +174,14 @@
 			<NumericUpDown Value="{Binding RowLimit}" Minimum="1" Maximum="100000" Width="140" />
 			<CheckBox Content="Only show differences" IsChecked="{Binding OnlyShowDifferences}" />
 			<ComboBox ItemsSource="{Binding DataViewModes}" SelectedItem="{Binding SelectedDataViewMode}" Width="140" />
+			<Button Content="Export report ▾" IsEnabled="{Binding CanExportDataReport}">
+			  <Button.Flyout>
+				<MenuFlyout>
+				  <MenuItem Header="HTML report (.html)…" Click="OnExportDataHtml" />
+				  <MenuItem Header="Markdown report (.md)…" Click="OnExportDataMarkdown" />
+				</MenuFlyout>
+			  </Button.Flyout>
+			</Button>
 			<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DataStatus}" />
 		  </StackPanel>
 

@@ -32,6 +32,25 @@ public interface IDatabaseProvider : IAsyncDisposable
 
     Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default);
 
+    /// <summary>Statements running right now across the server (plus sessions idle in a transaction where the engine reports them).</summary>
+    Task<IReadOnlyList<DbActiveRequest>> GetActiveRequestsAsync(CancellationToken ct = default);
+
+    /// <summary>The most expensive cached statements. Throws <see cref="InvalidOperationException"/> with
+    /// setup guidance when the engine's statistics source is unavailable (e.g. pg_stat_statements).</summary>
+    Task<IReadOnlyList<DbQueryStat>> GetTopQueriesAsync(QueryStatOrder order, int top, CancellationToken ct = default);
+
+    /// <summary>How much <see cref="ProfileTableAsync"/> can compute for a column of this type.</summary>
+    ColumnProfileLevel GetProfileLevel(DbColumn column);
+
+    /// <summary>Null/distinct/min/max per column over the first <paramref name="sampleRows"/> rows, in one scan
+    /// with the same lock and statement timeouts as data search.</summary>
+    Task<TableProfile> ProfileTableAsync(
+        DbObject table, IReadOnlyList<DbColumn> columns, int sampleRows, DataSearchOptions options, CancellationToken ct = default);
+
+    /// <summary>Most frequent values of one column within the first <paramref name="sampleRows"/> rows.</summary>
+    Task<IReadOnlyList<ValueFrequency>> GetTopValuesAsync(
+        DbObject table, DbColumn column, int sampleRows, int top, DataSearchOptions options, CancellationToken ct = default);
+
     /// <summary>Whether the column's type can be compared with the term.</summary>
     bool IsSearchable(DbColumn column, SearchTerm term);
 

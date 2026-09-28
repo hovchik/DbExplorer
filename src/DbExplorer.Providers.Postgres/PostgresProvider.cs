@@ -70,6 +70,104 @@ public sealed class PostgresProvider : IDatabaseProvider
     public Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default) =>
         QueryAcrossDatabasesAsync<DbForeignKey>(PostgresQueries.ForeignKeys, (f, db) => f with { Database = db }, ct);
 
+    public Task<IReadOnlyList<DbActiveRequest>> GetActiveRequestsAsync(CancellationToken ct = default) =>
+        QueryAsync<DbActiveRequest>(PostgresDiagnostics.ActiveRequests, null, ct);
+
+    public async Task<IReadOnlyList<DbQueryStat>> GetTopQueriesAsync(QueryStatOrder order, int top, CancellationToken ct = default)
+    {
+        var schema = await ScalarAsync<string?>(PostgresDiagnostics.FindStatStatements, null, ct)
+            ?? throw new InvalidOperationException(
+                "The pg_stat_statements extension is not installed in this database. Add it to shared_preload_libraries, " +
+                "restart the server, then run CREATE EXTENSION pg_stat_statements;");
+        var version = await ScalarAsync<int>("SELECT current_setting('server_version_num')::int;", null, ct);
+        return await QueryAsync<DbQueryStat>(
+            PostgresDiagnostics.TopQueries(schema, version, order), new { top = Math.Clamp(top, 1, 1000) }, ct);
+    }
+
+    public ColumnProfileLevel GetProfileLevel(DbColumn column) => PostgresDiagnostics.ProfileLevel(column);
+
+    public async Task<TableProfile> ProfileTableAsync(
+        DbObject table, IReadOnlyList<DbColumn> columns, int sampleRows, DataSearchOptions options, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        await using var scope = await OpenReadOnlyAsync(table.Database, options, ct);
+        await using var cmd = new NpgsqlCommand(
+            PostgresDiagnostics.ProfileTable(table.Schema, table.Name, columns), scope.Connection, scope.Transaction)
+        {
+            CommandTimeout = options.QueryTimeoutSeconds + 5
+        };
+        cmd.Parameters.Add(new NpgsqlParameter("n", NpgsqlDbType.Integer) { Value = Math.Max(1, sampleRows) });
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return new TableProfile { SampleLimit = sampleRows };
+
+        var total = reader.GetInt64(0);
+        var profiles = columns.Select((c, i) =>
+        {
+            var o = 1 + i * 4;
+            var nonNull = reader.GetInt64(o);
+            return new ColumnProfile
+            {
+                Column = c.Name,
+                DataType = c.DataType,
+                NonNullCount = nonNull,
+                NullCount = total - nonNull,
+                DistinctCount = reader.GetInt64(o + 1),
+                MinValue = reader.IsDBNull(o + 2) ? null : reader.GetString(o + 2),
+                MaxValue = reader.IsDBNull(o + 3) ? null : reader.GetString(o + 3)
+            };
+        }).ToList();
+
+        return new TableProfile { SampledRows = total, SampleLimit = sampleRows, Columns = profiles, Elapsed = sw.Elapsed };
+    }
+
+    public async Task<IReadOnlyList<ValueFrequency>> GetTopValuesAsync(
+        DbObject table, DbColumn column, int sampleRows, int top, DataSearchOptions options, CancellationToken ct = default)
+    {
+        await using var scope = await OpenReadOnlyAsync(table.Database, options, ct);
+        var rows = await scope.Connection.QueryAsync<ValueFrequency>(new CommandDefinition(
+            PostgresDiagnostics.TopValues(table.Schema, table.Name, column),
+            new { n = Math.Max(1, sampleRows), top = Math.Clamp(top, 1, 1000) },
+            scope.Transaction, commandTimeout: options.QueryTimeoutSeconds + 5, cancellationToken: ct));
+        return rows.AsList();
+    }
+
+    /// <summary>A connection to the table's database inside a read-only transaction with the given timeouts; disposing rolls back.</summary>
+    private async Task<ReadOnlyScope> OpenReadOnlyAsync(string? database, DataSearchOptions options, CancellationToken ct)
+    {
+        var useOwnDataSource = _allDatabases && !string.IsNullOrEmpty(database) && database != _profile.Database;
+        var scoped = useOwnDataSource ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database)) : null;
+        NpgsqlConnection? cn = null;
+        try
+        {
+            cn = await (scoped ?? _dataSource).OpenConnectionAsync(ct);
+            var tx = await cn.BeginTransactionAsync(ct);
+            await ApplySettingsAsync(cn, tx, options.QueryTimeoutSeconds * 1000, options.LockTimeoutMs, ct);
+            return new ReadOnlyScope(scoped, cn, tx);
+        }
+        catch
+        {
+            if (cn is not null) await cn.DisposeAsync();
+            if (scoped is not null) await scoped.DisposeAsync();
+            throw;
+        }
+    }
+
+    private sealed class ReadOnlyScope(NpgsqlDataSource? dataSource, NpgsqlConnection connection, NpgsqlTransaction transaction)
+        : IAsyncDisposable
+    {
+        public NpgsqlConnection Connection { get; } = connection;
+        public NpgsqlTransaction Transaction { get; } = transaction;
+
+        public async ValueTask DisposeAsync()
+        {
+            try { await Transaction.RollbackAsync(); } catch { /* connection may already be broken */ }
+            await Transaction.DisposeAsync();
+            await Connection.DisposeAsync();
+            if (dataSource is not null) await dataSource.DisposeAsync();
+        }
+    }
+
     public bool IsSearchable(DbColumn column, SearchTerm term)
     {
         var type = column.BaseType;

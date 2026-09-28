@@ -24,8 +24,17 @@ public sealed class ConnectionProfile
     /// <summary>SQL Server: ApplicationIntent=ReadOnly (routes to a readable secondary when available).</summary>
     public bool ReadOnlyIntent { get; set; } = true;
 
+    [JsonConverter(typeof(JsonStringEnumConverter<ConnectionEnvironment>))]
+    public ConnectionEnvironment Environment { get; set; }
+
+    [JsonIgnore]
+    public bool IsProduction => Environment == ConnectionEnvironment.Production;
+
     public ConnectionProfile Clone() => (ConnectionProfile)MemberwiseClone();
 
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"{Host}/{Database}" : Name;
+
     public override string ToString() =>
-        string.IsNullOrWhiteSpace(Name) ? $"{Host}/{Database}" : Name;
+        Environment.ShortTag() is { } tag ? $"{DisplayName}  [{tag}]" : DisplayName;
 }

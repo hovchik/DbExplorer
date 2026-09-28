@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:models="using:DbExplorer.Core.Models"
+             xmlns:conv="using:DbExplorer.Desktop.Converters"
+             x:Class="DbExplorer.Desktop.Views.DiagramView">
+  <DockPanel Margin="8">
+    <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+      <WrapPanel.Styles>
+        <Style Selector="WrapPanel > :is(Control)">
+          <Setter Property="Margin" Value="0,0,8,4" />
+          <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+      </WrapPanel.Styles>
+      <ComboBox Width="150" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                IsVisible="{Binding HasMultipleDatabases}" ToolTip.Tip="Database" />
+      <ComboBox Width="150" ItemsSource="{Binding Scopes}" SelectedItem="{Binding Scope}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <AutoCompleteBox x:Name="TablePicker" Width="280" IsVisible="{Binding IsAroundTable}"
+                       ItemsSource="{Binding Tables}" SelectedItem="{Binding FocusTable}"
+                       ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
+                       Watermark="Table to center on…">
+        <AutoCompleteBox.ItemTemplate>
+          <DataTemplate x:DataType="models:DbObject">
+            <TextBlock Text="{Binding FullName}" />
+          </DataTemplate>
+        </AutoCompleteBox.ItemTemplate>
+      </AutoCompleteBox>
+      <TextBlock Text="Depth" IsVisible="{Binding IsAroundTable}" />
+      <NumericUpDown Width="100" Minimum="0" Maximum="6" Increment="1" FormatString="0"
+                     Value="{Binding Depth}" IsVisible="{Binding IsAroundTable}"
+                     ToolTip.Tip="Foreign-key hops from the focus table" />
+      <ComboBox Width="170" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SelectedSchema}"
+                IsVisible="{Binding IsWholeSchema}" />
+      <ComboBox Width="140" ItemsSource="{Binding ColumnModes}" SelectedItem="{Binding ColumnMode}" ToolTip.Tip="Columns shown in each table">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Classes="icon" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out" />
+      <Button Content="{Binding Zoom, StringFormat='{}{0:P0}'}" Command="{Binding ResetZoomCommand}" ToolTip.Tip="Reset zoom" MinWidth="64" />
+      <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
+      <Button Content="Open in Objects" Command="{Binding OpenSelectedCommand}" ToolTip.Tip="Show the selected table's columns, indexes and profile" />
+      <Button Content="Copy Mermaid" Click="OnCopyMermaid" ToolTip.Tip="Copy as a Mermaid erDiagram (renders in GitHub, GitLab, Notion, Confluence…)" />
+      <Button Content="Save PNG…" Click="OnSavePng" />
+    </WrapPanel>
+
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
+
+    <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <controls:ErDiagramControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
+                                   SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
+                                   HorizontalAlignment="Left" VerticalAlignment="Top" />
+      </ScrollViewer>
+    </Border>
+  </DockPanel>
+</UserControl>

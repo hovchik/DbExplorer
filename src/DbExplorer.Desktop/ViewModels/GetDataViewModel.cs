@@ -44,8 +44,8 @@ public partial class GetDataViewModel : ViewModelBase
             var result = await _service.ExecuteScriptAsync(_session, sql, _table.Database, timeoutSeconds: 60);
 
             ResultSets = result.ResultSets
-                .Select((rs, i) => new ResultSetView(
-                    $"Rows", rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList()))
+                .Select(rs => ResultSetView.From("Rows", rs, _session,
+                    _session.Provider.QuoteIdentifier(_table.Schema) + "." + _session.Provider.QuoteIdentifier(_table.Name)))
                 .ToList();
 
             var rowCount = result.ResultSets.Count > 0 ? result.ResultSets[0].Rows.Count : 0;

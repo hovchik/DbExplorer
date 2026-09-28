@@ -1,10 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="using:DbExplorer.Desktop.Converters"
+             xmlns:diag="using:DbExplorer.Application.Diagnostics"
              x:Class="DbExplorer.Desktop.Views.LocksView">
   <Grid Margin="8" RowDefinitions="Auto,Auto,*,6,160,Auto">
     <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,8">
       <Button Content="Refresh" Classes="accent" Command="{Binding RefreshCommand}" />
       <CheckBox Content="Auto-refresh (5 s)" IsChecked="{Binding AutoRefresh}" />
+      <RadioButton GroupName="LockView" Content="Lock list" IsChecked="{Binding !ShowTree}" />
+      <RadioButton GroupName="LockView" Content="Blocking tree" IsChecked="{Binding ShowTree}" />
     </StackPanel>
 
     <Expander Grid.Row="1" Classes="options" Header="Filters">
@@ -14,7 +18,29 @@
       </StackPanel>
     </Expander>
 
-    <DataGrid Grid.Row="2" ItemsSource="{Binding Locks}"
+    <Grid Grid.Row="2" IsVisible="{Binding ShowTree}" RowDefinitions="*">
+      <TreeView ItemsSource="{Binding BlockingTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+        <TreeView.Styles>
+          <Style Selector="TreeViewItem">
+            <Setter Property="IsExpanded" Value="True" />
+          </Style>
+        </TreeView.Styles>
+        <TreeView.ItemTemplate>
+          <TreeDataTemplate x:DataType="diag:BlockingNode" ItemsSource="{Binding Children}">
+            <StackPanel Margin="0,3">
+              <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+              <TextBlock Classes="hint" Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+          </TreeDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+      <TextBlock Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Text="No blocking right now. Press Refresh (or enable auto-refresh) to check again."
+                 IsVisible="{Binding !BlockingTree.Count}" />
+    </Grid>
+
+    <DataGrid Grid.Row="2" ItemsSource="{Binding Locks}" IsVisible="{Binding !ShowTree}"
               SelectedItem="{Binding SelectedLock, Mode=TwoWay}"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"
@@ -31,16 +57,16 @@
         <DataGridTextColumn Header="Host" Binding="{Binding HostName}" Width="Auto" />
         <DataGridTextColumn Header="Program" Binding="{Binding ProgramName}" Width="160" />
         <DataGridTextColumn Header="Wait type" Binding="{Binding WaitType}" Width="Auto" />
-        <DataGridTextColumn Header="SQL" Binding="{Binding SqlText}" Width="*" />
+        <DataGridTextColumn Header="SQL" Binding="{Binding SqlText, Converter={x:Static conv:SingleLineConverter.Instance}}" Width="*" />
       </DataGrid.Columns>
     </DataGrid>
 
     <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />
 
     <TextBox Grid.Row="4" Classes="code"
-             Text="{Binding SelectedLock.SqlText}"
+             Text="{Binding SelectedSql}"
              IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
-             Watermark="Select a lock to see the session's current or last SQL" />
+             Watermark="Select a lock or session to see its current or last SQL" />
 
     <TextBlock Grid.Row="5" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" />
   </Grid>

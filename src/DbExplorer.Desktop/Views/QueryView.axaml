@@ -2,10 +2,42 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
+			 xmlns:query="using:DbExplorer.Application.Query"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
   <Grid Margin="8" RowDefinitions="Auto,2*,6,3*,Auto">
 	<StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
 	  <Button Content="Execute (F5)" Classes="accent" Command="{Binding ExecuteCommand}" />
+	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
+	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="8,0,0,0"
+				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
+	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
+		<Button.Flyout>
+		  <Flyout Placement="BottomEdgeAlignedLeft">
+			<StackPanel Width="340" Spacing="6">
+			  <TextBox Text="{Binding DatabaseFilter}" Watermark="Filter databases…" />
+			  <StackPanel Orientation="Horizontal" Spacing="6">
+				<Button Content="Select all" Command="{Binding SelectAllDatabasesCommand}" CommandParameter="{x:True}" />
+				<Button Content="None" Command="{Binding SelectAllDatabasesCommand}" CommandParameter="{x:False}" />
+				<Button Content="Reload" Command="{Binding LoadDatabasesCommand}" />
+			  </StackPanel>
+			  <ScrollViewer MaxHeight="320">
+				<ItemsControl ItemsSource="{Binding VisibleDatabases}">
+				  <ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="vm:DatabaseChoice">
+					  <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,1" />
+					</DataTemplate>
+				  </ItemsControl.ItemTemplate>
+				</ItemsControl>
+			  </ScrollViewer>
+			  <StackPanel Orientation="Horizontal" Spacing="6">
+				<TextBlock Text="Parallel" VerticalAlignment="Center" />
+				<NumericUpDown Width="110" Minimum="1" Maximum="16" Increment="1" FormatString="0" Value="{Binding Parallelism}" />
+			  </StackPanel>
+			  <TextBlock Classes="hint" Text="{Binding DatabaseListStatus}" TextWrapping="Wrap" />
+			</StackPanel>
+		  </Flyout>
+		</Button.Flyout>
+	  </Button>
 	  <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
 	</StackPanel>
 
@@ -18,9 +50,20 @@
 
 	<Popup Grid.Row="1" x:Name="SuggestionsPopup" PlacementTarget="{Binding #Editor}"
 		   Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False">
-	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="180" MinWidth="180">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="240" MinWidth="320">
 		<ListBox x:Name="SuggestionsList" ItemsSource="{Binding Suggestions}"
-				 SelectedIndex="0" Background="Transparent" BorderThickness="0" />
+				 SelectedIndex="0" Background="Transparent" BorderThickness="0">
+		  <ListBox.ItemTemplate>
+			<DataTemplate x:DataType="query:CompletionItem">
+			  <Grid ColumnDefinitions="64,Auto,*">
+				<TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center" />
+				<TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center" />
+				<TextBlock Grid.Column="2" Classes="hint" Text="{Binding Detail}" Margin="10,0,0,0"
+						   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+			  </Grid>
+			</DataTemplate>
+		  </ListBox.ItemTemplate>
+		</ListBox>
 	  </Border>
 	</Popup>
 

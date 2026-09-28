@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="using:DbExplorer.Desktop.Converters"
+             x:Class="DbExplorer.Desktop.Views.ActivityView">
+  <TabControl Margin="4">
+    <TabItem Header="Running now">
+      <Grid Margin="4" RowDefinitions="Auto,*,6,150,Auto">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,8">
+          <Button Content="Refresh" Classes="accent" Command="{Binding RefreshRequestsCommand}" />
+          <CheckBox Content="Auto-refresh (5 s)" IsChecked="{Binding AutoRefresh}" />
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Requests}"
+                  SelectedItem="{Binding SelectedRequest, Mode=TwoWay}"
+                  IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Session" Binding="{Binding SessionId}" Width="Auto" />
+            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
+            <DataGridTextColumn Header="Elapsed ms" Binding="{Binding ElapsedMs, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="CPU ms" Binding="{Binding CpuMs, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Reads" Binding="{Binding LogicalReads, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Writes" Binding="{Binding Writes, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Blocked by" Binding="{Binding BlockedBy}" Width="Auto" />
+            <DataGridTextColumn Header="Wait" Binding="{Binding WaitType}" Width="Auto" />
+            <DataGridTextColumn Header="Wait ms" Binding="{Binding WaitMs, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="Auto" />
+            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="Auto" />
+            <DataGridTextColumn Header="Login" Binding="{Binding LoginName}" Width="Auto" />
+            <DataGridTextColumn Header="Host" Binding="{Binding HostName}" Width="Auto" />
+            <DataGridTextColumn Header="Program" Binding="{Binding ProgramName}" Width="160" />
+            <DataGridTextColumn Header="SQL" Binding="{Binding SqlText, Converter={x:Static conv:SingleLineConverter.Instance}}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+
+        <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
+
+        <TextBox Grid.Row="3" Classes="code" Text="{Binding SelectedRequest.SqlText}"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 Watermark="Select a request to see its current statement" />
+
+        <TextBlock Grid.Row="4" Classes="hint" Margin="0,6,0,0" Text="{Binding RequestsStatus}" />
+      </Grid>
+    </TabItem>
+
+    <TabItem Header="Top queries">
+      <Grid Margin="4" RowDefinitions="Auto,*,6,150,Auto">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+          <Button Content="Load" Classes="accent" Command="{Binding LoadTopQueriesCommand}" />
+          <TextBlock Text="Order by" VerticalAlignment="Center" />
+          <ComboBox Width="170" ItemsSource="{Binding Orders}" SelectedItem="{Binding SelectedOrder}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Text="Top" VerticalAlignment="Center" />
+          <NumericUpDown Width="110" Minimum="1" Maximum="1000" Increment="10" FormatString="0" Value="{Binding TopCount}" />
+          <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsLoadingTopQueries}" />
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding TopQueries}"
+                  SelectedItem="{Binding SelectedQuery, Mode=TwoWay}"
+                  IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Executions" Binding="{Binding ExecutionCount, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Total ms" Binding="{Binding TotalElapsedMs, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Avg ms" Binding="{Binding AvgElapsedMs, StringFormat='{}{0:N2}'}" Width="Auto" />
+            <DataGridTextColumn Header="Total CPU ms" Binding="{Binding TotalCpuMs, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Avg CPU ms" Binding="{Binding AvgCpuMs, StringFormat='{}{0:N2}'}" Width="Auto" />
+            <DataGridTextColumn Header="Reads" Binding="{Binding TotalLogicalReads, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Avg reads" Binding="{Binding AvgLogicalReads, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Rows" Binding="{Binding TotalRows, StringFormat='{}{0:N0}'}" Width="Auto" />
+            <DataGridTextColumn Header="Last run" Binding="{Binding LastExecutionTime, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Width="Auto" />
+            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="Auto" />
+            <DataGridTextColumn Header="SQL" Binding="{Binding SqlText, Converter={x:Static conv:SingleLineConverter.Instance}}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+
+        <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
+
+        <TextBox Grid.Row="3" Classes="code" Text="{Binding SelectedQuery.SqlText}"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 Watermark="Select a statement to see its full text" />
+
+        <TextBlock Grid.Row="4" Classes="hint" Margin="0,6,0,0" Text="{Binding TopQueriesStatus}" TextWrapping="Wrap" />
+      </Grid>
+    </TabItem>
+  </TabControl>
+</UserControl>

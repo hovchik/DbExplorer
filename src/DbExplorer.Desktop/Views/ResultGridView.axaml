@@ -1,7 +1,41 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
-  <DataGrid x:Name="Grid" IsReadOnly="True" AutoGenerateColumns="False"
-			CanUserResizeColumns="True" CanUserSortColumns="True"
-			GridLinesVisibility="Horizontal" />
+  <DockPanel>
+	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+	  <TextBlock x:Name="RowCountText" Grid.Column="0" Classes="hint" VerticalAlignment="Center" />
+	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+		<Button Content="Copy all" Padding="10,2" MinHeight="26" Click="OnCopyAll"
+				ToolTip.Tip="Copy every row as tab-separated text (pastes into Excel as cells). Ctrl+C copies the selected rows." />
+		<Button Content="Copy as INSERT" Padding="10,2" MinHeight="26" Click="OnCopyAllInsert"
+				ToolTip.Tip="Copy every row as INSERT statements" />
+		<Button Content="Export ▾" Padding="10,2" MinHeight="26">
+		  <Button.Flyout>
+			<MenuFlyout Placement="BottomEdgeAlignedRight">
+			  <MenuItem Header="CSV (.csv)…" Click="OnExportCsv" />
+			  <MenuItem Header="Excel (.xlsx)…" Click="OnExportExcel" />
+			  <MenuItem Header="JSON (.json)…" Click="OnExportJson" />
+			  <MenuItem Header="Markdown table (.md)…" Click="OnExportMarkdown" />
+			  <MenuItem Header="SQL INSERT script (.sql)…" Click="OnExportInsert" />
+			</MenuFlyout>
+		  </Button.Flyout>
+		</Button>
+	  </StackPanel>
+	</Grid>
+	<DataGrid x:Name="Grid" IsReadOnly="True" AutoGenerateColumns="False"
+			  CanUserResizeColumns="True" CanUserSortColumns="True"
+			  SelectionMode="Extended"
+			  GridLinesVisibility="Horizontal">
+	  <DataGrid.ContextMenu>
+		<ContextMenu>
+		  <MenuItem Header="Copy cell value" Click="OnCopyCell" />
+		  <MenuItem Header="Copy selected rows" InputGesture="Ctrl+C" Click="OnCopySelected" />
+		  <MenuItem Header="Copy selected rows with header" Click="OnCopySelectedWithHeader" />
+		  <MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
+		  <Separator />
+		  <MenuItem Header="Copy all rows" Click="OnCopyAll" />
+		</ContextMenu>
+	  </DataGrid.ContextMenu>
+	</DataGrid>
+  </DockPanel>
 </UserControl>

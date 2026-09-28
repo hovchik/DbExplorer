@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
         services.AddSingleton<QueryExecutionService>();
+        services.AddSingleton<MultiDatabaseQueryService>();
         services.AddSingleton<ObjectComparisonService>();
         return services;
     }

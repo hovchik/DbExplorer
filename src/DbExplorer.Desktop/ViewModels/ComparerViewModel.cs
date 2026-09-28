@@ -17,6 +17,42 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
 {
     private DatabaseSession? _mainSession;
     private IReadOnlyList<DataComparisonRow> _allDataRows = [];
+    private DataComparisonResult? _lastDataResult;
+    private (ReportSide Left, ReportSide Right)? _dataSides;
+    private SchemaComparison? _lastSchemaComparison;
+
+    /// <summary>What was compared on the Schema tab, kept so a report can be produced later.</summary>
+    private sealed record SchemaComparison(
+        DatabaseSession LeftSession, DbObject LeftObject, DatabaseSession RightSession, DbObject RightObject,
+        ReportSide Left, ReportSide Right);
+
+    public bool CanExportSchemaReport => _lastSchemaComparison is not null && !IsBusy;
+    public bool CanExportDataReport => _lastDataResult is not null && !IsBusy;
+
+    /// <summary>Report for the last schema comparison, always rendered line by line (readable in tickets and diffs).</summary>
+    public async Task<string?> BuildSchemaReportAsync(bool html)
+    {
+        if (_lastSchemaComparison is not { } c) return null;
+        var diff = SelectedSchemaCompareMode == SchemaCompareMode.LineByLine
+            ? SchemaDiff
+            : await comparer.CompareSchemaAsync(c.LeftSession, c.LeftObject, c.RightSession, c.RightObject, SchemaCompareMode.LineByLine);
+        return html
+            ? ComparisonReportBuilder.SchemaHtml(c.Left, c.Right, diff, DateTimeOffset.Now)
+            : ComparisonReportBuilder.SchemaMarkdown(c.Left, c.Right, diff, DateTimeOffset.Now);
+    }
+
+    public string? BuildDataReport(bool html)
+    {
+        if (_lastDataResult is not { } result || _dataSides is not { } sides) return null;
+        return html
+            ? ComparisonReportBuilder.DataHtml(sides.Left, sides.Right, result, OnlyShowDifferences, DateTimeOffset.Now)
+            : ComparisonReportBuilder.DataMarkdown(sides.Left, sides.Right, result, OnlyShowDifferences, DateTimeOffset.Now);
+    }
+
+    public string ReportFileStem => (SelectedRightObject?.FullName ?? SelectedLeftObject?.FullName ?? "comparison").Replace(' ', '_');
+
+    private static ReportSide Side(DatabaseSession session, DbObject obj) =>
+        new(session.Profile.ToString(), obj.Database, obj.FullName);
 
     public ObservableCollection<ConnectionProfile> Profiles { get; set; } = [];
 
@@ -146,14 +182,37 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
 
     partial void OnRightProfileChanged(ConnectionProfile? value) => ConnectRightCommand.NotifyCanExecuteChanged();
 
-    partial void OnLeftSessionChanged(DatabaseSession? value) => OnPropertyChanged(nameof(IsLeftConnected));
+    partial void OnLeftSessionChanged(DatabaseSession? value)
+    {
+        OnPropertyChanged(nameof(IsLeftConnected));
+        ForgetReportSources();
+    }
 
-    partial void OnRightSessionChanged(DatabaseSession? value) => OnPropertyChanged(nameof(IsRightConnected));
+    partial void OnRightSessionChanged(DatabaseSession? value)
+    {
+        OnPropertyChanged(nameof(IsRightConnected));
+        ForgetReportSources();
+    }
+
+    /// <summary>A report must not re-query a session that has since been swapped out or disposed.</summary>
+    private void ForgetReportSources()
+    {
+        _lastSchemaComparison = null;
+        _lastDataResult = null;
+        _dataSides = null;
+        OnPropertyChanged(nameof(CanExportSchemaReport));
+        OnPropertyChanged(nameof(CanExportDataReport));
+    }
 
     public bool IsLeftConnected => LeftSession is not null;
     public bool IsRightConnected => RightSession is not null;
 
-    partial void OnIsBusyChanged(bool value) => RefreshCommands();
+    partial void OnIsBusyChanged(bool value)
+    {
+        RefreshCommands();
+        OnPropertyChanged(nameof(CanExportSchemaReport));
+        OnPropertyChanged(nameof(CanExportDataReport));
+    }
 
     partial void OnSelectedLeftObjectChanged(DbObject? value)
     {
@@ -355,6 +414,9 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         {
             var diff = await comparer.CompareSchemaAsync(LeftSession, SelectedLeftObject, RightSession, SelectedRightObject, SelectedSchemaCompareMode);
             SchemaDiff = diff;
+            _lastSchemaComparison = new SchemaComparison(LeftSession, SelectedLeftObject, RightSession, SelectedRightObject,
+                Side(LeftSession, SelectedLeftObject), Side(RightSession, SelectedRightObject));
+            OnPropertyChanged(nameof(CanExportSchemaReport));
             var added = diff.Count(d => d.Kind == DiffLineKind.Added);
             var removed = diff.Count(d => d.Kind == DiffLineKind.Removed);
             var unit = SelectedSchemaCompareMode == SchemaCompareMode.Content ? "token(s)" : "line(s)";
@@ -390,6 +452,9 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
             var limit = Math.Max(1, (int)RowLimit);
             var result = await comparer.CompareDataAsync(LeftSession, SelectedLeftObject, RightSession, SelectedRightObject, limit);
             _allDataRows = result.Rows;
+            _lastDataResult = result;
+            _dataSides = (Side(LeftSession, SelectedLeftObject), Side(RightSession, SelectedRightObject));
+            OnPropertyChanged(nameof(CanExportDataReport));
 
             var keyDescription = result.UsedFallbackKey
                 ? "no primary key in common; matched by full row"
@@ -439,7 +504,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
             var rs = result.ResultSets.FirstOrDefault();
             LeftDataResult = rs is null
                 ? null
-                : new ResultSetView("Left data", rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList());
+                : ResultSetView.From("Left data", rs, LeftSession, QualifiedName(LeftSession, SelectedLeftObject));
             LeftDataStatus = $"{(rs?.Rows.Count ?? 0):N0} row(s) in {result.Elapsed.TotalMilliseconds:N0} ms";
         }
         catch (Exception ex)
@@ -468,7 +533,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
             var rs = result.ResultSets.FirstOrDefault();
             RightDataResult = rs is null
                 ? null
-                : new ResultSetView("Right data", rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList());
+                : ResultSetView.From("Right data", rs, RightSession, QualifiedName(RightSession, SelectedRightObject));
             RightDataStatus = $"{(rs?.Rows.Count ?? 0):N0} row(s) in {result.Elapsed.TotalMilliseconds:N0} ms";
         }
         catch (Exception ex)
@@ -480,6 +545,9 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
             IsBusy = false;
         }
     }
+
+    private static string QualifiedName(DatabaseSession session, DbObject obj) =>
+        session.Provider.QuoteIdentifier(obj.Schema) + "." + session.Provider.QuoteIdentifier(obj.Name);
 
     private void RefreshCommands()
     {

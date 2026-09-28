@@ -4,6 +4,7 @@ using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
+using DbExplorer.Core.Search;
 using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
@@ -34,6 +35,19 @@ public partial class ObjectsViewModel(
     [ObservableProperty] private string _definition = "";
     [ObservableProperty] private string _summary = "";
 
+    [ObservableProperty] private decimal _profileSampleRows = 10_000;
+    [ObservableProperty] private IReadOnlyList<ColumnProfile> _columnProfiles = [];
+    [ObservableProperty] private ColumnProfile? _selectedColumnProfile;
+    [ObservableProperty] private IReadOnlyList<ValueFrequency> _topValues = [];
+    [ObservableProperty] private string _profileStatus = "Profiles the first N rows in one read-only scan (lock and statement timeouts apply).";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ProfileCommand))]
+    private bool _isProfiling;
+
+    private static readonly DataSearchOptions ProfileLimits = new(MaxMatchesPerTable: 0, QueryTimeoutSeconds: 60, LockTimeoutMs: 3000);
+    private CancellationTokenSource? _topValuesCts;
+
     public void Attach(DatabaseSession? session)
     {
         if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
@@ -59,6 +73,99 @@ public partial class ObjectsViewModel(
         _ = LoadDetailsAsync(value);
         ExecuteSelectedCommand.NotifyCanExecuteChanged();
         GetDataCommand.NotifyCanExecuteChanged();
+        ProfileCommand.NotifyCanExecuteChanged();
+        ShowInDiagramCommand.NotifyCanExecuteChanged();
+        ColumnProfiles = [];
+        TopValues = [];
+    }
+
+    private bool CanProfile => SelectedObject?.IsTableLike == true && !IsProfiling;
+
+    [RelayCommand(CanExecute = nameof(CanProfile))]
+    private async Task ProfileAsync()
+    {
+        if (_session is null || SelectedObject is not { IsTableLike: true } table) return;
+
+        var columns = _session.Snapshot.ColumnsOf(table.Database, table.Schema, table.Name).OrderBy(c => c.Ordinal).ToList();
+        if (columns.Count == 0)
+        {
+            ProfileStatus = "No columns in the metadata cache for this object; try Refresh metadata.";
+            return;
+        }
+
+        IsProfiling = true;
+        ProfileStatus = "Profiling…";
+        TopValues = [];
+        try
+        {
+            var sample = (int)Math.Max(1, ProfileSampleRows);
+            var profile = await _session.Provider.ProfileTableAsync(table, columns, sample, ProfileLimits);
+            if (!ReferenceEquals(SelectedObject, table)) return;
+            ColumnProfiles = profile.Columns;
+            ProfileStatus = $"{profile.SampledRows:N0} row(s) profiled in {profile.Elapsed.TotalMilliseconds:N0} ms" +
+                            (profile.IsPartial ? $" · first {sample:N0} rows only (sample)" : " · whole table") +
+                            " · select a column for its most frequent values";
+        }
+        catch (Exception ex)
+        {
+            ProfileStatus = "Error: " + ex.Message;
+        }
+        finally
+        {
+            IsProfiling = false;
+        }
+    }
+
+    partial void OnSelectedColumnProfileChanged(ColumnProfile? value) => _ = LoadTopValuesAsync(value);
+
+    private async Task LoadTopValuesAsync(ColumnProfile? profile)
+    {
+        _topValuesCts?.Cancel();
+        _topValuesCts = new CancellationTokenSource();
+        var ct = _topValuesCts.Token;
+        TopValues = [];
+
+        if (profile is null || _session is null || SelectedObject is not { IsTableLike: true } table) return;
+        var column = _session.Snapshot.ColumnsOf(table.Database, table.Schema, table.Name)
+            .FirstOrDefault(c => c.Name == profile.Column);
+        if (column is null) return;
+
+        try
+        {
+            var values = await _session.Provider.GetTopValuesAsync(
+                table, column, (int)Math.Max(1, ProfileSampleRows), top: 20, ProfileLimits, ct);
+            if (!ct.IsCancellationRequested) TopValues = values;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!ct.IsCancellationRequested) TopValues = [new ValueFrequency { Value = "Error: " + ex.Message }];
+        }
+    }
+
+    /// <summary>Raised when the user asks to see the selected table in the Diagram tab.</summary>
+    public event Action<DbObject>? ShowInDiagramRequested;
+
+    [RelayCommand(CanExecute = nameof(CanShowInDiagram))]
+    private void ShowInDiagram()
+    {
+        if (SelectedObject is { } obj) ShowInDiagramRequested?.Invoke(obj);
+    }
+
+    private bool CanShowInDiagram => SelectedObject?.Type is DbObjectType.Table or DbObjectType.ForeignTable;
+
+    /// <summary>Clears the filters and selects <paramref name="target"/> (matched by database/schema/name).</summary>
+    public void Reveal(DbObject target)
+    {
+        FilterText = "";
+        SelectedTypeFilter = AllTypes;
+        SelectedDatabaseFilter = AllDatabases;
+        SelectedObject = Objects.FirstOrDefault(o =>
+            string.Equals(o.Database, target.Database, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(o.Schema, target.Schema, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(o.Name, target.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     public bool CanExecuteSelected => SelectedObject?.IsRoutine == true;

@@ -73,30 +73,36 @@
 
     <!-- Compact, consistent control sizing so views spend less space on inputs -->
     <Style Selector="TextBox">
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="8,4" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="ComboBox">
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="8,0" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="NumericUpDown">
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="MinHeight" Value="30" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button">
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="14,6" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="12,4" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.accent">
       <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
       <Setter Property="Foreground" Value="White" />
       <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <!-- Small secondary buttons (grid toolbars, inline actions) -->
+    <Style Selector="Button.compact">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Padding" Value="10,2" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="Button.icon">
       <Setter Property="Padding" Value="8,0" />
@@ -105,6 +111,22 @@
     <Style Selector="CheckBox">
       <Setter Property="Margin" Value="0,0,16,0" />
       <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- One-row toolbars: inputs, actions and the status text share a line and wrap only when narrow -->
+    <Style Selector="WrapPanel.toolbar">
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="WrapPanel.toolbar > :is(Control)">
+      <Setter Property="Margin" Value="0,0,8,4" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Tab headers: Fluent's default is display-sized; keep them readable but short -->
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="10,0" />
     </Style>
 
     <!-- Collapsible option panels: compact header -->
@@ -119,6 +141,10 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
       <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="RowHeight" Value="28" />
+    </Style>
+    <Style Selector="DataGridColumnHeader">
+      <Setter Property="MinHeight" Value="28" />
     </Style>
   </Application.Styles>
 </Application>

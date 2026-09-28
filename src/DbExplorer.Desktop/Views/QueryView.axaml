@@ -4,11 +4,11 @@
 			 xmlns:views="using:DbExplorer.Desktop.Views"
 			 xmlns:query="using:DbExplorer.Application.Query"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
-  <Grid Margin="8" RowDefinitions="Auto,2*,6,3*,Auto">
-	<StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+  <Grid Margin="4" RowDefinitions="Auto,2*,6,3*,Auto">
+	<WrapPanel Grid.Row="0" Classes="toolbar">
 	  <Button Content="Execute (F5)" Classes="accent" Command="{Binding ExecuteCommand}" />
 	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
-	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="8,0,0,0"
+	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
 				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
 	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
 		<Button.Flyout>
@@ -38,8 +38,9 @@
 		  </Flyout>
 		</Button.Flyout>
 	  </Button>
-	  <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
-	</StackPanel>
+	  <ProgressBar Width="100" MinWidth="100" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+	</WrapPanel>
 
 	<TextBox Grid.Row="1" x:Name="Editor" Classes="code" Text="{Binding Sql}"
 			 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
@@ -82,15 +83,19 @@
 	  </TabControl.ContentTemplate>
 	</TabControl>
 
-	<Grid Grid.Row="4" RowDefinitions="Auto,Auto" Margin="0,6,0,0">
-	  <TextBlock Grid.Row="0" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
-	  <ItemsControl Grid.Row="1" ItemsSource="{Binding Messages}" Margin="0,2,0,0">
-		<ItemsControl.ItemTemplate>
-		  <DataTemplate>
-			<TextBlock Classes="hint" Text="{Binding}" TextWrapping="Wrap" />
-		  </DataTemplate>
-		</ItemsControl.ItemTemplate>
-	  </ItemsControl>
-	</Grid>
+	<!-- Server messages (PRINT, rows affected, per-database results): collapsed to one line until needed -->
+	<Expander Grid.Row="4" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
+			  IsVisible="{Binding !!Messages.Count}"
+			  Header="{Binding Messages.Count, StringFormat='Messages ({0})'}">
+	  <ScrollViewer MaxHeight="160">
+		<ItemsControl ItemsSource="{Binding Messages}">
+		  <ItemsControl.ItemTemplate>
+			<DataTemplate>
+			  <SelectableTextBlock Foreground="{DynamicResource AppHintForegroundBrush}" Text="{Binding}" TextWrapping="Wrap" FontSize="12" />
+			</DataTemplate>
+		  </ItemsControl.ItemTemplate>
+		</ItemsControl>
+	  </ScrollViewer>
+	</Expander>
   </Grid>
 </UserControl>

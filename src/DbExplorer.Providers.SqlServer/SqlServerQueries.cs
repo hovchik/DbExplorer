@@ -201,6 +201,35 @@ internal static class SqlServerQueries
             """;
     }
 
+    public const string ForeignKeys = """
+        SELECT s.name AS [Schema],
+               o.name AS [Table],
+               fk.name AS [Name],
+               STUFF((
+                   SELECT ', ' + c.name
+                   FROM sys.foreign_key_columns fkc
+                   JOIN sys.columns c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
+                   WHERE fkc.constraint_object_id = fk.object_id
+                   ORDER BY fkc.constraint_column_id
+                   FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 2, '') AS [Columns],
+               rs.name AS [ReferencedSchema],
+               ro.name AS [ReferencedTable],
+               STUFF((
+                   SELECT ', ' + rc.name
+                   FROM sys.foreign_key_columns fkc
+                   JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+                   WHERE fkc.constraint_object_id = fk.object_id
+                   ORDER BY fkc.constraint_column_id
+                   FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 2, '') AS [ReferencedColumns],
+               fk.is_disabled AS [IsDisabled]
+        FROM sys.foreign_keys fk
+        JOIN sys.objects o ON o.object_id = fk.parent_object_id
+        JOIN sys.schemas s ON s.schema_id = o.schema_id
+        JOIN sys.objects ro ON ro.object_id = fk.referenced_object_id
+        JOIN sys.schemas rs ON rs.schema_id = ro.schema_id
+        ORDER BY s.name, o.name, fk.name;
+        """;
+
     /// <summary>Locks in the current database (or every database when allDatabases is true) plus who is blocking whom. Needs VIEW SERVER STATE.</summary>
     public static string Locks(bool allDatabases) => $"""
         SELECT TOP (5000)

@@ -16,17 +16,21 @@ public sealed class MetadataService(MetadataCache cache)
             if (cached is not null) return cached;
         }
 
-        // Three short catalog reads in parallel, each on its own connection.
+        // Five short catalog reads in parallel, each on its own connection.
         var objectsTask = provider.GetObjectsAsync(ct);
         var columnsTask = provider.GetColumnsAsync(ct);
         var modulesTask = provider.GetModulesAsync(ct);
-        await Task.WhenAll(objectsTask, columnsTask, modulesTask);
+        var foreignKeysTask = provider.GetForeignKeysAsync(ct);
+        var indexesTask = provider.GetIndexesAsync(includePhysicalStats: false, ct);
+        await Task.WhenAll(objectsTask, columnsTask, modulesTask, foreignKeysTask, indexesTask);
 
         var snapshot = new MetadataSnapshot
         {
             Objects = objectsTask.Result,
             Columns = columnsTask.Result,
             Modules = modulesTask.Result,
+            ForeignKeys = foreignKeysTask.Result,
+            Indexes = indexesTask.Result,
             RefreshedAt = DateTimeOffset.Now
         };
 

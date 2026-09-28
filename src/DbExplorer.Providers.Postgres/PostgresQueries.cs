@@ -150,6 +150,28 @@ internal static class PostgresQueries
         ORDER BY 1, 2, 3;
         """;
 
+    public const string ForeignKeys = """
+        SELECT n.nspname AS "Schema",
+               t.relname AS "Table",
+               con.conname AS "Name",
+               (SELECT string_agg(a.attname, ', ' ORDER BY x.ord)
+                  FROM unnest(con.conkey) WITH ORDINALITY AS x(attnum, ord)
+                  JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = x.attnum) AS "Columns",
+               rn.nspname AS "ReferencedSchema",
+               rt.relname AS "ReferencedTable",
+               (SELECT string_agg(a.attname, ', ' ORDER BY x.ord)
+                  FROM unnest(con.confkey) WITH ORDINALITY AS x(attnum, ord)
+                  JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = x.attnum) AS "ReferencedColumns",
+               NOT con.convalidated AS "IsDisabled"
+        FROM pg_constraint con
+        JOIN pg_class t ON t.oid = con.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        JOIN pg_class rt ON rt.oid = con.confrelid
+        JOIN pg_namespace rn ON rn.oid = rt.relnamespace
+        WHERE con.contype = 'f'
+        ORDER BY 1, 2, 3;
+        """;
+
     public const string Locks = """
         SELECT l.pid AS "SessionId",
                a.usename::text AS "LoginName",

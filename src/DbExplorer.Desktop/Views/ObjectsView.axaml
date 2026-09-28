@@ -6,6 +6,7 @@
       <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
         <TextBox Width="240" Text="{Binding FilterText}" Watermark="Filter by schema.name…" />
         <ComboBox Width="150" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" />
+        <ComboBox Width="150" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" />
       </StackPanel>
       <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Summary}" />
       <DataGrid ItemsSource="{Binding Objects}"
@@ -21,6 +22,7 @@
           </ContextMenu>
         </DataGrid.ContextMenu>
         <DataGrid.Columns>
+          <DataGridTextColumn Header="Database" Binding="{Binding Database}" Width="Auto" />
           <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
           <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
           <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
@@ -34,18 +36,66 @@
 
     <Grid Grid.Column="2" RowDefinitions="Auto,*,6,2*">
       <TextBlock Grid.Row="0" Margin="0,0,0,6" FontWeight="SemiBold" Text="{Binding SelectedObject.FullName}" />
-      <DataGrid Grid.Row="1" ItemsSource="{Binding Columns}"
-                IsReadOnly="True" AutoGenerateColumns="False"
-                CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
-        <DataGrid.Columns>
-          <DataGridTextColumn Header="#" Binding="{Binding Ordinal}" Width="Auto" />
-          <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="*" />
-          <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto" />
-          <DataGridCheckBoxColumn Header="Null" Binding="{Binding IsNullable}" Width="Auto" />
-          <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
-          <DataGridCheckBoxColumn Header="Computed" Binding="{Binding IsComputed}" Width="Auto" />
-        </DataGrid.Columns>
-      </DataGrid>
+      <TabControl Grid.Row="1">
+        <TabItem Header="Columns">
+          <DataGrid ItemsSource="{Binding Columns}"
+                    IsReadOnly="True" AutoGenerateColumns="False"
+                    CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="#" Binding="{Binding Ordinal}" Width="Auto" />
+              <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="*" />
+              <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto" />
+              <DataGridCheckBoxColumn Header="Null" Binding="{Binding IsNullable}" Width="Auto" />
+              <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
+              <DataGridCheckBoxColumn Header="Computed" Binding="{Binding IsComputed}" Width="Auto" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </TabItem>
+        <TabItem Header="Indexes">
+          <DataGrid ItemsSource="{Binding Indexes}"
+                    IsReadOnly="True" AutoGenerateColumns="False"
+                    CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+              <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
+              <DataGridCheckBoxColumn Header="Unique" Binding="{Binding IsUnique}" Width="Auto" />
+              <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
+              <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
+              <DataGridTextColumn Header="Included" Binding="{Binding IncludedColumns}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </TabItem>
+        <TabItem Header="References">
+          <Grid RowDefinitions="Auto,*,6,Auto,*">
+            <TextBlock Grid.Row="0" Classes="hint" Text="Foreign keys defined on this table (references out):" />
+            <DataGrid Grid.Row="1" ItemsSource="{Binding OutgoingForeignKeys}"
+                      IsReadOnly="True" AutoGenerateColumns="False"
+                      CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
+                <DataGridTextColumn Header="References" Binding="{Binding ReferencedSchema}" Width="Auto" />
+                <DataGridTextColumn Header="Table" Binding="{Binding ReferencedTable}" Width="*" />
+                <DataGridTextColumn Header="Ref. Columns" Binding="{Binding ReferencedColumns}" Width="*" />
+                <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding IsDisabled}" Width="Auto" />
+              </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Grid.Row="3" Classes="hint" Text="Other tables referencing this one (referenced by):" />
+            <DataGrid Grid.Row="4" ItemsSource="{Binding IncomingForeignKeys}"
+                      IsReadOnly="True" AutoGenerateColumns="False"
+                      CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+                <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="*" />
+                <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
+                <DataGridTextColumn Header="Ref. Columns" Binding="{Binding ReferencedColumns}" Width="*" />
+                <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding IsDisabled}" Width="Auto" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </Grid>
+        </TabItem>
+      </TabControl>
       <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
       <TextBox Grid.Row="3" Classes="code"
                Text="{Binding Definition}"

@@ -67,6 +67,9 @@ public sealed class PostgresProvider : IDatabaseProvider
     public Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default) =>
         QueryAsync<DbLock>(PostgresQueries.Locks, null, ct);
 
+    public Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default) =>
+        QueryAcrossDatabasesAsync<DbForeignKey>(PostgresQueries.ForeignKeys, (f, db) => f with { Database = db }, ct);
+
     public bool IsSearchable(DbColumn column, SearchTerm term)
     {
         var type = column.BaseType;

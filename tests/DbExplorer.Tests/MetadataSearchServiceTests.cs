@@ -28,6 +28,8 @@ public class MetadataSearchServiceTests
                 Definition = "CREATE PROCEDURE dbo.usp_GetCustomer @id int\nAS\nSELECT * FROM sales.Orders WHERE CustomerId = @id"
             }
         ],
+        ForeignKeys = [],
+        Indexes = [],
         RefreshedAt = DateTimeOffset.Now
     };
 

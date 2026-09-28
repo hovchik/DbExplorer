@@ -13,7 +13,7 @@ namespace DbExplorer.Application.Metadata;
 /// </summary>
 public sealed class MetadataCache(AppPaths paths)
 {
-    private const string SchemaVersion = "2";
+    private const string SchemaVersion = "4";
 
     public static string CacheKey(ConnectionProfile p)
     {
@@ -123,11 +123,61 @@ public sealed class MetadataCache(AppPaths paths)
                 }
             }
 
+            var foreignKeys = new List<DbForeignKey>();
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, columns, referenced_schema, referenced_table, referenced_columns, is_disabled FROM foreign_keys";
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    foreignKeys.Add(new DbForeignKey
+                    {
+                        Database = r.GetString(0),
+                        Schema = r.GetString(1),
+                        Table = r.GetString(2),
+                        Name = r.GetString(3),
+                        Columns = r.IsDBNull(4) ? null : r.GetString(4),
+                        ReferencedSchema = r.GetString(5),
+                        ReferencedTable = r.GetString(6),
+                        ReferencedColumns = r.IsDBNull(7) ? null : r.GetString(7),
+                        IsDisabled = r.GetInt64(8) != 0
+                    });
+                }
+            }
+
+            var indexes = new List<DbIndex>();
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, type, is_unique, is_primary_key, is_disabled, columns, included_columns, filter, row_count, size_bytes FROM indexes";
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    indexes.Add(new DbIndex
+                    {
+                        Database = r.GetString(0),
+                        Schema = r.GetString(1),
+                        Table = r.GetString(2),
+                        Name = r.GetString(3),
+                        Type = r.GetString(4),
+                        IsUnique = r.GetInt64(5) != 0,
+                        IsPrimaryKey = r.GetInt64(6) != 0,
+                        IsDisabled = r.GetInt64(7) != 0,
+                        Columns = r.IsDBNull(8) ? null : r.GetString(8),
+                        IncludedColumns = r.IsDBNull(9) ? null : r.GetString(9),
+                        Filter = r.IsDBNull(10) ? null : r.GetString(10),
+                        Rows = r.IsDBNull(11) ? null : r.GetInt64(11),
+                        SizeBytes = r.IsDBNull(12) ? null : r.GetInt64(12)
+                    });
+                }
+            }
+
             return new MetadataSnapshot
             {
                 Objects = objects,
                 Columns = columns,
                 Modules = modules,
+                ForeignKeys = foreignKeys,
+                Indexes = indexes,
                 RefreshedAt = DateTimeOffset.Parse(refreshed, CultureInfo.InvariantCulture)
             };
         }
@@ -144,7 +194,8 @@ public sealed class MetadataCache(AppPaths paths)
 
         Exec(cn, tx, """
             DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS objects;
-            DROP TABLE IF EXISTS columns; DROP TABLE IF EXISTS modules;
+            DROP TABLE IF EXISTS columns; DROP TABLE IF EXISTS modules; DROP TABLE IF EXISTS foreign_keys;
+            DROP TABLE IF EXISTS indexes;
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE objects (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
                                   created_at TEXT, modified_at TEXT, row_count INTEGER);
@@ -152,6 +203,12 @@ public sealed class MetadataCache(AppPaths paths)
                                   data_type TEXT NOT NULL, base_type TEXT NOT NULL, is_nullable INTEGER NOT NULL,
                                   ordinal INTEGER NOT NULL, is_computed INTEGER NOT NULL, is_primary_key INTEGER NOT NULL);
             CREATE TABLE modules (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, definition TEXT);
+            CREATE TABLE foreign_keys (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
+                                  columns TEXT, referenced_schema TEXT NOT NULL, referenced_table TEXT NOT NULL, referenced_columns TEXT,
+                                  is_disabled INTEGER NOT NULL);
+            CREATE TABLE indexes (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
+                                  type TEXT NOT NULL, is_unique INTEGER NOT NULL, is_primary_key INTEGER NOT NULL, is_disabled INTEGER NOT NULL,
+                                  columns TEXT, included_columns TEXT, filter TEXT, row_count INTEGER, size_bytes INTEGER);
             """);
 
         BulkInsert(cn, tx, "objects", 7, s.Objects, o =>
@@ -168,6 +225,17 @@ public sealed class MetadataCache(AppPaths paths)
         BulkInsert(cn, tx, "modules", 5, s.Modules, m =>
         [
             m.Database, m.Schema, m.Name, m.Type.ToString(), m.Definition
+        ], ct);
+
+        BulkInsert(cn, tx, "foreign_keys", 9, s.ForeignKeys, f =>
+        [
+            f.Database, f.Schema, f.Table, f.Name, f.Columns, f.ReferencedSchema, f.ReferencedTable, f.ReferencedColumns, f.IsDisabled ? 1 : 0
+        ], ct);
+
+        BulkInsert(cn, tx, "indexes", 13, s.Indexes, i =>
+        [
+            i.Database, i.Schema, i.Table, i.Name, i.Type, i.IsUnique ? 1 : 0, i.IsPrimaryKey ? 1 : 0, i.IsDisabled ? 1 : 0,
+            i.Columns, i.IncludedColumns, i.Filter, i.Rows, i.SizeBytes
         ], ct);
 
         BulkInsert(cn, tx, "meta", 2, new[]

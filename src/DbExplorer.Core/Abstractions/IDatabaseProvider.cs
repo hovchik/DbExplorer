@@ -27,6 +27,9 @@ public interface IDatabaseProvider : IAsyncDisposable
 
     Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default);
 
+    /// <summary>Foreign key constraints across every accessible table (catalog-only, no locks).</summary>
+    Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default);
+
     Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default);
 
     /// <summary>Whether the column's type can be compared with the term.</summary>

@@ -79,26 +79,39 @@ public sealed class SqlServerProvider : IDatabaseProvider
         }
 
         if (!_allDatabases)
-            return await QueryOneAsync(_profile.Database, ct);
+        {
+            var rows = await QueryOneAsync(_profile.Database, ct);
+            return rows.Select(i => i with { Database = _profile.Database }).ToList();
+        }
 
-        var results = new List<DbIndex>();
-        foreach (var db in await GetAccessibleDatabasesAsync(ct))
+        var databases = await GetAccessibleDatabasesAsync(ct);
+        var results = new System.Collections.Concurrent.ConcurrentBag<DbIndex>();
+
+        await Parallel.ForEachAsync(databases, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = MaxParallelDatabases,
+            CancellationToken = ct
+        }, async (db, token) =>
         {
             try
             {
-                var rows = await QueryOneAsync(db, ct);
-                results.AddRange(rows.Select(i => i with { Database = db }));
+                var rows = await QueryOneAsync(db, token);
+                foreach (var row in rows) results.Add(row with { Database = db });
             }
             catch
             {
                 // Inaccessible database: skip it and keep going.
             }
-        }
-        return results;
+        });
+        return results.ToList();
     }
 
     public Task<IReadOnlyList<DbLock>> GetLocksAsync(CancellationToken ct = default) =>
         QueryAsync<DbLock>(SqlServerQueries.Locks(_allDatabases), null, ct);
+
+    public Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default) =>
+        QueryAcrossDatabasesAsync<DbForeignKey>(SqlServerQueries.ForeignKeys, (f, db) => f with { Database = db }, ct);
+
 
     public bool IsSearchable(DbColumn column, SearchTerm term)
     {
@@ -284,7 +297,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
         {
             var argList = string.Join(", ", parameters
                 .Where(p => p.Direction != DbParameterDirection.ReturnValue)
-                .Select(p => $"@{p.Name}"));
+                .Select(p => p.Name));
             cmd.CommandText = $"SELECT {SqlServerSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
         }
         else
@@ -296,7 +309,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
         var outputParams = new Dictionary<string, SqlParameter>();
         foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue))
         {
-            var sqlParam = new SqlParameter("@" + p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+            var sqlParam = new SqlParameter(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
             if (p.Direction == DbParameterDirection.Output || p.Direction == DbParameterDirection.InputOutput)
             {
                 sqlParam.Direction = p.Direction == DbParameterDirection.Output

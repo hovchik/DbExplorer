@@ -25,7 +25,9 @@ public interface IDatabaseProvider : IAsyncDisposable
 
     Task<string?> GetDefinitionAsync(DbObject obj, CancellationToken ct = default);
 
-    Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default);
+    /// <param name="includeUsageStats">Seeks/scans/updates since the server started; costly on large catalogs, so the
+    /// cached metadata load leaves them out and only the Indexes tab asks for them.</param>
+    Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default, bool includeUsageStats = true);
 
     /// <summary>Foreign key constraints across every accessible table (catalog-only, no locks).</summary>
     Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default);
@@ -65,11 +67,21 @@ public interface IDatabaseProvider : IAsyncDisposable
     /// Executes an arbitrary, possibly multi-statement, script against the given database
     /// (or the profile's default database when null) and returns every produced result set.
     /// </summary>
+    /// <param name="maxRows">Rows kept per result set; further rows are read and discarded (never cancelled, so the
+    /// rest of the script still runs) and the result set is flagged as truncated.</param>
+    /// <exception cref="SqlExecutionException">The server rejected the script; carries the error position when known.</exception>
     Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default);
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue);
 
     /// <summary>Executes a stored procedure or function call with the given argument values.</summary>
     Task<QueryExecutionResult> ExecuteRoutineAsync(
         DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments,
         int timeoutSeconds, CancellationToken ct = default);
+
+    /// <summary>Opens a read-write connection to the database (or the profile's default when null) for running
+    /// several scripts in a row, inside one transaction when <paramref name="transactional"/> is set.</summary>
+    Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default);
+
+    /// <summary>Column defaults and check constraints of one table (catalog-only, no locks).</summary>
+    Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default);
 }

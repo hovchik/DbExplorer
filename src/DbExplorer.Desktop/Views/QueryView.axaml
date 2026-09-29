@@ -2,12 +2,56 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
-			 xmlns:query="using:DbExplorer.Application.Query"
+			 xmlns:ae="using:AvaloniaEdit"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
-  <Grid Margin="4" RowDefinitions="Auto,2*,6,3*,Auto">
+  <UserControl.Styles>
+	<Style Selector="Button.tool">
+	  <Setter Property="MinHeight" Value="28" />
+	  <Setter Property="Padding" Value="10,2" />
+	</Style>
+  </UserControl.Styles>
+  <Grid Margin="4" RowDefinitions="Auto,2*,Auto,6,3*,Auto">
 	<WrapPanel Grid.Row="0" Classes="toolbar">
-	  <Button Content="Execute (F5)" Classes="accent" Command="{Binding ExecuteCommand}" />
+	  <Button Content="▶ Run" Classes="accent" Click="OnRun"
+			  ToolTip.Tip="Run the selection, or the whole script when nothing is selected (F5 / Ctrl+E)" />
+	  <Button Content="▶ Statement" Classes="tool" Click="OnRunStatement"
+			  ToolTip.Tip="Run only the statement at the caret (Ctrl+Enter)" />
 	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
+	  <Button Content="Explain ▾" Classes="tool" ToolTip.Tip="Execution plan of the selection / statement at the caret (Ctrl+L)">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Estimated plan (does not run the query)" InputGesture="Ctrl+L" Click="OnExplain" />
+			<MenuItem Header="Explain Analyze (runs it in a transaction that is rolled back)" InputGesture="Ctrl+Shift+L" Click="OnExplainAnalyze" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
+	  <CheckBox Content="Auto-commit" IsChecked="{Binding AutoCommit}" Margin="4,0,4,4"
+				ToolTip.Tip="Off: runs happen inside a transaction that stays open until you Commit or Rollback, so you can check changes first" />
+	  <Button Content="✔ Commit" Classes="tool" Command="{Binding CommitCommand}" IsVisible="{Binding HasOpenTransaction}"
+			  ToolTip.Tip="Make the changes of the open transaction permanent" />
+	  <Button Content="↶ Rollback" Classes="tool" Command="{Binding RollbackCommand}" IsVisible="{Binding HasOpenTransaction}"
+			  ToolTip.Tip="Undo everything done since the transaction started" />
+	  <TextBlock Text="{Binding TransactionInfo}" IsVisible="{Binding HasOpenTransaction}" Foreground="#E08A00" FontWeight="SemiBold" />
+	  <Button Content="Tools ▾" Classes="tool">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Format" InputGesture="Ctrl+Shift+F" Click="OnFormat" />
+			<MenuItem Header="Comment / uncomment lines" InputGesture="Ctrl+OemQuestion" Click="OnToggleComment" />
+			<MenuItem Header="UPPER CASE selection" InputGesture="Ctrl+Shift+U" Click="OnUpperCase" />
+			<MenuItem Header="lower case selection" InputGesture="Ctrl+Alt+U" Click="OnLowerCase" />
+			<MenuItem Header="Duplicate line / selection" InputGesture="Ctrl+D" Click="OnDuplicate" />
+			<Separator />
+			<MenuItem Header="Find" InputGesture="Ctrl+F" Click="OnFind" />
+			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />
+			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
+			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
+	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4" ToolTip.Tip="Rows kept per result set (0 = all). Larger results are read to the end but not kept, so the app stays responsive.">
+		<TextBlock Text="Max rows" VerticalAlignment="Center" />
+		<NumericUpDown Value="{Binding MaxRows}" Minimum="0" Maximum="10000000" Increment="10000" FormatString="N0" Width="160" />
+	  </StackPanel>
 	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
 				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
 	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
@@ -42,35 +86,37 @@
 	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
 	</WrapPanel>
 
-	<TextBox Grid.Row="1" x:Name="Editor" Classes="code" Text="{Binding Sql}"
-			 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-			 VerticalAlignment="Stretch" VerticalContentAlignment="Top"
-			 Watermark="Write a SQL query or script and click Execute…"
-			 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-			 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-
-	<Popup Grid.Row="1" x:Name="SuggestionsPopup" PlacementTarget="{Binding #Editor}"
-		   Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False">
-	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2" MaxHeight="240" MinWidth="320">
-		<ListBox x:Name="SuggestionsList" ItemsSource="{Binding Suggestions}"
-				 SelectedIndex="0" Background="Transparent" BorderThickness="0">
-		  <ListBox.ItemTemplate>
-			<DataTemplate x:DataType="query:CompletionItem">
-			  <Grid ColumnDefinitions="64,Auto,*">
-				<TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center" />
-				<TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center" />
-				<TextBlock Grid.Column="2" Classes="hint" Text="{Binding Detail}" Margin="10,0,0,0"
-						   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-			  </Grid>
-			</DataTemplate>
-		  </ListBox.ItemTemplate>
-		</ListBox>
+	<Popup Grid.Row="1" x:Name="SignaturePopup" IsLightDismissEnabled="False" Placement="TopEdgeAlignedLeft">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
+			  BorderThickness="1" CornerRadius="4" Padding="8,4">
+		<TextBlock x:Name="SignatureText" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12" />
 	  </Border>
 	</Popup>
+	<Popup Grid.Row="1" x:Name="GoToLinePopup" IsLightDismissEnabled="True" Placement="TopEdgeAlignedRight">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
+			  BorderThickness="1" CornerRadius="4" Padding="8">
+		<StackPanel Orientation="Horizontal" Spacing="6">
+		  <TextBlock Text="Go to line" VerticalAlignment="Center" />
+		  <TextBox x:Name="GoToLineBox" Width="90" KeyDown="OnGoToLineKeyDown" />
+		</StackPanel>
+	  </Border>
+	</Popup>
+	<Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+	  <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" WordWrap="False"
+					 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+					 Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+					 LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
+					 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0" />
+	</Border>
+	<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
+	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11"
+				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
+	  <TextBlock Grid.Column="1" x:Name="CaretInfo" Classes="hint" FontSize="11" />
+	</Grid>
 
-	<GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
+	<GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />
 
-	<TabControl Grid.Row="3" ItemsSource="{Binding ResultSets}">
+	<TabControl Grid.Row="4" ItemsSource="{Binding ResultSets}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <TextBlock Text="{Binding Title}" />
@@ -84,7 +130,7 @@
 	</TabControl>
 
 	<!-- Server messages (PRINT, rows affected, per-database results): collapsed to one line until needed -->
-	<Expander Grid.Row="4" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
+	<Expander Grid.Row="5" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
 			  IsVisible="{Binding !!Messages.Count}"
 			  Header="{Binding Messages.Count, StringFormat='Messages ({0})'}">
 	  <ScrollViewer MaxHeight="160">

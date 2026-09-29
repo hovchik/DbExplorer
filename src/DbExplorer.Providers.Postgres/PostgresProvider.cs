@@ -60,7 +60,7 @@ public sealed class PostgresProvider : IDatabaseProvider
         return nonEmpty.Count == 0 ? null : string.Join("\n\n", nonEmpty);
     }
 
-    public Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default, bool includeUsageStats = true) =>
         // Fragmentation would need the pgstattuple extension, which scans the index; not used.
         QueryAcrossDatabasesAsync<DbIndex>(PostgresQueries.Indexes, (i, db) => i with { Database = db }, ct);
 
@@ -281,7 +281,7 @@ public sealed class PostgresProvider : IDatabaseProvider
     }
 
     public async Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default)
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue)
     {
         var sw = Stopwatch.StartNew();
         var targetDatabase = database ?? _profile.Database;
@@ -293,7 +293,18 @@ public sealed class PostgresProvider : IDatabaseProvider
         var dataSource = scopedDataSource ?? _dataSource;
 
         await using var cn = await dataSource.OpenConnectionAsync(ct);
+        var result = await RunAsync(cn, null, sql, timeoutSeconds, maxRows, ct);
+        return result with { Elapsed = sw.Elapsed };
+    }
 
+    /// <summary>
+    /// Runs a (multi-statement) script, keeping at most <paramref name="maxRows"/> rows per result set (the rest is read
+    /// and discarded so later statements still run). Server errors become <see cref="SqlExecutionException"/> with the
+    /// line/column in the script, located through the failing statement of the batch.
+    /// </summary>
+    private static async Task<QueryExecutionResult> RunAsync(
+        NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, CancellationToken ct)
+    {
         var resultSets = new List<QueryResultSet>();
         var messages = new List<string>();
         var rowsAffected = 0;
@@ -303,7 +314,7 @@ public sealed class PostgresProvider : IDatabaseProvider
 
         try
         {
-            await using var cmd = new NpgsqlCommand(sql, cn) { CommandTimeout = timeoutSeconds };
+            await using var cmd = new NpgsqlCommand(sql, cn, tx) { CommandTimeout = timeoutSeconds };
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             do
             {
@@ -311,14 +322,16 @@ public sealed class PostgresProvider : IDatabaseProvider
                 {
                     var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
                     var rows = new List<IReadOnlyList<object?>>();
+                    long total = 0;
                     while (await reader.ReadAsync(ct))
                     {
+                        if (++total > maxRows) continue;
                         var row = new object?[reader.FieldCount];
                         for (var i = 0; i < row.Length; i++)
                             row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
                         rows.Add(row);
                     }
-                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows });
+                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = total > maxRows });
                 }
                 else
                 {
@@ -326,18 +339,29 @@ public sealed class PostgresProvider : IDatabaseProvider
                 }
             } while (await reader.NextResultAsync(ct));
         }
+        catch (PostgresException ex)
+        {
+            throw ToExecutionException(ex, sql);
+        }
         finally
         {
             cn.Notice -= OnNotice;
         }
 
-        return new QueryExecutionResult
-        {
-            ResultSets = resultSets,
-            RowsAffected = rowsAffected,
-            Messages = messages,
-            Elapsed = sw.Elapsed
-        };
+        return new QueryExecutionResult { ResultSets = resultSets, RowsAffected = rowsAffected, Messages = messages };
+    }
+
+    /// <summary>Position is 1-based inside the failing statement; find that statement in the script to get a script offset.</summary>
+    private static SqlExecutionException ToExecutionException(PostgresException ex, string sql)
+    {
+        var message = ex.MessageText + (string.IsNullOrEmpty(ex.Detail) ? "" : $" ({ex.Detail})") +
+                      (string.IsNullOrEmpty(ex.Hint) ? "" : $" Hint: {ex.Hint}");
+        if (ex.Position <= 0) return new SqlExecutionException($"{ex.SqlState}: {message}", null, null, ex);
+
+        var statement = ex.BatchCommand?.CommandText;
+        var statementStart = string.IsNullOrEmpty(statement) ? 0 : Math.Max(0, sql.IndexOf(statement, StringComparison.Ordinal));
+        var (line, column) = SqlExecutionException.LocationOf(sql, statementStart + ex.Position - 1);
+        return new SqlExecutionException($"Line {line}, column {column}: {ex.SqlState}: {message}", line, column, ex);
     }
 
     public async Task<QueryExecutionResult> ExecuteRoutineAsync(
@@ -400,6 +424,101 @@ public sealed class PostgresProvider : IDatabaseProvider
             Messages = [],
             Elapsed = sw.Elapsed
         };
+    }
+
+    public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)
+    {
+        var targetDatabase = database ?? _profile.Database;
+        var scoped = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            : null;
+        NpgsqlConnection? cn = null;
+        try
+        {
+            cn = await (scoped ?? _dataSource).OpenConnectionAsync(ct);
+            var tx = transactional ? await cn.BeginTransactionAsync(ct) : null;
+            return new ScriptSession(cn, tx, scoped);
+        }
+        catch
+        {
+            if (cn is not null) await cn.DisposeAsync();
+            if (scoped is not null) await scoped.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default)
+    {
+        var database = string.IsNullOrEmpty(table.Database) ? _profile.Database : table.Database;
+        var args = new { name = PostgresSql.QuoteFullName(table.Schema, table.Name) };
+        var defaults = await QueryInDatabaseAsync<NameDefinition>(PostgresQueries.ColumnDefaults, args, database, ct);
+        var checks = await QueryInDatabaseAsync<NameDefinition>(PostgresQueries.CheckConstraints, args, database, ct);
+        return new DbTableConstraints
+        {
+            Defaults = defaults.Where(d => d.Definition is not null)
+                .ToDictionary(d => d.Name, d => d.Definition!, StringComparer.OrdinalIgnoreCase),
+            Checks = checks.Where(c => c.Definition is not null).Select(c => new DbCheckConstraint(c.Name, c.Definition!)).ToList()
+        };
+    }
+
+    private sealed class NameDefinition
+    {
+        public string Name { get; set; } = "";
+        public string? Definition { get; set; }
+    }
+
+    private sealed class ScriptSession(NpgsqlConnection connection, NpgsqlTransaction? transaction, NpgsqlDataSource? scoped)
+        : IScriptSession
+    {
+        private bool _committed;
+
+        public async Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default)
+        {
+            await using var cmd = new NpgsqlCommand(sql, connection, transaction) { CommandTimeout = timeoutSeconds };
+            try
+            {
+                var rows = await cmd.ExecuteNonQueryAsync(ct);
+                return Math.Max(rows, 0);
+            }
+            catch (PostgresException ex)
+            {
+                throw ToExecutionException(ex, sql);
+            }
+        }
+
+        public async Task<QueryExecutionResult> QueryAsync(string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default)
+        {
+            var sw = Stopwatch.StartNew();
+            var result = await RunAsync(connection, transaction, sql, timeoutSeconds, maxRows, ct);
+            return result with { Elapsed = sw.Elapsed };
+        }
+
+        public async Task RollbackAsync(CancellationToken ct = default)
+        {
+            if (transaction is not null) await transaction.RollbackAsync(ct);
+            _committed = true; // nothing left to roll back on dispose
+        }
+
+        public async Task CommitAsync(CancellationToken ct = default)
+        {
+            if (transaction is not null) await transaction.CommitAsync(ct);
+            _committed = true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (transaction is not null)
+            {
+                if (!_committed)
+                {
+                    try { await transaction.RollbackAsync(); }
+                    catch (Exception) { /* connection already broken: the server discards the transaction */ }
+                }
+                await transaction.DisposeAsync();
+            }
+            await connection.DisposeAsync();
+            if (scoped is not null) await scoped.DisposeAsync();
+        }
     }
 
     private static async Task ApplySettingsAsync(

@@ -3,24 +3,29 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Compare;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
 /// <summary>
 /// Compares a schema object (or its data) between two connections, which may target the same
 /// server/database or completely different environments (e.g. dev vs t01). The Overview tab compares
-/// every object of the two databases at once, from the cached catalog (no server load).
+/// every object of the two databases at once, from the cached catalog (no server load). The Copy &amp; sync
+/// tab (ComparerViewModel.Copy.cs) creates the left object on the right or synchronizes its data.
 /// </summary>
-public partial class ComparerViewModel(SessionService sessions, ObjectComparisonService comparer)
+public partial class ComparerViewModel(
+    SessionService sessions, ObjectComparisonService comparer, ObjectCopyService copier, IDialogService dialogs)
     : ViewModelBase, ISessionAware
 {
     public const int OverviewTab = 0;
     public const int SchemaTab = 1;
     public const int StructureTab = 2;
     public const int DataTab = 3;
+    public const int CopyTab = 4;
 
     private DatabaseSession? _mainSession;
     private CancellationTokenSource? _cts;
@@ -111,7 +116,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         : SelectedLeftObject is null && SelectedRightObject is null
             ? "Pick an object to compare, or run Compare all objects on the Overview tab."
         : SelectedLeftObject is null ? "Pick the left object."
-        : SelectedRightObject is null ? $"No object named {SelectedLeftObject.FullName} on the right; pick one manually."
+        : SelectedRightObject is null ? $"No object named {SelectedLeftObject.FullName} on the right; pick one manually, or create it on the Copy & sync tab."
         : "";
 
     public bool HasNextStepHint => NextStepHint.Length > 0;
@@ -181,7 +186,11 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     partial void OnShowOverviewOnlyRightChanged(bool value) => ApplyOverviewFilter();
     partial void OnShowOverviewIdenticalChanged(bool value) => ApplyOverviewFilter();
     partial void OnShowOverviewNotComparedChanged(bool value) => ApplyOverviewFilter();
-    partial void OnSelectedOverviewEntryChanged(ObjectComparisonEntry? value) => OpenOverviewEntryCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedOverviewEntryChanged(ObjectComparisonEntry? value)
+    {
+        OpenOverviewEntryCommand.NotifyCanExecuteChanged();
+        CopyOverviewEntryCommand.NotifyCanExecuteChanged();
+    }
 
     private bool CanCompareOverview => LeftSession is not null && RightSession is not null && !IsBusy;
 
@@ -496,6 +505,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         OnPropertyChanged(nameof(LeftEnvironment));
         ForgetReportSources();
         RefreshHints();
+        RefreshCopyAnalysis();
     }
 
     partial void OnRightSessionChanged(DatabaseSession? value)
@@ -505,6 +515,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         OnPropertyChanged(nameof(RightEnvironment));
         ForgetReportSources();
         RefreshHints();
+        RefreshCopyAnalysis();
     }
 
     /// <summary>A report must not re-query a session that has since been swapped out or disposed.</summary>
@@ -537,15 +548,21 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
                 o.Type == value.Type &&
                 string.Equals(o.Schema, value.Schema, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(o.Name, value.Name, StringComparison.OrdinalIgnoreCase));
-            if (match is not null) SelectedRightObject = match;
+            // A right object left over from the previous pick would pair two unrelated objects.
+            SelectedRightObject = match;
+            SetCopyTarget(LeftSession is { } l && RightSession is { } r
+                ? ObjectCopyService.MapSchema(value.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey)
+                : value.Schema, value.Name);
         }
         OnPropertyChanged(nameof(LeftObjectInfo));
         RefreshHints();
         RefreshCommands();
+        RefreshCopyAnalysis();
     }
 
     partial void OnSelectedRightObjectChanged(DbObject? value)
     {
+        if (value is not null) SetCopyTarget(value.Schema, value.Name);
         OnPropertyChanged(nameof(RightObjectInfo));
         RefreshHints();
         RefreshCommands();
@@ -578,6 +595,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
     {
         UpdateRightObjects();
         RefreshHints();
+        RefreshCopyAnalysis();
     }
 
     private bool CanUseMain => _mainSession is not null && !IsBusy;
@@ -746,6 +764,7 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         _allOverview = [];
         ApplyOverviewFilter();
         OverviewStatus = "";
+        InvalidateCopyPlan();
     }
 
     private async Task SetLeftSessionAsync(DatabaseSession session)
@@ -1060,5 +1079,6 @@ public partial class ComparerViewModel(SessionService sessions, ObjectComparison
         LoadRightDataCommand.NotifyCanExecuteChanged();
         LoadBothDataCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        RefreshCopyCommands();
     }
 }

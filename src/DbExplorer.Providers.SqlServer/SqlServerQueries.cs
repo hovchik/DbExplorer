@@ -70,7 +70,8 @@ internal static class SqlServerQueries
                c.is_nullable AS [IsNullable],
                c.column_id AS [Ordinal],
                c.is_computed AS [IsComputed],
-               CAST(CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END AS bit) AS [IsPrimaryKey]
+               CAST(CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END AS bit) AS [IsPrimaryKey],
+               c.is_identity AS [IsIdentity]
         FROM sys.columns c
         JOIN sys.objects o ON o.object_id = c.object_id
         JOIN sys.schemas s ON s.schema_id = o.schema_id
@@ -122,6 +123,20 @@ internal static class SqlServerQueries
         JOIN sys.types t ON t.user_type_id = p.user_type_id
         WHERE s.name = @schema AND o.name = @name
         ORDER BY p.parameter_id;
+        """;
+
+    public const string ColumnDefaults = """
+        SELECT c.name AS [Name], dc.definition AS [Definition]
+        FROM sys.default_constraints dc
+        JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+        WHERE dc.parent_object_id = OBJECT_ID(@name);
+        """;
+
+    public const string CheckConstraints = """
+        SELECT cc.name AS [Name], cc.definition AS [Definition]
+        FROM sys.check_constraints cc
+        WHERE cc.parent_object_id = OBJECT_ID(@name) AND cc.is_disabled = 0
+        ORDER BY cc.name;
         """;
 
     public const string SynonymDefinition = """

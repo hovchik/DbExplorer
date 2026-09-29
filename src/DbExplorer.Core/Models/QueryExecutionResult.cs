@@ -5,6 +5,12 @@ public sealed record QueryResultSet
 {
     public IReadOnlyList<string> Columns { get; init; } = [];
     public IReadOnlyList<IReadOnlyList<object?>> Rows { get; init; } = [];
+
+    /// <summary>True when the result set had more rows than the row limit; only the first ones are in <see cref="Rows"/>.</summary>
+    public bool IsTruncated { get; init; }
+
+    /// <summary>Rows the server returned, including those beyond the row limit that were read and discarded.</summary>
+    public long TotalRowCount { get; init; }
 }
 
 /// <summary>The outcome of executing an ad-hoc script or a routine call.</summary>

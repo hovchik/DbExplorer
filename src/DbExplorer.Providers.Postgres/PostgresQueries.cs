@@ -56,7 +56,8 @@ internal static class PostgresQueries
                a.attnum::int AS "Ordinal",
                (a.attgenerated <> '') AS "IsComputed",
                EXISTS (SELECT 1 FROM pg_index i
-                        WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey)) AS "IsPrimaryKey"
+                        WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY (i.indkey)) AS "IsPrimaryKey",
+               (a.attidentity <> '') AS "IsIdentity"
         FROM pg_attribute a
         JOIN pg_class c ON c.oid = a.attrelid
         JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -109,6 +110,21 @@ internal static class PostgresQueries
             ON p.specific_schema = r.specific_schema AND p.specific_name = r.specific_name
         WHERE r.routine_schema = @schema AND r.routine_name = @name
         ORDER BY p.ordinal_position;
+        """;
+
+    // Generated columns keep their expression in pg_attrdef too; those are not defaults.
+    public const string ColumnDefaults = """
+        SELECT a.attname AS "Name", pg_get_expr(d.adbin, d.adrelid) AS "Definition"
+        FROM pg_attrdef d
+        JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+        WHERE d.adrelid = to_regclass(@name) AND a.attgenerated = '' AND NOT a.attisdropped;
+        """;
+
+    public const string CheckConstraints = """
+        SELECT conname AS "Name", pg_get_expr(conbin, conrelid) AS "Definition"
+        FROM pg_constraint
+        WHERE conrelid = to_regclass(@name) AND contype = 'c'
+        ORDER BY conname;
         """;
 
     public const string SequenceDefinition = """

@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DbExplorer.Desktop.Views.DataSearchView">
-  <Grid Margin="4" RowDefinitions="Auto,*,6,Auto">
+  <Grid Margin="4" RowDefinitions="Auto,Auto,*,6,Auto">
     <WrapPanel Grid.Row="0" Classes="toolbar">
       <TextBox x:Name="TermBox" Width="340" Text="{Binding Term}" Watermark="Value to find in any column…" />
       <ComboBox Width="130" ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" ToolTip.Tip="Match mode" />
@@ -62,10 +62,32 @@
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
 
-    <DataGrid Grid.Row="1" ItemsSource="{Binding Matches}"
+    <WrapPanel Grid.Row="1" Classes="toolbar">
+      <Button Content="Open record" Command="{Binding OpenRecordCommand}"
+              ToolTip.Tip="Show the whole found row (located by its primary key) · double-click a result" />
+      <Button Content="Go to table" Command="{Binding GoToTableCommand}"
+              ToolTip.Tip="Show the table in the Objects tab (columns, keys, indexes, definition)" />
+      <Button Content="Record SQL" Command="{Binding OpenRecordSqlCommand}"
+              ToolTip.Tip="Open a SELECT of the found row in a new Query tab" />
+      <Button Content="Relations &amp; combined data" Classes="accent" Command="{Binding ShowRelationsCommand}"
+              ToolTip.Tip="Diagram of the tables the value was found in and how they relate, with their rows joined along foreign keys. Uses the selected results when several are selected, otherwise all." />
+      <TextBlock Classes="hint" Text="{Binding FoundInSummary}" />
+    </WrapPanel>
+
+    <DataGrid x:Name="ResultsGrid" Grid.Row="2" ItemsSource="{Binding Matches}"
+              SelectedItem="{Binding SelectedMatch}" SelectionMode="Extended"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"
               GridLinesVisibility="Horizontal">
+      <DataGrid.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header="Open record" Command="{Binding OpenRecordCommand}" />
+          <MenuItem Header="Go to table" Command="{Binding GoToTableCommand}" />
+          <MenuItem Header="Open record SQL in Query tab" Command="{Binding OpenRecordSqlCommand}" />
+          <Separator />
+          <MenuItem Header="Relations &amp; combined data" Command="{Binding ShowRelationsCommand}" />
+        </ContextMenu>
+      </DataGrid.ContextMenu>
       <DataGrid.Columns>
         <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
         <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="200" />
@@ -75,9 +97,9 @@
       </DataGrid.Columns>
     </DataGrid>
 
-    <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" />
+    <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />
 
-    <Expander Grid.Row="3" Header="{Binding Skipped.Count, StringFormat='Skipped tables: {0} (timeouts, locks, errors)'}" HorizontalAlignment="Stretch" MinHeight="0" Padding="4">
+    <Expander Grid.Row="4" Header="{Binding Skipped.Count, StringFormat='Skipped tables: {0} (timeouts, locks, errors)'}" HorizontalAlignment="Stretch" MinHeight="0" Padding="4">
       <DataGrid ItemsSource="{Binding Skipped}" MaxHeight="220"
                 IsReadOnly="True" AutoGenerateColumns="False" GridLinesVisibility="Horizontal">
         <DataGrid.Columns>

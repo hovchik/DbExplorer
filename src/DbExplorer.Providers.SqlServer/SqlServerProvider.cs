@@ -253,12 +253,11 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
         while (await reader.ReadAsync(ct))
         {
-            string? rowKey = null;
-            if (keys.Count > 0)
-            {
-                rowKey = string.Join(", ", keys.Select((key, k) =>
-                    $"{key.Name}={(reader.IsDBNull(keyOffset + k) ? "NULL" : reader.GetString(keyOffset + k))}"));
-            }
+            var keyValues = keys.Select((key, k) => new KeyValuePair<string, string?>(
+                key.Name, reader.IsDBNull(keyOffset + k) ? null : reader.GetString(keyOffset + k))).ToList();
+            string? rowKey = keys.Count == 0
+                ? null
+                : string.Join(", ", keyValues.Select(kv => $"{kv.Key}={kv.Value ?? "NULL"}"));
 
             for (var i = 0; i < searchable.Count; i++)
             {
@@ -270,7 +269,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
                     Table = table.Name,
                     Column = searchable[i].Name,
                     Value = reader.IsDBNull(i * 2 + 1) ? null : reader.GetString(i * 2 + 1),
-                    RowKey = rowKey
+                    RowKey = rowKey,
+                    KeyValues = keyValues
                 });
             }
         }

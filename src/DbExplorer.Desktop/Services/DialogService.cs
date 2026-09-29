@@ -22,8 +22,15 @@ public interface IDialogService
     Task ShowRoutineExecutionAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject routine);
 
+    /// <param name="filter">Optional WHERE condition (e.g. one record's primary key); the window can drop it.</param>
     Task ShowGetDataAsync(
-        QueryExecutionService queryService, DatabaseSession session, DbObject table);
+        QueryExecutionService queryService, DatabaseSession session, DbObject table,
+        string? filter = null, string? filterDescription = null);
+
+    /// <summary>Diagram of the tables a searched value was found in, and their found rows combined along foreign keys.</summary>
+    void ShowDataRelations(
+        QueryExecutionService queryService, DatabaseSession session, string term, IReadOnlyList<DataMatch> matches,
+        Action<string, string?> openSql, Action<DbObject> openObject);
 
     Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null);
 
@@ -114,15 +121,29 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     }
 
     public Task ShowGetDataAsync(
-        QueryExecutionService queryService, DatabaseSession session, DbObject table)
+        QueryExecutionService queryService, DatabaseSession session, DbObject table,
+        string? filter = null, string? filterDescription = null)
     {
         var vm = new GetDataViewModel();
         var window = new GetDataWindow { DataContext = vm };
-        vm.Initialize(queryService, session, table);
+        vm.Initialize(queryService, session, table, filter, filterDescription);
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();
 
         return Task.CompletedTask;
+    }
+
+    public void ShowDataRelations(
+        QueryExecutionService queryService, DatabaseSession session, string term, IReadOnlyList<DataMatch> matches,
+        Action<string, string?> openSql, Action<DbObject> openObject)
+    {
+        var vm = new DataRelationsViewModel(queryService, session, term, matches) { OpenSql = openSql, OpenObject = openObject };
+        var window = new DataRelationsWindow { DataContext = vm };
+        window.Closed += (_, _) => vm.Cancel();
+        _ = vm.LoadAsync();
+
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 }

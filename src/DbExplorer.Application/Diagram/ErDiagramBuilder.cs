@@ -81,7 +81,7 @@ public static class ErDiagramBuilder
             }
         }
 
-        return Layout(snapshot, graph, level, focusKey, mode, omitted);
+        return Layout(snapshot, graph, level, new HashSet<string>([focusKey], StringComparer.OrdinalIgnoreCase), mode, omitted);
     }
 
     /// <summary>Every table in a schema (or all schemas when null), capped at <paramref name="maxTables"/>
@@ -99,11 +99,65 @@ public static class ErDiagramBuilder
             .Take(maxTables)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Level = length of the longest chain of parents inside the chosen set (cycle-safe).
+        return Layout(snapshot, graph, ParentDepthLevels(graph, chosen), focusKeys: null, mode, candidates.Count - chosen.Count);
+    }
+
+    /// <summary>
+    /// The given tables (highlighted, e.g. the tables a searched value was found in) plus the tables on the shortest
+    /// foreign-key paths of at most <paramref name="maxHops"/> hops that connect them, so indirect relations show too.
+    /// </summary>
+    public static ErDiagram ForTables(
+        MetadataSnapshot snapshot, string? database, IEnumerable<DbObject> tables, ErColumnMode mode, int maxHops = 3, int maxTables = 60)
+    {
+        var graph = new FkGraph(snapshot, database);
+        var targets = tables.Select(Key).Where(graph.Tables.ContainsKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (targets.Count == 0) return ErDiagram.Empty;
+
+        var chosen = new HashSet<string>(targets, StringComparer.OrdinalIgnoreCase);
+        var omitted = 0;
+        for (var i = 0; i < targets.Count; i++)
+        {
+            var previous = ShortestPaths(graph, targets[i], maxHops);
+            for (var j = i + 1; j < targets.Count; j++)
+            {
+                if (!previous.ContainsKey(targets[j])) continue;
+                var bridge = new List<string>();
+                for (var k = previous[targets[j]]; k is not null && !string.Equals(k, targets[i], StringComparison.OrdinalIgnoreCase); k = previous[k])
+                    if (!chosen.Contains(k)) bridge.Add(k);
+                if (chosen.Count + bridge.Count > maxTables) { omitted += bridge.Count; continue; }
+                chosen.UnionWith(bridge);
+            }
+        }
+
+        return Layout(snapshot, graph, ParentDepthLevels(graph, chosen), new HashSet<string>(targets, StringComparer.OrdinalIgnoreCase), mode, omitted);
+    }
+
+    /// <summary>Breadth-first over foreign keys in both directions: reachable table → the table it was reached from.</summary>
+    private static Dictionary<string, string?> ShortestPaths(FkGraph graph, string start, int maxHops)
+    {
+        var previous = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { [start] = null };
+        var frontier = new List<string> { start };
+        for (var hop = 0; hop < maxHops && frontier.Count > 0; hop++)
+        {
+            var next = new List<string>();
+            foreach (var current in frontier)
+            foreach (var n in graph.ParentsOf(current).Concat(graph.ChildrenOf(current)))
+            {
+                if (previous.ContainsKey(n)) continue;
+                previous[n] = current;
+                next.Add(n);
+            }
+            frontier = next;
+        }
+        return previous;
+    }
+
+    /// <summary>Level = length of the longest chain of parents inside <paramref name="chosen"/> (cycle-safe).</summary>
+    private static Dictionary<string, int> ParentDepthLevels(FkGraph graph, IReadOnlySet<string> chosen)
+    {
         var level = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var k in chosen) Depth(k, []);
-
-        return Layout(snapshot, graph, level, focusKey: null, mode, candidates.Count - chosen.Count);
+        return level;
 
         int Depth(string key, HashSet<string> path)
         {
@@ -118,7 +172,7 @@ public static class ErDiagramBuilder
     }
 
     private static ErDiagram Layout(
-        MetadataSnapshot snapshot, FkGraph graph, Dictionary<string, int> level, string? focusKey, ErColumnMode mode, int omitted)
+        MetadataSnapshot snapshot, FkGraph graph, Dictionary<string, int> level, IReadOnlySet<string>? focusKeys, ErColumnMode mode, int omitted)
     {
         if (level.Count == 0) return ErDiagram.Empty;
 
@@ -147,7 +201,7 @@ public static class ErDiagramBuilder
             var y = Margin;
             foreach (var key in columns[c])
             {
-                var table = CreateTable(snapshot, graph, key, mode, string.Equals(key, focusKey, StringComparison.OrdinalIgnoreCase)) with
+                var table = CreateTable(snapshot, graph, key, mode, focusKeys?.Contains(key) == true) with
                 {
                     X = Margin + c * (TableWidth + ColumnGap),
                     Y = y

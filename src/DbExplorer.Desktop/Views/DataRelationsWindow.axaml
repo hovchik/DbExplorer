@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:views="using:DbExplorer.Desktop.Views"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
+        xmlns:conv="using:DbExplorer.Desktop.Converters"
+        x:Class="DbExplorer.Desktop.Views.DataRelationsWindow"
+        x:DataType="vm:DataRelationsViewModel"
+        Title="{Binding Title}"
+        Width="1200" Height="820"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="10">
+    <TextBlock DockPanel.Dock="Top" Classes="section" Text="{Binding Title}" Margin="0,0,0,8" />
+
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar" Margin="0,0,0,8">
+      <ComboBox Width="140" ItemsSource="{Binding ColumnModes}" SelectedItem="{Binding ColumnMode}" ToolTip.Tip="Columns shown in each table">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Classes="icon" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out" />
+      <Button Content="{Binding Zoom, StringFormat='{}{0:P0}'}" Command="{Binding ResetZoomCommand}" ToolTip.Tip="Reset zoom" MinWidth="64" />
+      <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
+      <Button Content="Copy Mermaid" Click="OnCopyMermaid" ToolTip.Tip="Copy the diagram as a Mermaid erDiagram" />
+      <Button Content="Reload data" Command="{Binding LoadCommand}" />
+      <Button Content="Open SQL in Query tab" Command="{Binding OpenInEditorCommand}"
+              ToolTip.Tip="Open the selected result's SELECT in a new Query tab to refine it" />
+      <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+    </WrapPanel>
+
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
+
+    <Grid ColumnDefinitions="240,6,*">
+      <DockPanel Grid.Column="0">
+        <TextBlock DockPanel.Dock="Top" Classes="hint" Text="Found in" Margin="0,0,0,4" />
+        <ListBox ItemsSource="{Binding FoundIn}" SelectedItem="{Binding SelectedFoundIn}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:FoundInTable">
+              <StackPanel Spacing="1">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">
+                  <TextBlock.Text>
+                    <MultiBinding StringFormat="{}{0:N0} row(s) · {1}">
+                      <Binding Path="Rows" />
+                      <Binding Path="Columns" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+      <Grid Grid.Column="2" RowDefinitions="*,6,*">
+        <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <controls:ErDiagramControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
+                                       SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" />
+          </ScrollViewer>
+        </Border>
+
+        <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
+
+        <TabControl Grid.Row="2" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedResult}">
+          <TabControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:RelatedResult">
+              <TextBlock Text="{Binding Title}" />
+            </DataTemplate>
+          </TabControl.ItemTemplate>
+          <TabControl.ContentTemplate>
+            <DataTemplate x:DataType="vm:RelatedResult">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                <views:ResultGridView ResultSet="{Binding View}" IsVisible="{Binding HasView}" />
+              </DockPanel>
+            </DataTemplate>
+          </TabControl.ContentTemplate>
+        </TabControl>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</Window>

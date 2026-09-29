@@ -5,12 +5,27 @@
 			 xmlns:ae="using:AvaloniaEdit"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
   <UserControl.Styles>
+	<Style Selector="Button.layout">
+	  <Setter Property="MinHeight" Value="18" />
+	  <Setter Property="MinWidth" Value="22" />
+	  <Setter Property="Padding" Value="4,0" />
+	  <Setter Property="FontSize" Value="11" />
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0" />
+	</Style>
 	<Style Selector="Button.tool">
 	  <Setter Property="MinHeight" Value="28" />
 	  <Setter Property="Padding" Value="10,2" />
 	</Style>
   </UserControl.Styles>
-  <Grid Margin="4" RowDefinitions="Auto,2*,Auto,6,3*,Auto">
+  <Grid x:Name="LayoutGrid" Margin="4">
+	<Grid.RowDefinitions>
+	  <RowDefinition Height="Auto" />
+	  <RowDefinition Height="2*" MinHeight="90" />
+	  <RowDefinition Height="10" />
+	  <RowDefinition Height="3*" MinHeight="90" />
+	  <RowDefinition Height="Auto" />
+	</Grid.RowDefinitions>
 	<WrapPanel Grid.Row="0" Classes="toolbar">
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
 				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to jump to a name.">
@@ -108,25 +123,37 @@
 		</StackPanel>
 	  </Border>
 	</Popup>
-	<Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+	<!-- Editor and its hint bar share one row so the splitter below sits directly between editor and results -->
+	<DockPanel Grid.Row="1">
+	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
+	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis"
+				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
+	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" VerticalAlignment="Center" />
+		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" VerticalAlignment="Center" />
+		<StackPanel Orientation="Horizontal" Spacing="2">
+		  <Button Classes="layout" Content="⬆" Click="OnMaximizeResults" ToolTip.Tip="Give the results most of the space (Ctrl+Shift+↑)" />
+		  <Button Classes="layout" Content="⇕" Click="OnResetLayout" ToolTip.Tip="Reset the editor / results split (or double-click the divider)" />
+		  <Button Classes="layout" Content="⬇" Click="OnMaximizeEditor" ToolTip.Tip="Give the editor most of the space (Ctrl+Shift+↓)" />
+		</StackPanel>
+	  </StackPanel>
+	</Grid>
+	<Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
 	  <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" WordWrap="False"
 					 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
 					 Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
 					 LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
 					 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0" />
 	</Border>
-	<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
-	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11"
-				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
-	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
-		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" />
-		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" />
-	  </StackPanel>
-	</Grid>
+	</DockPanel>
 
-	<GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />
+	<!-- Drag to resize editor vs results; the grip is drawn underneath and ignores the pointer -->
+	<Border Grid.Row="2" Width="40" Height="4" CornerRadius="2" IsHitTestVisible="False"
+			HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource AppBorderBrush}" />
+	<GridSplitter x:Name="ResultsSplitter" Grid.Row="2" ResizeDirection="Rows" Background="Transparent"
+				  ToolTip.Tip="Drag to resize the editor and results · double-click to reset" />
 
-	<TabControl Grid.Row="4" ItemsSource="{Binding ResultSets}">
+	<TabControl Grid.Row="3" ItemsSource="{Binding ResultSets}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <TextBlock Text="{Binding Title}" />
@@ -140,7 +167,7 @@
 	</TabControl>
 
 	<!-- Server messages (PRINT, rows affected, per-database results): collapsed to one line until needed -->
-	<Expander Grid.Row="5" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
+	<Expander Grid.Row="4" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"
 			  IsVisible="{Binding !!Messages.Count}"
 			  Header="{Binding Messages.Count, StringFormat='Messages ({0})'}">
 	  <ScrollViewer MaxHeight="160">

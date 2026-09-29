@@ -14,12 +14,30 @@ public sealed record FoundInTable(DbObject Table, int Rows, string Columns)
     public string Name => Table.FullName;
 }
 
+public enum RelatedResultKind
+{
+    /// <summary>Found rows and related rows joined into one result.</summary>
+    Combined,
+
+    /// <summary>The rows of one table the value was found in.</summary>
+    Found,
+
+    /// <summary>Rows of a related table that belong to the found rows (through one foreign key).</summary>
+    Related
+}
+
 /// <summary>One generated query of the relations window and its outcome.</summary>
-public sealed partial class RelatedResult(DataMatchQuery query, bool isCombined) : ObservableObject
+public sealed partial class RelatedResult(DataMatchQuery query, RelatedResultKind kind) : ObservableObject
 {
     public DataMatchQuery Query { get; } = query;
     public string Title => Query.Title;
-    public bool IsCombined { get; } = isCombined;
+    public RelatedResultKind Kind { get; } = kind;
+    public bool IsCombined => Kind == RelatedResultKind.Combined;
+
+    /// <summary>Table the rows come from (for combined results, the root table).</summary>
+    public DbObject Table => Query.Tables[0];
+
+    public string Database => Table.Database;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasView))]
@@ -27,12 +45,16 @@ public sealed partial class RelatedResult(DataMatchQuery query, bool isCombined)
 
     [ObservableProperty] private string _message = "Waiting…";
 
+    /// <summary>Loaded without error and with at least one row.</summary>
+    [ObservableProperty] private bool _hasRows;
+
     public bool HasView => View is not null;
 }
 
 /// <summary>
-/// Where a searched value lives: an ER diagram of the tables it was found in (plus the tables linking them), the
-/// found rows of each table, and the rows of related tables combined along their foreign keys.
+/// Where a searched value lives: an ER diagram of the tables it was found in, the tables directly related to them and
+/// the tables linking them; the found rows of each table; the rows of every related table that belong to them; and
+/// all of it combined along the foreign keys.
 /// </summary>
 public partial class DataRelationsViewModel : ViewModelBase
 {
@@ -41,7 +63,6 @@ public partial class DataRelationsViewModel : ViewModelBase
     private readonly QueryExecutionService _service;
     private readonly DatabaseSession _session;
     private readonly IReadOnlyList<DataMatch> _matches;
-    private readonly string? _database;
     private readonly IReadOnlyList<DbObject> _tables;
     private CancellationTokenSource? _cts;
 
@@ -50,16 +71,10 @@ public partial class DataRelationsViewModel : ViewModelBase
         _service = service;
         _session = session;
 
-        // One database at a time: foreign keys never cross databases. Take the one with the most matches.
-        var byDatabase = matches.GroupBy(m => m.Database, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ToList();
-        _matches = byDatabase.FirstOrDefault()?.ToList() ?? [];
-        _database = string.IsNullOrEmpty(byDatabase.FirstOrDefault()?.Key) ? null : byDatabase[0].Key;
-        OtherDatabasesNote = byDatabase.Count > 1
-            ? $" · matches in {string.Join(", ", byDatabase.Skip(1).Select(g => g.Key))} not included (foreign keys do not cross databases)"
-            : "";
+        _matches = matches;
 
         FoundIn = _matches
-            .GroupBy(m => (m.Schema, m.Table), TableComparer.Instance)
+            .GroupBy(m => (m.Database, m.Schema, m.Table), TableComparer.Instance)
             .Select(g => new FoundInTable(
                 Resolve(g.First()),
                 g.Select(m => m.RowKey ?? m.Value).Distinct().Count(),
@@ -68,7 +83,14 @@ public partial class DataRelationsViewModel : ViewModelBase
             .ToList();
         _tables = FoundIn.Select(f => f.Table).ToList();
 
-        Title = $"\"{term}\" found in {FoundIn.Count:N0} table(s)" + (_database is null ? "" : $" · {_database}");
+        var databases = _tables.Select(t => t.Database).Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        Title = $"\"{term}\" found in {FoundIn.Count:N0} table(s)" + databases.Count switch
+        {
+            0 => "",
+            1 => $" · {databases[0]}",
+            _ => $" across {databases.Count} databases ({string.Join(", ", databases)})"
+        };
         RebuildDiagram();
     }
 
@@ -83,7 +105,6 @@ public partial class DataRelationsViewModel : ViewModelBase
 
     public IReadOnlyList<ErColumnMode> ColumnModes { get; } = Enum.GetValues<ErColumnMode>();
     public IReadOnlyList<FoundInTable> FoundIn { get; }
-    private string OtherDatabasesNote { get; }
 
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private ErDiagram _diagram = ErDiagram.Empty;
@@ -92,7 +113,11 @@ public partial class DataRelationsViewModel : ViewModelBase
     [ObservableProperty] private double _zoom = 1.0;
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private IReadOnlyList<RelatedResult> _results = [];
-    [ObservableProperty] private FoundInTable? _selectedFoundIn;
+
+    /// <summary>Hide related-table results that returned no rows.</summary>
+    [ObservableProperty] private bool _hideEmpty = true;
+
+    [ObservableProperty] private IReadOnlyList<RelatedResult> _visibleResults = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenInEditorCommand))]
@@ -107,24 +132,34 @@ public partial class DataRelationsViewModel : ViewModelBase
     private void RebuildDiagram()
     {
         var selected = SelectedTable?.Title;
-        Diagram = ErDiagramBuilder.ForTables(_session.Snapshot, _database, _tables, ColumnMode);
+        Diagram = ErDiagramBuilder.ForTables(_session.Snapshot, _tables, ColumnMode);
         SelectedTable = Diagram.Tables.FirstOrDefault(t => t.Title == selected);
     }
 
     /// <summary>Clicking a table in the diagram shows its rows (or the combined rows it takes part in).</summary>
     partial void OnSelectedTableChanged(ErTable? value)
     {
-        if (value is null) return;
-        SelectedResult = Results.FirstOrDefault(r => !r.IsCombined && Same(r.Query.Tables[0], value.Object))
-                         ?? Results.FirstOrDefault(r => r.Query.Tables.Any(t => Same(t, value.Object)))
+        if (value is null || (SelectedResult is { IsCombined: false } current && Same(current.Table, value.Object))) return;
+        SelectedResult = VisibleResults.FirstOrDefault(r => r.Kind == RelatedResultKind.Found && Same(r.Table, value.Object))
+                         ?? VisibleResults.FirstOrDefault(r => r.Kind == RelatedResultKind.Related && Same(r.Table, value.Object))
+                         ?? VisibleResults.FirstOrDefault(r => r.Query.Tables.Any(t => Same(t, value.Object)))
                          ?? SelectedResult;
     }
 
-    partial void OnSelectedFoundInChanged(FoundInTable? value)
+    /// <summary>Selecting a result highlights its table in the diagram.</summary>
+    partial void OnSelectedResultChanged(RelatedResult? value)
     {
-        if (value is null) return;
-        SelectedTable = Diagram.Tables.FirstOrDefault(t => Same(t.Object, value.Table)) ?? SelectedTable;
-        SelectedResult = Results.FirstOrDefault(r => !r.IsCombined && Same(r.Query.Tables[0], value.Table)) ?? SelectedResult;
+        if (value is null || value.IsCombined) return;
+        if (Diagram.Tables.FirstOrDefault(t => Same(t.Object, value.Table)) is { } table) SelectedTable = table;
+    }
+
+    partial void OnHideEmptyChanged(bool value) => UpdateVisibleResults();
+
+    private void UpdateVisibleResults()
+    {
+        var selected = SelectedResult;
+        VisibleResults = Results.Where(r => !HideEmpty || r.Kind != RelatedResultKind.Related || r.HasRows || !r.HasView).ToList();
+        SelectedResult = selected is not null && VisibleResults.Contains(selected) ? selected : VisibleResults.FirstOrDefault();
     }
 
     private bool CanReload => !IsRunning;
@@ -139,21 +174,23 @@ public partial class DataRelationsViewModel : ViewModelBase
         var providerKey = _session.Provider.ProviderKey;
         var quote = _session.Provider.QuoteIdentifier;
         var combined = DataMatchSql.Combined(_session.Snapshot, Diagram, _matches, providerKey, quote, RowLimit)
-            .Select(q => new RelatedResult(q, isCombined: true));
-        var perTable = FoundIn.Select(f => new RelatedResult(new DataMatchQuery(
-                $"{f.Table.Name} ({f.Rows:N0})",
+            .Select(q => new RelatedResult(q, RelatedResultKind.Combined));
+        var found = FoundIn.Select(f => new RelatedResult(new DataMatchQuery(
+                $"{Qualified(f.Table)} · {f.Rows:N0} found",
                 DataMatchSql.SelectRows(f.Table, _matches.Where(m => Same(m, f.Table)), providerKey, quote, RowLimit),
-                [f.Table]), isCombined: false));
-        Results = [.. combined, .. perTable];
-        SelectedResult = Results.FirstOrDefault();
+                [f.Table]), RelatedResultKind.Found));
+        var related = DataMatchSql.Related(Diagram, _matches, providerKey, quote, RowLimit)
+            .Select(q => new RelatedResult(q, RelatedResultKind.Related));
+        Results = [.. combined, .. found, .. related];
+        UpdateVisibleResults();
 
-        var combinedCount = Results.Count(r => r.IsCombined);
-        var linked = Diagram.Tables.Count(t => t.IsFocus);
-        var summary = $"{FoundIn.Count:N0} table(s) · {Diagram.Tables.Count - linked:N0} linking table(s) · {Diagram.Edges.Count:N0} relationship(s)" +
-                      (combinedCount == 0
-                          ? FoundIn.Count > 1 ? " · the tables are not linked by foreign keys (within 3 hops), so there is no combined view" : ""
-                          : $" · {combinedCount:N0} combined view(s)") +
-                      OtherDatabasesNote;
+        var focus = Diagram.Tables.Count(t => t.IsFocus);
+        var links = Diagram.Tables.Count(t => t.IsLink);
+        var summary = $"Found in {FoundIn.Count:N0} table(s) · {Diagram.Tables.Count - focus:N0} related table(s)" +
+                      (links > 0 ? $" ({links:N0} linking found tables)" : "") +
+                      $" · {Diagram.Edges.Count:N0} relationship(s)" +
+                      (Diagram.OmittedTables > 0 ? $" · {Diagram.OmittedTables:N0} more table(s) not shown (limit reached)" : "") +
+                      (FoundIn.Count > Diagram.Tables.Count(t => t.IsFocus) ? " · views and tables missing from the metadata cache are not in the diagram" : "");
 
         IsRunning = true;
         try
@@ -166,16 +203,18 @@ public partial class DataRelationsViewModel : ViewModelBase
                 result.Message = "Loading…";
                 try
                 {
-                    var outcome = await _service.ExecuteScriptAsync(_session, result.Query.Sql, _database, timeoutSeconds: 60, ct, maxRows: RowLimit);
+                    var database = string.IsNullOrEmpty(result.Database) ? null : result.Database;
+                    var outcome = await _service.ExecuteScriptAsync(_session, result.Query.Sql, database, timeoutSeconds: 60, ct, maxRows: RowLimit);
                     if (outcome.ResultSets.Count == 0)
                     {
                         result.Message = "The query returned no result set.";
                         continue;
                     }
-                    var table = result.Query.Tables[0];
-                    result.View = ResultSetView.From(result.Title, outcome.ResultSets[0], _session,
-                        result.IsCombined ? null : quote(table.Schema) + "." + quote(table.Name));
-                    result.Message = $"{outcome.ResultSets[0].Rows.Count:N0} row(s)";
+                    var rows = outcome.ResultSets[0];
+                    result.View = ResultSetView.From(result.Title, rows, _session,
+                        result.IsCombined ? null : quote(result.Table.Schema) + "." + quote(result.Table.Name));
+                    result.HasRows = rows.Rows.Count > 0;
+                    result.Message = $"{rows.Rows.Count:N0} row(s)" + (rows.IsTruncated ? $" (first {RowLimit:N0})" : "");
                 }
                 catch (OperationCanceledException)
                 {
@@ -186,7 +225,10 @@ public partial class DataRelationsViewModel : ViewModelBase
                     result.Message = "Error: " + ex.Message;
                 }
             }
-            Status = summary + " · click a table to see its rows · double-click a table to open it in the Objects tab";
+            UpdateVisibleResults();
+            var empty = Results.Count(r => r.Kind == RelatedResultKind.Related && r is { HasView: true, HasRows: false });
+            Status = summary + (empty > 0 && HideEmpty ? $" · {empty:N0} related result(s) with no rows hidden" : "") +
+                     " · click a table or a result to switch · double-click a table to open it in Objects";
         }
         finally
         {
@@ -194,12 +236,17 @@ public partial class DataRelationsViewModel : ViewModelBase
         }
     }
 
+    private string Qualified(DbObject table) =>
+        FoundIn.Select(f => f.Table.Database).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1 && !string.IsNullOrEmpty(table.Database)
+            ? $"{table.Database}.{table.FullName}"
+            : table.FullName;
+
     public void Cancel() => _cts?.Cancel();
 
     [RelayCommand(CanExecute = nameof(HasSelectedResult))]
     private void OpenInEditor()
     {
-        if (SelectedResult is { } r) OpenSql?.Invoke(r.Query.Sql, _database);
+        if (SelectedResult is { } r) OpenSql?.Invoke(r.Query.Sql, r.Database);
     }
 
     private bool HasSelectedResult => SelectedResult is not null;
@@ -224,15 +271,18 @@ public partial class DataRelationsViewModel : ViewModelBase
         string.Equals(a.Schema, b.Schema, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
 
-    private sealed class TableComparer : IEqualityComparer<(string Schema, string Table)>
+    private sealed class TableComparer : IEqualityComparer<(string Database, string Schema, string Table)>
     {
         public static readonly TableComparer Instance = new();
 
-        public bool Equals((string Schema, string Table) x, (string Schema, string Table) y) =>
+        public bool Equals((string Database, string Schema, string Table) x, (string Database, string Schema, string Table) y) =>
+            string.Equals(x.Database, y.Database, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(x.Schema, y.Schema, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(x.Table, y.Table, StringComparison.OrdinalIgnoreCase);
 
-        public int GetHashCode((string Schema, string Table) obj) =>
-            HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema), StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table));
+        public int GetHashCode((string Database, string Schema, string Table) obj) => HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Database),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Schema),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Table));
     }
 }

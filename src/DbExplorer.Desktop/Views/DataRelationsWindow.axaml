@@ -27,24 +27,25 @@
       <Button Content="Reload data" Command="{Binding LoadCommand}" />
       <Button Content="Open SQL in Query tab" Command="{Binding OpenInEditorCommand}"
               ToolTip.Tip="Open the selected result's SELECT in a new Query tab to refine it" />
+      <TextBlock Classes="hint" Text="Highlighted: tables the value was found in" />
       <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
     </WrapPanel>
 
     <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
 
-    <Grid ColumnDefinitions="240,6,*">
+    <Grid ColumnDefinitions="300,6,*">
       <DockPanel Grid.Column="0">
-        <TextBlock DockPanel.Dock="Top" Classes="hint" Text="Found in" Margin="0,0,0,4" />
-        <ListBox ItemsSource="{Binding FoundIn}" SelectedItem="{Binding SelectedFoundIn}">
+        <CheckBox DockPanel.Dock="Top" Content="Hide related tables with no rows" IsChecked="{Binding HideEmpty}" Margin="0,0,0,4" />
+        <ListBox ItemsSource="{Binding VisibleResults}" SelectedItem="{Binding SelectedResult}">
           <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:FoundInTable">
-              <StackPanel Spacing="1">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <DataTemplate x:DataType="vm:RelatedResult">
+              <StackPanel Spacing="1" ToolTip.Tip="{Binding Title}">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">
                   <TextBlock.Text>
-                    <MultiBinding StringFormat="{}{0:N0} row(s) · {1}">
-                      <Binding Path="Rows" />
-                      <Binding Path="Columns" />
+                    <MultiBinding StringFormat="{}{0} · {1}">
+                      <Binding Path="Kind" />
+                      <Binding Path="Message" />
                     </MultiBinding>
                   </TextBlock.Text>
                 </TextBlock>
@@ -67,21 +68,13 @@
 
         <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
 
-        <TabControl Grid.Row="2" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedResult}">
-          <TabControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:RelatedResult">
-              <TextBlock Text="{Binding Title}" />
-            </DataTemplate>
-          </TabControl.ItemTemplate>
-          <TabControl.ContentTemplate>
-            <DataTemplate x:DataType="vm:RelatedResult">
-              <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" Margin="0,0,0,4" />
-                <views:ResultGridView ResultSet="{Binding View}" IsVisible="{Binding HasView}" />
-              </DockPanel>
-            </DataTemplate>
-          </TabControl.ContentTemplate>
-        </TabControl>
+        <DockPanel Grid.Row="2" DataContext="{Binding SelectedResult}">
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4" Spacing="1">
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" />
+          </StackPanel>
+          <views:ResultGridView ResultSet="{Binding View}" IsVisible="{Binding HasView}" />
+        </DockPanel>
       </Grid>
     </Grid>
   </DockPanel>

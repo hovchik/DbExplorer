@@ -89,6 +89,7 @@
         </ContextMenu>
       </DataGrid.ContextMenu>
       <DataGrid.Columns>
+        <DataGridTextColumn Header="Database" Binding="{Binding Database}" Width="Auto" />
         <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
         <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="200" />
         <DataGridTextColumn Header="Column" Binding="{Binding Column}" Width="160" />

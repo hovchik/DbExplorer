@@ -20,12 +20,18 @@ public sealed record ErTable
     public required IReadOnlyList<ErColumn> Columns { get; init; }
     public int HiddenColumnCount { get; init; }
     public bool IsFocus { get; init; }
+
+    /// <summary>On a foreign-key path connecting two focus tables (see <see cref="ErDiagramBuilder.ForTables"/>).</summary>
+    public bool IsLink { get; init; }
+
+    /// <summary>Prefix the title with the database (the diagram spans several databases).</summary>
+    public bool ShowDatabase { get; init; }
     public double X { get; init; }
     public double Y { get; init; }
     public double Width { get; init; }
     public double Height { get; init; }
 
-    public string Title => Object.FullName;
+    public string Title => ShowDatabase && !string.IsNullOrEmpty(Object.Database) ? $"{Object.Database}.{Object.FullName}" : Object.FullName;
     public bool Contains(double x, double y) => x >= X && x <= X + Width && y >= Y && y <= Y + Height;
 }
 
@@ -103,17 +109,21 @@ public static class ErDiagramBuilder
     }
 
     /// <summary>
-    /// The given tables (highlighted, e.g. the tables a searched value was found in) plus the tables on the shortest
-    /// foreign-key paths of at most <paramref name="maxHops"/> hops that connect them, so indirect relations show too.
+    /// The given tables (highlighted, e.g. the tables a searched value was found in), the tables on the shortest
+    /// foreign-key paths of at most <paramref name="maxHops"/> hops that connect them (so indirect relations show too),
+    /// and, with <paramref name="includeNeighbours"/>, every table directly referencing or referenced by them.
+    /// Tables may come from several databases; each database's foreign keys stay within it.
     /// </summary>
     public static ErDiagram ForTables(
-        MetadataSnapshot snapshot, string? database, IEnumerable<DbObject> tables, ErColumnMode mode, int maxHops = 3, int maxTables = 60)
+        MetadataSnapshot snapshot, IEnumerable<DbObject> tables, ErColumnMode mode,
+        bool includeNeighbours = true, int maxHops = 3, int maxTables = 80)
     {
-        var graph = new FkGraph(snapshot, database);
+        var graph = new FkGraph(snapshot, database: null);
         var targets = tables.Select(Key).Where(graph.Tables.ContainsKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (targets.Count == 0) return ErDiagram.Empty;
 
         var chosen = new HashSet<string>(targets, StringComparer.OrdinalIgnoreCase);
+        var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var omitted = 0;
         for (var i = 0; i < targets.Count; i++)
         {
@@ -126,10 +136,38 @@ public static class ErDiagramBuilder
                     if (!chosen.Contains(k)) bridge.Add(k);
                 if (chosen.Count + bridge.Count > maxTables) { omitted += bridge.Count; continue; }
                 chosen.UnionWith(bridge);
+                links.UnionWith(bridge);
             }
         }
 
-        return Layout(snapshot, graph, ParentDepthLevels(graph, chosen), new HashSet<string>(targets, StringComparer.OrdinalIgnoreCase), mode, omitted);
+        if (includeNeighbours)
+        {
+            foreach (var n in targets.SelectMany(t => graph.ParentsOf(t).Concat(graph.ChildrenOf(t))).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (chosen.Contains(n)) continue;
+                if (chosen.Count >= maxTables) { omitted++; continue; }
+                chosen.Add(n);
+            }
+        }
+
+        var multipleDatabases = chosen.Select(k => graph.Tables[k].Database).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+        var diagram = Layout(snapshot, graph, ParentDepthLevels(graph, chosen), new HashSet<string>(targets, StringComparer.OrdinalIgnoreCase), mode, omitted);
+        return Mark(diagram, t => t with
+        {
+            IsLink = links.Contains(Key(t.Object)),
+            ShowDatabase = multipleDatabases
+        });
+    }
+
+    /// <summary>Changes table flags without moving anything, keeping the edges pointing at the new instances.</summary>
+    private static ErDiagram Mark(ErDiagram diagram, Func<ErTable, ErTable> change)
+    {
+        var map = diagram.Tables.ToDictionary(t => t, change, ReferenceEqualityComparer.Instance);
+        return diagram with
+        {
+            Tables = diagram.Tables.Select(t => map[t]).ToList(),
+            Edges = diagram.Edges.Select(e => e with { Child = map[e.Child], Parent = map[e.Parent] }).ToList()
+        };
     }
 
     /// <summary>Breadth-first over foreign keys in both directions: reachable table → the table it was reached from.</summary>
@@ -271,7 +309,7 @@ public static class ErDiagramBuilder
         var sb = new StringBuilder("erDiagram\n");
         foreach (var t in diagram.Tables.OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase))
         {
-            sb.Append("    ").Append(MermaidId(t.Object)).Append("[\"").Append(t.Title.Replace("\"", "'")).Append("\"]");
+            sb.Append("    ").Append(MermaidId(t)).Append("[\"").Append(t.Title.Replace("\"", "'")).Append("\"]");
             if (t.Columns.Count == 0) { sb.Append('\n'); continue; }
             sb.Append(" {\n");
             foreach (var c in t.Columns)
@@ -288,15 +326,15 @@ public static class ErDiagramBuilder
         {
             var fkColumns = SplitColumns(e.ForeignKey.Columns);
             var optional = e.Child.Columns.Any(c => c.IsNullable && fkColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase));
-            sb.Append("    ").Append(MermaidId(e.Parent.Object))
+            sb.Append("    ").Append(MermaidId(e.Parent))
               .Append(optional ? " |o--o{ " : " ||--o{ ")
-              .Append(MermaidId(e.Child.Object))
+              .Append(MermaidId(e.Child))
               .Append(" : \"").Append(e.ForeignKey.Name.Replace("\"", "'")).Append("\"\n");
         }
         return sb.ToString();
     }
 
-    private static string MermaidId(DbObject o) => MermaidWord($"{o.Schema}_{o.Name}");
+    private static string MermaidId(ErTable t) => MermaidWord(t.Title.Replace('.', '_'));
 
     private static string MermaidWord(string s)
     {
@@ -313,11 +351,12 @@ public static class ErDiagramBuilder
     public static IEnumerable<string> SplitColumns(string? columns) =>
         (columns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string Key(DbObject o) => $"{o.Schema}.{o.Name}";
-    private static string ChildKey(DbForeignKey fk) => $"{fk.Schema}.{fk.Table}";
-    private static string ParentKey(DbForeignKey fk) => $"{fk.ReferencedSchema}.{fk.ReferencedTable}";
+    // Keys carry the database so same-named tables of different databases (every dbo.Transactions) stay apart.
+    private static string Key(DbObject o) => $"{o.Database}|{o.Schema}.{o.Name}";
+    private static string ChildKey(DbForeignKey fk) => $"{fk.Database}|{fk.Schema}.{fk.Table}";
+    private static string ParentKey(DbForeignKey fk) => $"{fk.Database}|{fk.ReferencedSchema}.{fk.ReferencedTable}";
 
-    /// <summary>Tables and foreign keys of one database, keyed case-insensitively by schema.name.</summary>
+    /// <summary>Tables and foreign keys of one database (or all when null), keyed case-insensitively by database|schema.name.</summary>
     private sealed class FkGraph
     {
         public Dictionary<string, DbObject> Tables { get; }

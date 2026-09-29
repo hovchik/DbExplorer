@@ -54,19 +54,64 @@ public class DataMatchSqlTests
     public void Diagram_for_tables_adds_linking_tables_and_highlights_the_found_ones()
     {
         // Customers and Products are only linked through Orders → OrderLines.
-        var d = ErDiagramBuilder.ForTables(Snapshot, null, [Obj("Customers"), Obj("Products"), Obj("Audit")], ErColumnMode.KeysOnly);
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Customers"), Obj("Products"), Obj("Audit")], ErColumnMode.KeysOnly, includeNeighbours: false);
 
         Assert.Equal(["Audit", "Customers", "OrderLines", "Orders", "Products"], d.Tables.Select(t => t.Object.Name).Order());
         Assert.Equal(["Audit", "Customers", "Products"], d.Tables.Where(t => t.IsFocus).Select(t => t.Object.Name).Order());
+        Assert.Equal(["OrderLines", "Orders"], d.Tables.Where(t => t.IsLink).Select(t => t.Object.Name).Order());
         Assert.Equal(3, d.Edges.Count);
+        Assert.All(d.Edges, e => Assert.Contains(e.Child, d.Tables));
+    }
+
+    [Fact]
+    public void Diagram_for_tables_includes_directly_related_tables()
+    {
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Orders")], ErColumnMode.KeysOnly);
+
+        Assert.Equal(["Customers", "OrderLines", "Orders"], d.Tables.Select(t => t.Object.Name).Order());
+        Assert.Equal("Orders", Assert.Single(d.Tables, t => t.IsFocus).Object.Name);
+        Assert.DoesNotContain(d.Tables, t => t.IsLink);
+    }
+
+    [Fact]
+    public void Diagram_for_tables_spans_databases_without_mixing_same_named_tables()
+    {
+        var snapshot = TestSnapshots.TwoDatabases();
+        var tables = snapshot.Objects.Where(o => o.Name == "Transactions").ToList();
+
+        var d = ErDiagramBuilder.ForTables(snapshot, tables, ErColumnMode.KeysOnly);
+
+        Assert.Equal(["Billing.dbo.Invoices", "Billing.dbo.Transactions", "Sales.dbo.Transactions"], d.Tables.Select(t => t.Title).Order());
+        var edge = Assert.Single(d.Edges);
+        Assert.Equal("Billing.dbo.Transactions", edge.Child.Title);
     }
 
     [Fact]
     public void Diagram_for_tables_respects_the_hop_limit()
     {
-        var d = ErDiagramBuilder.ForTables(Snapshot, null, [Obj("Customers"), Obj("Products")], ErColumnMode.KeysOnly, maxHops: 2);
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Customers"), Obj("Products")], ErColumnMode.KeysOnly, includeNeighbours: false, maxHops: 2);
         Assert.Equal(["Customers", "Products"], d.Tables.Select(t => t.Object.Name).Order());
         Assert.Empty(d.Edges);
+    }
+
+    [Fact]
+    public void Related_queries_follow_every_foreign_key_of_the_found_rows()
+    {
+        var matches = new[] { Match("sales", "Orders", "OrderId", "42", ("OrderId", "42")) };
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Orders")], ErColumnMode.KeysOnly);
+
+        var queries = DataMatchSql.Related(d, matches, "SqlServer", Brackets, 100);
+
+        Assert.Equal(2, queries.Count);
+        var parent = Assert.Single(queries, q => q.Tables[0].Name == "Customers");
+        Assert.Equal("Customers · referenced by Orders.CustomerId", parent.Title);
+        Assert.Equal(
+            "SELECT TOP (100) r.* FROM [dbo].[Customers] r\n WHERE EXISTS (SELECT 1 FROM [sales].[Orders] f\n" +
+            "                WHERE f.[CustomerId] = r.[CustomerId]\n                  AND (f.[OrderId] = N'42'));",
+            parent.Sql);
+        var child = Assert.Single(queries, q => q.Tables[0].Name == "OrderLines");
+        Assert.Equal("OrderLines · referencing Orders by OrderId", child.Title);
+        Assert.Contains("WHERE r.[OrderId] = f.[OrderId]", child.Sql);
     }
 
     [Fact]
@@ -78,7 +123,7 @@ public class DataMatchSqlTests
             Match("sales", "OrderLines", "OrderId", "42", ("OrderId", "42"), ("LineNo", "1")),
             Match("dbo", "Audit", "Id", "42", ("Id", "42"))
         };
-        var d = ErDiagramBuilder.ForTables(Snapshot, null, [Obj("Orders"), Obj("OrderLines"), Obj("Audit")], ErColumnMode.KeysOnly);
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Orders"), Obj("OrderLines"), Obj("Audit")], ErColumnMode.KeysOnly, includeNeighbours: false);
 
         var queries = DataMatchSql.Combined(Snapshot, d, matches, "SqlServer", Brackets, 500);
 
@@ -91,6 +136,18 @@ public class DataMatchSqlTests
     }
 
     [Fact]
+    public void Combined_query_adds_referenced_lookup_tables_but_not_other_children()
+    {
+        var matches = new[] { Match("sales", "OrderLines", "ProductId", "7", ("OrderId", "1"), ("LineNo", "2")) };
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("OrderLines")], ErColumnMode.KeysOnly);
+
+        var q = Assert.Single(DataMatchSql.Combined(Snapshot, d, matches, "SqlServer", Brackets, 100));
+
+        Assert.Equal(["OrderLines", "Orders", "Products"], q.Tables.Select(t => t.Name));
+        Assert.DoesNotContain("Customers", q.Sql); // two hops away: not a direct neighbour
+    }
+
+    [Fact]
     public void Combined_query_goes_through_linking_tables()
     {
         var matches = new[]
@@ -98,7 +155,7 @@ public class DataMatchSqlTests
             Match("dbo", "Customers", "CustomerId", "7", ("CustomerId", "7")),
             Match("dbo", "Products", "ProductId", "7", ("ProductId", "7"))
         };
-        var d = ErDiagramBuilder.ForTables(Snapshot, null, [Obj("Customers"), Obj("Products")], ErColumnMode.KeysOnly);
+        var d = ErDiagramBuilder.ForTables(Snapshot, [Obj("Customers"), Obj("Products")], ErColumnMode.KeysOnly);
 
         var q = Assert.Single(DataMatchSql.Combined(Snapshot, d, matches, "Postgres", Quotes, 100));
 

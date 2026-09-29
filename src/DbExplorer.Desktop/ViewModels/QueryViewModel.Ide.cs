@@ -39,6 +39,7 @@ public partial class QueryViewModel
     partial void OnHasOpenTransactionChanged(bool value)
     {
         OnPropertyChanged(nameof(TransactionInfo));
+        OnPropertyChanged(nameof(CanChangeDatabase));
         CommitCommand.NotifyCanExecuteChanged();
         RollbackCommand.NotifyCanExecuteChanged();
     }
@@ -54,7 +55,7 @@ public partial class QueryViewModel
         if (_transaction is null)
         {
             Status = "Starting a transaction…";
-            _transaction = await session.Provider.BeginScriptSessionAsync(null, transactional: true, ct);
+            _transaction = await session.Provider.BeginScriptSessionAsync(TargetDatabase, transactional: true, ct);
             _transactionStarted = DateTime.Now;
         }
         HasOpenTransaction = true;
@@ -141,7 +142,7 @@ public partial class QueryViewModel
         try
         {
             var script = QueryPlanTools.BuildExplainScript(sql, key, analyze);
-            var result = await queryService.ExecuteScriptAsync(session, script, database: null, TimeoutSeconds * 5, _runCts.Token);
+            var result = await queryService.ExecuteScriptAsync(session, script, TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
             // SQL Server's STATISTICS PROFILE interleaves the statements' own results with the plans; keep the plans.
             var plans = result.ResultSets
                 .Where(rs => key != "SqlServer" || rs.Columns.Contains("StmtText", StringComparer.OrdinalIgnoreCase))

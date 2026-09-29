@@ -25,6 +25,9 @@ public sealed class QueryTabState
     public string Sql { get; set; } = "";
     public string? FilePath { get; set; }
     public bool IsDirty { get; set; }
+
+    /// <summary>The database the tab ran in (picked in its toolbar); null for the connection's default.</summary>
+    public string? Database { get; set; }
 }
 
 /// <summary>Persists saved scripts and run history to disk, similar to <c>ConnectionStore</c>.</summary>

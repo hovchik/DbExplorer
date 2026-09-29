@@ -12,6 +12,13 @@
   </UserControl.Styles>
   <Grid Margin="4" RowDefinitions="Auto,2*,Auto,6,3*,Auto">
 	<WrapPanel Grid.Row="0" Classes="toolbar">
+	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
+				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to jump to a name.">
+		<TextBlock Text="Database" VerticalAlignment="Center" />
+		<ComboBox ItemsSource="{Binding AvailableDatabases}" SelectedItem="{Binding CurrentDatabase}"
+				  IsEnabled="{Binding CanChangeDatabase}" IsTextSearchEnabled="True"
+				  PlaceholderText="(connection default)" MinWidth="180" MaxWidth="320" MaxDropDownHeight="420" />
+	  </StackPanel>
 	  <Button Content="▶ Run" Classes="accent" Click="OnRun"
 			  ToolTip.Tip="Run the selection, or the whole script when nothing is selected (F5 / Ctrl+E)" />
 	  <Button Content="▶ Statement" Classes="tool" Click="OnRunStatement"
@@ -111,7 +118,10 @@
 	<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
 	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11"
 				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
-	  <TextBlock Grid.Column="1" x:Name="CaretInfo" Classes="hint" FontSize="11" />
+	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" />
+		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" />
+	  </StackPanel>
 	</Grid>
 
 	<GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="Transparent" />

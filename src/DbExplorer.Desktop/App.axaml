@@ -13,6 +13,16 @@
           <SolidColorBrush x:Key="AppCodeBackgroundBrush">#F5F5F5</SolidColorBrush>
           <SolidColorBrush x:Key="AppForegroundBrush">#FF000000</SolidColorBrush>
           <SolidColorBrush x:Key="AppHintForegroundBrush">#99000000</SolidColorBrush>
+          <!-- Result grid: value colours by type, zebra rows and header shading -->
+          <SolidColorBrush x:Key="AppCellTextBrush">#FF1F1F1F</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNumberBrush">#FF1750EB</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDateBrush">#FF871094</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBooleanBrush">#FFB35A00</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellGuidBrush">#FF00796B</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBinaryBrush">#FF8C6C3E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNullBrush">#FF9A9A9A</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridAltRowBrush">#07000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridHeaderBrush">#0D000000</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -22,6 +32,15 @@
           <SolidColorBrush x:Key="AppCodeBackgroundBrush">#FF1E1E1E</SolidColorBrush>
           <SolidColorBrush x:Key="AppForegroundBrush">#FFFFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppHintForegroundBrush">#B3FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellTextBrush">#FFDCDCDC</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNumberBrush">#FF2AACB8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDateBrush">#FFC77DBB</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBooleanBrush">#FFCF8E6D</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellGuidBrush">#FF6AAB73</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBinaryBrush">#FFBBA07A</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNullBrush">#FF7A7E85</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridAltRowBrush">#08FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridHeaderBrush">#12FFFFFF</SolidColorBrush>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

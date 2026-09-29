@@ -21,9 +21,8 @@ using Path = Avalonia.Controls.Shapes.Path;
 namespace DbExplorer.Desktop.Views;
 
 /// <summary>One column / value pair of the row-details pane.</summary>
-public sealed record RowDetailItem(string Name, string Value, bool IsNull)
+public sealed record RowDetailItem(string Name, string Value, bool IsNull, IBrush? Foreground)
 {
-    public double Opacity => IsNull ? 0.5 : 1;
     public FontStyle FontStyle => IsNull ? FontStyle.Italic : FontStyle.Normal;
 }
 
@@ -99,7 +98,11 @@ public partial class ResultGridView : UserControl
         Grid.DoubleTapped += OnGridDoubleTapped;
         Grid.Sorting += OnSorting;
         Grid.CellPointerPressed += OnCellPointerPressed;
-        Grid.LoadingRow += (_, e) => e.Row.Header = (e.Row.Index + 1).ToString("N0");
+        Grid.LoadingRow += (_, e) =>
+        {
+            e.Row.Header = (e.Row.Index + 1).ToString("N0");
+            e.Row.Classes.Set("alt", e.Row.Index % 2 == 1);
+        };
 
         FilterBox.TextChanged += (_, _) =>
         {
@@ -200,8 +203,18 @@ public partial class ResultGridView : UserControl
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         text.Bind(TextBlock.TextProperty, new Binding(path) { Mode = BindingMode.OneWay, Converter = ResultCellTextConverter.Instance });
-        text.Bind(OpacityProperty, new Binding(path) { Mode = BindingMode.OneWay, Converter = NullCellStyleConverter.Opacity });
-        text.Bind(TextBlock.FontStyleProperty, new Binding(path) { Mode = BindingMode.OneWay, Converter = NullCellStyleConverter.FontStyle });
+
+        // Colour by value type; cells are recycled, so re-pick on each new row, rebinding only when the kind changes.
+        string? colorKey = null;
+        text.DataContextChanged += (_, _) =>
+        {
+            var value = text.DataContext is ResultRow row ? Cell(row, index) : null;
+            var key = CellValueColors.ResourceKey(value);
+            text.FontStyle = key == CellValueColors.Null ? FontStyle.Italic : FontStyle.Normal;
+            if (key == colorKey) return;
+            colorKey = key;
+            text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(key));
+        };
         return text;
     }
 
@@ -700,7 +713,8 @@ public partial class ResultGridView : UserControl
                     ? CellValueConverter.Instance.Convert(bytes, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string
                     : ResultViewQuery.DisplayText(value);
                 if (text is { Length: > DetailValueMaxChars }) text = text[..DetailValueMaxChars] + "… (double-click the cell to see all)";
-                return new RowDetailItem(c.Name, text ?? "NULL", text is null);
+                var brush = this.TryFindResource(CellValueColors.ResourceKey(value), ActualThemeVariant, out var found) ? found as IBrush : null;
+                return new RowDetailItem(c.Name, text ?? "NULL", text is null, brush);
             })
             .Where(d => term.Length == 0 ||
                         d.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||

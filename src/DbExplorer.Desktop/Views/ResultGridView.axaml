@@ -2,13 +2,25 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
+  <UserControl.Resources>
+	<!-- Softer, IDE-style selection so the type colours of values stay readable on selected rows -->
+	<x:Double x:Key="DataGridRowSelectedBackgroundOpacity">0.28</x:Double>
+	<x:Double x:Key="DataGridRowSelectedHoveredBackgroundOpacity">0.36</x:Double>
+	<x:Double x:Key="DataGridRowSelectedUnfocusedBackgroundOpacity">0.2</x:Double>
+	<x:Double x:Key="DataGridRowSelectedHoveredUnfocusedBackgroundOpacity">0.26</x:Double>
+  </UserControl.Resources>
   <UserControl.Styles>
 	<!-- Header content fills the header so the filter button sits at its right edge -->
 	<Style Selector="DataGridColumnHeader">
 	  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
 	  <Setter Property="Padding" Value="8,0,4,0" />
+	  <Setter Property="Background" Value="{DynamicResource AppGridHeaderBrush}" />
+	</Style>
+	<Style Selector="DataGridRow.alt">
+	  <Setter Property="Background" Value="{DynamicResource AppGridAltRowBrush}" />
 	</Style>
 	<Style Selector="DataGridRowHeader">
+	  <Setter Property="Background" Value="{DynamicResource AppGridHeaderBrush}" />
 	  <Setter Property="FontSize" Value="11" />
 	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
 	  <Setter Property="MinWidth" Value="36" />
@@ -129,7 +141,7 @@
 					<StackPanel Spacing="1">
 					  <TextBlock Text="{Binding Name}" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis" />
 					  <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12.5"
-										   Opacity="{Binding Opacity}" FontStyle="{Binding FontStyle}" />
+										   Foreground="{Binding Foreground}" FontStyle="{Binding FontStyle}" />
 					</StackPanel>
 				  </Border>
 				</DataTemplate>

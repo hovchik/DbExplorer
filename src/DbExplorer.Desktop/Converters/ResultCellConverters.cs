@@ -27,21 +27,28 @@ public sealed class ResultCellTextConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>NULL cells are dimmed and italic so they stand apart from the text "NULL".</summary>
-public sealed class NullCellStyleConverter : IValueConverter
+/// <summary>Type-based colouring of result values, as in DataGrip / DBeaver: each kind of value
+/// has a theme brush (see App.axaml) so numbers, dates, flags, ids, binary and NULL read at a glance.</summary>
+public static class CellValueColors
 {
-    public static readonly NullCellStyleConverter Opacity = new(isOpacity: true);
-    public static readonly NullCellStyleConverter FontStyle = new(isOpacity: false);
+    public const string Text = "AppCellTextBrush";
+    public const string Number = "AppCellNumberBrush";
+    public const string DateTime = "AppCellDateBrush";
+    public const string Boolean = "AppCellBooleanBrush";
+    public const string Identifier = "AppCellGuidBrush";
+    public const string Binary = "AppCellBinaryBrush";
+    public const string Null = "AppCellNullBrush";
 
-    private readonly bool _isOpacity;
-    private NullCellStyleConverter(bool isOpacity) => _isOpacity = isOpacity;
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    /// <summary>The resource key of the brush a value is drawn with.</summary>
+    public static string ResourceKey(object? value) => value switch
     {
-        var isNull = value is null or DBNull;
-        return _isOpacity ? isNull ? 0.5 : 1.0 : isNull ? Avalonia.Media.FontStyle.Italic : Avalonia.Media.FontStyle.Normal;
-    }
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
+        null or DBNull => Null,
+        string or char => Text,
+        byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal => Number,
+        System.DateTime or DateTimeOffset or DateOnly or TimeOnly or TimeSpan => DateTime,
+        bool => Boolean,
+        Guid => Identifier,
+        byte[] => Binary,
+        _ => Text
+    };
 }

@@ -46,6 +46,31 @@ internal static class TestSnapshots
         RefreshedAt = DateTimeOffset.Now
     };
 
+    /// <summary>A server-level catalog: two databases that both have dbo.Transactions (with different columns), and a
+    /// few tables that exist in only one of them.</summary>
+    public static MetadataSnapshot TwoDatabases() => new()
+    {
+        Objects =
+        [
+            Table("dbo", "Transactions", 10) with { Database = "Sales" },
+            Table("dbo", "Customers", 5) with { Database = "Sales" },
+            Table("dbo", "Transactions", 20) with { Database = "Billing" },
+            Table("dbo", "Invoices", 7) with { Database = "Billing" },
+            new DbObject { Database = "Billing", Schema = "dbo", Name = "fn_InvoiceTotal", Type = DbObjectType.ScalarFunction }
+        ],
+        Columns =
+        [
+            Col("dbo", "Transactions", "SaleId", 1, "int", pk: true) with { Database = "Sales" },
+            Col("dbo", "Customers", "CustomerId", 1, "int", pk: true) with { Database = "Sales" },
+            Col("dbo", "Transactions", "InvoiceId", 1, "int", pk: true) with { Database = "Billing" },
+            Col("dbo", "Invoices", "InvoiceId", 1, "int", pk: true) with { Database = "Billing" }
+        ],
+        Modules = [],
+        ForeignKeys = [Fk("FK_Tx_Invoices", "dbo", "Transactions", "InvoiceId", "dbo", "Invoices", "InvoiceId") with { Database = "Billing" }],
+        Indexes = [],
+        RefreshedAt = DateTimeOffset.Now
+    };
+
     private static DbObject Table(string schema, string name, long rows) =>
         new() { Schema = schema, Name = name, Type = DbObjectType.Table, RowCount = rows };
 

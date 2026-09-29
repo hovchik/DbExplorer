@@ -75,12 +75,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     [RelayCommand]
     private void NewQuery() => NewTab();
 
-    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty)
+    /// <param name="database">Database the tab starts in; by default the one of the tab it is opened from.</param>
+    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null)
     {
         var doc = _createDocument();
         doc.Title = title;
         doc.FilePath = filePath;
         doc.SetText(sql, markClean: !dirty);
+        doc.RestoredDatabase = database ?? SelectedDocument?.CurrentDatabase;
         doc.Attach(_session);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
         Documents.Add(doc);
@@ -174,7 +176,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             var tabs = await _scripts.LoadTabsAsync();
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
-            foreach (var t in tabs) AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty);
+            foreach (var t in tabs) AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, t.Database);
             if (placeholder is not null)
             {
                 placeholder.Attach(null);
@@ -202,7 +204,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         {
             await _scripts.SaveTabsAsync(Documents.Select(d => new QueryTabState
             {
-                Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty
+                Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty,
+                Database = d.CurrentDatabase ?? d.RestoredDatabase
             }));
         }
         catch

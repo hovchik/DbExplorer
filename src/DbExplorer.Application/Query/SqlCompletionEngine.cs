@@ -179,14 +179,21 @@ public sealed class SqlCompletionEngine
     private readonly IReadOnlyList<FunctionInfo> _functions;
     private readonly MetadataSnapshot _snapshot;
 
+    /// <summary>The catalog spans several databases (a server-level connection with no database picked): objects are
+    /// told apart and inserted by database, e.g. <c>Sales.dbo.Transactions</c> vs <c>Billing.dbo.Transactions</c>.</summary>
+    private readonly bool _multiDatabase;
+    private readonly HashSet<string> _databases;
+
     public SqlCompletionEngine(MetadataSnapshot snapshot, Func<string, string> quote, string? providerKey = null)
     {
         _snapshot = snapshot;
         _quote = quote;
         _providerKey = providerKey;
+        _databases = snapshot.Objects.Select(o => o.Database).Where(d => !string.IsNullOrEmpty(d)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _multiDatabase = _databases.Count > 1;
         _objects = snapshot.Objects
             .Where(o => o.Type is not DbObjectType.Trigger)
-            .DistinctBy(o => (o.Schema.ToUpperInvariant(), o.Name.ToUpperInvariant()))
+            .DistinctBy(o => (o.Database.ToUpperInvariant(), o.Schema.ToUpperInvariant(), o.Name.ToUpperInvariant()))
             .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         _objectsByName = _objects.ToLookup(o => o.Name, StringComparer.OrdinalIgnoreCase);
@@ -575,9 +582,9 @@ public sealed class SqlCompletionEngine
         {
             var o = existing.Object;
             var parents = _snapshot.ForeignKeysOf(o.Database, o.Schema, o.Name)
-                .Select(fk => Resolve(fk.ReferencedSchema, fk.ReferencedTable));
+                .Select(fk => Resolve(fk.ReferencedSchema, fk.ReferencedTable, o.Database));
             var children = _snapshot.ReferencesTo(o.Database, o.Schema, o.Name)
-                .Select(fk => Resolve(fk.Schema, fk.Table));
+                .Select(fk => Resolve(fk.Schema, fk.Table, o.Database));
 
             foreach (var related in parents.Concat(children).Where(r => r is not null).Distinct())
             {
@@ -585,9 +592,8 @@ public sealed class SqlCompletionEngine
                 var candidate = new TableReferenceInfo(related, alias);
                 var condition = ForeignKeyConditions(candidate, existing).FirstOrDefault();
                 if (condition is null) continue;
-                var name = $"{QuoteIfNeeded(related.Schema)}.{QuoteIfNeeded(related.Name)}";
-                yield return new CompletionItem(related.Name, $"{name} {alias} ON {condition}", CompletionKind.Join,
-                    $"{related.Schema} · ON {condition}");
+                yield return new CompletionItem(related.Name, $"{QualifiedName(related)} {alias} ON {condition}", CompletionKind.Join,
+                    $"{DatabasePrefix(related)}{related.Schema} · ON {condition}");
             }
         }
     }
@@ -654,13 +660,25 @@ public sealed class SqlCompletionEngine
         }
 
         var schema = qualifier.Count >= 2 ? qualifier[^2] : null;
-        var table = Resolve(schema, last);
+        var database = qualifier.Count >= 3 ? qualifier[^3] : null;
+        var table = Resolve(schema, last, database);
         var items = new List<CompletionItem>();
         if (table is not null) items.AddRange(ColumnItems(table, prefix));
 
+        // "Sales." on a multi-database catalog: the schemas of that database.
+        if (qualifier.Count == 1 && _databases.Contains(last))
+        {
+            items.AddRange(_objects.Where(o => Same(o.Database, last)).Select(o => o.Schema)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)
+                .Select(sc => new CompletionItem(sc, QuoteIfNeeded(sc), CompletionKind.Schema, last)));
+        }
+
         if (qualifier.Count == 1 || qualifier.Count == 2)
         {
+            // "Sales.dbo." names the database too; plain "dbo." takes the schema from every database loaded.
+            var inDatabase = qualifier.Count == 2 && _databases.Contains(qualifier[0]) ? qualifier[0] : null;
             items.AddRange(_objectsBySchema[last]
+                .Where(o => inDatabase is null || Same(o.Database, inDatabase))
                 .Where(o => MatchQuality(o.Name, prefix) > 0)
                 .Select(o => ObjectItem(o, qualified: false)));
         }
@@ -683,10 +701,16 @@ public sealed class SqlCompletionEngine
             _ when o.IsRoutine => CompletionKind.Routine,
             _ => CompletionKind.Other
         };
-        var insert = qualified ? $"{QuoteIfNeeded(o.Schema)}.{QuoteIfNeeded(o.Name)}" : QuoteIfNeeded(o.Name);
-        var detail = o.Schema + (o.RowCount is long rows ? $" · ≈{rows:N0} rows" : "") + (kind == CompletionKind.Routine ? $" · {o.Type}" : "");
+        var insert = qualified ? QualifiedName(o) : QuoteIfNeeded(o.Name);
+        var detail = DatabasePrefix(o) + o.Schema + (o.RowCount is long rows ? $" · ≈{rows:N0} rows" : "") + (kind == CompletionKind.Routine ? $" · {o.Type}" : "");
         return new CompletionItem(o.Name, insert, kind, detail);
     }
+
+    /// <summary>schema.name, or database.schema.name when the catalog spans several databases.</summary>
+    private string QualifiedName(DbObject o) =>
+        (_multiDatabase && o.Database.Length > 0 ? QuoteIfNeeded(o.Database) + "." : "") + $"{QuoteIfNeeded(o.Schema)}.{QuoteIfNeeded(o.Name)}";
+
+    private string DatabasePrefix(DbObject o) => _multiDatabase && o.Database.Length > 0 ? o.Database + " · " : "";
 
     // ----- Navigation and signature help -----
 
@@ -699,7 +723,7 @@ public sealed class SqlCompletionEngine
         var name = token.Identifier;
         var qualifier = ReadQualifier(text, token.Start);
         if (qualifier is null && ParseReferences(statement).FirstOrDefault(r => Same(r.Alias, name)) is { } aliased) return aliased.Object;
-        return Resolve(qualifier?[^1], name);
+        return Resolve(qualifier?[^1], name, qualifier is { Count: >= 2 } ? qualifier[^2] : null);
     }
 
     /// <summary>The signature of the built-in function whose argument list contains <paramref name="caret"/>, and which
@@ -789,7 +813,7 @@ public sealed class SqlCompletionEngine
             var parts = SplitQualified(m.Groups["name"].Value);
             var table = parts[^1];
             var schema = parts.Count >= 2 ? parts[^2] : null;
-            var obj = Resolve(schema, table);
+            var obj = Resolve(schema, table, parts.Count >= 3 ? parts[^3] : null);
             if (obj is null) continue;
 
             var alias = m.Groups["alias"].Success ? Unquote(m.Groups["alias"].Value) : null;
@@ -838,9 +862,10 @@ public sealed class SqlCompletionEngine
         return s.Length < open + 2 || s[^1] != '\'';
     }
 
-    private DbObject? Resolve(string? schema, string name)
+    /// <param name="database">Given for three-part names (Sales.dbo.Orders); otherwise any loaded database matches.</param>
+    private DbObject? Resolve(string? schema, string name, string? database = null)
     {
-        var candidates = _objectsByName[name];
+        var candidates = database is null ? _objectsByName[name] : _objectsByName[name].Where(o => Same(o.Database, database));
         return schema is null
             ? candidates.OrderBy(o => o.IsTableLike ? 0 : 1).FirstOrDefault()
             : candidates.FirstOrDefault(o => string.Equals(o.Schema, schema, StringComparison.OrdinalIgnoreCase));

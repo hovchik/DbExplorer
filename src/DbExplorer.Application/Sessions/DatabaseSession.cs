@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Connections;
@@ -20,9 +21,14 @@ public sealed class DatabaseSession(
 
     public event EventHandler? SnapshotChanged;
 
+    /// <summary>Per-database catalogs handed out by <see cref="SessionService.GetDatabaseSnapshotAsync"/>.</summary>
+    internal ConcurrentDictionary<string, Lazy<Task<MetadataSnapshot>>> DatabaseSnapshots { get; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     internal void ReplaceSnapshot(MetadataSnapshot snapshot)
     {
         Snapshot = snapshot;
+        DatabaseSnapshots.Clear();
         SnapshotChanged?.Invoke(this, EventArgs.Empty);
     }
 

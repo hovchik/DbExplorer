@@ -31,6 +31,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private readonly ScriptStore scripts;
     private readonly IDialogService dialogs;
     private readonly DefinitionService definitions;
+    private readonly SessionService sessions;
     private DatabaseSession? _session;
     private SqlCompletionEngine? _completion;
     private CancellationTokenSource? _runCts;
@@ -38,9 +39,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     public QueryViewModel(
         QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs,
-        DefinitionService definitions)
+        DefinitionService definitions, SessionService sessions)
     {
         this.definitions = definitions;
+        this.sessions = sessions;
         this.queryService = queryService;
         this.multiQuery = multiQuery;
         this.scripts = scripts;
@@ -95,8 +97,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         }
     }
 
+    /// <summary>Connects the tab to <paramref name="session"/>. It starts in <see cref="RestoredDatabase"/> the first time
+    /// (when the server has it), otherwise in the connection's database.</summary>
     public void Attach(DatabaseSession? session)
     {
+        var preferredDatabase = session is null ? null : RestoredDatabase;
+        if (session is not null) RestoredDatabase = null;
         // An open manual transaction belongs to the old connection: roll it back rather than leave it hanging.
         if (_transaction is not null && !ReferenceEquals(session, _session)) _ = EndTransactionAsync(commit: false, reason: "connection changed");
         if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
@@ -108,20 +114,140 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         RunOnMultipleDatabases = false;
         SetDatabases([]);
         ExecuteCommand.NotifyCanExecuteChanged();
+
+        _attaching = true;
+        AvailableDatabases = session is null ? [] : MergeNames(session.Snapshot.Databases, [session.Profile.Database, preferredDatabase]);
+        CurrentDatabase = session is null ? null : NullIfEmpty(preferredDatabase) ?? NullIfEmpty(session.Profile.Database);
+        OnAvailableDatabasesChanged(AvailableDatabases);
+        _attaching = false;
+        RebuildCompletion();
+        if (session is not null) _ = LoadServerDatabasesAsync(session, preferredDatabase);
+    }
+
+    private void OnSnapshotChanged(object? sender, EventArgs e)
+    {
+        if (_session is { } session) AvailableDatabases = MergeNames(AvailableDatabases, session.Snapshot.Databases, [CurrentDatabase]);
         RebuildCompletion();
     }
 
-    private void OnSnapshotChanged(object? sender, EventArgs e) => RebuildCompletion();
+    // ----- Current database: where runs go and what the editor suggests -----
 
-    private void RebuildCompletion()
+    private bool _attaching;
+    private int _completionVersion;
+
+    /// <summary>The database this tab's statements run in; the editor suggests only its tables, views, routines and
+    /// columns. Null runs in the connection's default database with suggestions from everything loaded.</summary>
+    [ObservableProperty] private string? _currentDatabase;
+
+    /// <summary>Databases on the server, for the database picker.</summary>
+    [ObservableProperty] private IReadOnlyList<string> _availableDatabases = [];
+
+    /// <summary>What the suggestions are based on ("Suggestions: 1,234 objects in Sales"), shown next to the picker.</summary>
+    [ObservableProperty] private string _completionInfo = "";
+
+    /// <summary>Database the tab asked for before any connection (restored from the last run, or inherited from the
+    /// tab it was opened from); applied when a connection is attached.</summary>
+    public string? RestoredDatabase { get; set; }
+
+    public bool CanChangeDatabase => !HasOpenTransaction && !RunOnMultipleDatabases;
+
+    /// <summary>The database runs target: the picked one, or the connection's default.</summary>
+    private string? TargetDatabase => NullIfEmpty(CurrentDatabase);
+
+    partial void OnCurrentDatabaseChanged(string? oldValue, string? newValue)
     {
-        _completion = _session is null ? null : new SqlCompletionEngine(_session.Snapshot, _session.Provider.QuoteIdentifier, _session.Provider.ProviderKey);
-        OnPropertyChanged(nameof(ProviderKey));
+        if (_attaching) return;
+        if (HasOpenTransaction && !string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase))
+        {
+            // The transaction's connection is bound to the old database; switching would run the next statement elsewhere.
+            Status = "Commit or Rollback the open transaction before switching the database.";
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => CurrentDatabase = oldValue);
+            return;
+        }
+        RebuildCompletion();
     }
 
-    /// <summary>Completion for the caret position; see <see cref="SqlCompletionEngine"/>.</summary>
+    /// <summary>The picker matches its selection exactly, so the current name takes the list's spelling ("sales" → "Sales").</summary>
+    partial void OnAvailableDatabasesChanged(IReadOnlyList<string> value)
+    {
+        if (CurrentDatabase is { } current && !value.Contains(current, StringComparer.Ordinal) &&
+            value.FirstOrDefault(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase)) is { } listed)
+            CurrentDatabase = listed;
+    }
+
+    private async Task LoadServerDatabasesAsync(DatabaseSession session, string? preferredDatabase)
+    {
+        try
+        {
+            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            if (!ReferenceEquals(session, _session)) return;
+            AvailableDatabases = MergeNames(names, session.Snapshot.Databases, [session.Profile.Database]);
+            // A restored tab may name a database this server does not have: start in the connection's database instead.
+            if (preferredDatabase is { Length: > 0 } && string.Equals(CurrentDatabase, preferredDatabase, StringComparison.OrdinalIgnoreCase) &&
+                !names.Contains(preferredDatabase, StringComparer.OrdinalIgnoreCase))
+                CurrentDatabase = NullIfEmpty(session.Profile.Database);
+        }
+        catch
+        {
+            // Without the server list the picker still offers the databases already in the catalog.
+        }
+    }
+
+    private static IReadOnlyList<string> MergeNames(params IEnumerable<string?>[] lists) =>
+        lists.SelectMany(l => l).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    /// <summary>
+    /// Builds the completion engine over the current database's catalog. Until a database is picked, a server-level
+    /// connection suggests from every database; once it is, only that database's objects are offered, loading its
+    /// catalog first when the connection did not read it.
+    /// </summary>
+    private async void RebuildCompletion()
+    {
+        OnPropertyChanged(nameof(ProviderKey));
+        var version = ++_completionVersion;
+        if (_session is not { } session)
+        {
+            _completion = null;
+            CompletionInfo = "";
+            return;
+        }
+
+        var database = TargetDatabase;
+        if (database is null)
+        {
+            SetCompletion(session.Snapshot, session, session.Snapshot.Databases.Count > 1 ? "every database (pick one to narrow)" : null);
+            return;
+        }
+
+        CompletionInfo = $"Loading the objects of {database}…";
+        try
+        {
+            var snapshot = await sessions.GetDatabaseSnapshotAsync(session, database);
+            if (version != _completionVersion) return;
+            SetCompletion(snapshot, session, database);
+        }
+        catch (Exception ex)
+        {
+            if (version != _completionVersion) return;
+            SetCompletion(session.Snapshot, session, null);
+            CompletionInfo = $"Could not read the objects of {database}: {ex.Message}";
+        }
+    }
+
+    private void SetCompletion(MetadataSnapshot snapshot, DatabaseSession session, string? scope)
+    {
+        _completion = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
+        var objects = snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger);
+        CompletionInfo = $"Suggestions: {objects:N0} objects" + (scope is null ? "" : $" in {scope}");
+    }
+
+    /// <summary>Completion for the caret position; see <see cref="SqlCompletionEngine"/>. The list is not capped
+    /// tightly: it filters itself as typing continues, so anything left out here could never be found.</summary>
     public CompletionResult GetCompletions(string text, int caret, bool explicitRequest) =>
-        _completion?.Complete(text, caret, explicitRequest, max: 200) ?? CompletionResult.Empty;
+        _completion?.Complete(text, caret, explicitRequest, max: 5000) ?? CompletionResult.Empty;
 
     /// <summary>Hover text for the identifier at <paramref name="offset"/>.</summary>
     public string? Describe(string text, int offset) => _completion?.Describe(text, offset);
@@ -161,6 +287,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     partial void OnRunOnMultipleDatabasesChanged(bool value)
     {
+        OnPropertyChanged(nameof(CanChangeDatabase));
         ExecuteCommand.NotifyCanExecuteChanged();
         if (value && _allDatabases.Count == 0) _ = LoadDatabasesAsync();
     }
@@ -176,7 +303,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             var names = await session.Factory.ListDatabasesAsync(session.Profile);
             if (!ReferenceEquals(session, _session)) return;
-            var current = session.Profile.Database;
+            var current = TargetDatabase ?? session.Profile.Database;
             SetDatabases(names.Select(n => new DatabaseChoice(n)
             {
                 IsSelected = string.Equals(n, current, StringComparison.OrdinalIgnoreCase)
@@ -279,7 +406,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private async Task RunOnceAsync(DatabaseSession session, string sql, CancellationToken ct)
     {
         Status = "Running…";
-        var result = await queryService.ExecuteScriptAsync(session, sql, database: null, TimeoutSeconds, ct, RowLimit);
+        var result = await queryService.ExecuteScriptAsync(session, sql, TargetDatabase, TimeoutSeconds, ct, RowLimit);
         ShowResult(session, result);
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }

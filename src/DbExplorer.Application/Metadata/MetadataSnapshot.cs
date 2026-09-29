@@ -21,6 +21,30 @@ public sealed class MetadataSnapshot
     /// from the server in the background.</summary>
     public bool IsStale { get; init; }
 
+    /// <summary>Names of the databases the snapshot has objects from (several when connected to a whole server).</summary>
+    public IReadOnlyList<string> Databases => Objects.Select(o => o.Database).Where(d => !string.IsNullOrEmpty(d))
+        .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    public bool ContainsDatabase(string database) =>
+        Objects.Any(o => string.Equals(o.Database, database, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The part of the catalog that belongs to one database, so same-named objects of other databases
+    /// (every database's dbo.Transactions) do not mix in.</summary>
+    public MetadataSnapshot ForDatabase(string database)
+    {
+        bool In(string db) => string.Equals(db, database, StringComparison.OrdinalIgnoreCase);
+        return new MetadataSnapshot
+        {
+            Objects = Objects.Where(o => In(o.Database)).ToList(),
+            Columns = Columns.Where(c => In(c.Database)).ToList(),
+            Modules = Modules.Where(m => In(m.Database)).ToList(),
+            ForeignKeys = ForeignKeys.Where(f => In(f.Database)).ToList(),
+            Indexes = Indexes.Where(i => In(i.Database)).ToList(),
+            RefreshedAt = RefreshedAt,
+            IsStale = IsStale
+        };
+    }
+
     public IEnumerable<DbColumn> ColumnsOf(string database, string schema, string table)
     {
         var lookup = LazyInitializer.EnsureInitialized(

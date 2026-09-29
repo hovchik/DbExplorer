@@ -21,7 +21,7 @@ public sealed class MetadataService(MetadataCache cache)
         var columnsTask = provider.GetColumnsAsync(ct);
         var modulesTask = provider.GetModulesAsync(ct);
         var foreignKeysTask = provider.GetForeignKeysAsync(ct);
-        var indexesTask = provider.GetIndexesAsync(includePhysicalStats: false, ct);
+        var indexesTask = provider.GetIndexesAsync(includePhysicalStats: false, ct, includeUsageStats: false);
         await Task.WhenAll(objectsTask, columnsTask, modulesTask, foreignKeysTask, indexesTask);
 
         var snapshot = new MetadataSnapshot

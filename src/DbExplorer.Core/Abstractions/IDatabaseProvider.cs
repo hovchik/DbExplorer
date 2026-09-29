@@ -25,7 +25,9 @@ public interface IDatabaseProvider : IAsyncDisposable
 
     Task<string?> GetDefinitionAsync(DbObject obj, CancellationToken ct = default);
 
-    Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default);
+    /// <param name="includeUsageStats">Seeks/scans/updates since the server started; costly on large catalogs, so the
+    /// cached metadata load leaves them out and only the Indexes tab asks for them.</param>
+    Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default, bool includeUsageStats = true);
 
     /// <summary>Foreign key constraints across every accessible table (catalog-only, no locks).</summary>
     Task<IReadOnlyList<DbForeignKey>> GetForeignKeysAsync(CancellationToken ct = default);

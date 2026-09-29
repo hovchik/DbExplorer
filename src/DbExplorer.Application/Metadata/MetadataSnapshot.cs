@@ -17,6 +17,10 @@ public sealed class MetadataSnapshot
     public required IReadOnlyList<DbIndex> Indexes { get; init; }
     public required DateTimeOffset RefreshedAt { get; init; }
 
+    /// <summary>Loaded from an older cache format that lacks some details: usable at once, but should be refreshed
+    /// from the server in the background.</summary>
+    public bool IsStale { get; init; }
+
     public IEnumerable<DbColumn> ColumnsOf(string database, string schema, string table)
     {
         var lookup = LazyInitializer.EnsureInitialized(

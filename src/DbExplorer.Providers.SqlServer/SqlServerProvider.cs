@@ -63,13 +63,13 @@ public sealed class SqlServerProvider : IDatabaseProvider
         return ScalarInDatabaseAsync<string?>(sql, new { name = SqlServerSql.QuoteFullName(obj.Schema, obj.Name) }, database, ct);
     }
 
-    public async Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default)
+    public async Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default, bool includeUsageStats = true)
     {
         async Task<IReadOnlyList<DbIndex>> QueryOneAsync(string? database, CancellationToken token)
         {
             try
             {
-                return await QueryInDatabaseAsync<DbIndex>(SqlServerQueries.Indexes(true, includePhysicalStats), null, database, token);
+                return await QueryInDatabaseAsync<DbIndex>(SqlServerQueries.Indexes(includeUsageStats, includePhysicalStats), null, database, token);
             }
             catch (SqlException ex) when (ex.Number is 297 or 300)
             {

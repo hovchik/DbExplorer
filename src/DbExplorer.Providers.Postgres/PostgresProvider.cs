@@ -60,7 +60,7 @@ public sealed class PostgresProvider : IDatabaseProvider
         return nonEmpty.Count == 0 ? null : string.Join("\n\n", nonEmpty);
     }
 
-    public Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<DbIndex>> GetIndexesAsync(bool includePhysicalStats, CancellationToken ct = default, bool includeUsageStats = true) =>
         // Fragmentation would need the pgstattuple extension, which scans the index; not used.
         QueryAcrossDatabasesAsync<DbIndex>(PostgresQueries.Indexes, (i, db) => i with { Database = db }, ct);
 

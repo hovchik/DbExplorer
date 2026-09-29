@@ -15,6 +15,10 @@ public sealed class MetadataCache(AppPaths paths)
 {
     private const string SchemaVersion = "5";
 
+    /// <summary>Older formats still read (missing details default), so an app update does not force a slow full
+    /// catalog read on the next connect; such snapshots are flagged <see cref="MetadataSnapshot.IsStale"/>.</summary>
+    private const string PreviousSchemaVersion = "4";
+
     public static string CacheKey(ConnectionProfile p)
     {
         var raw = $"{p.ProviderKey}|{p.Host}|{p.Port}|{p.Database}".ToLowerInvariant();
@@ -56,7 +60,9 @@ public sealed class MetadataCache(AppPaths paths)
         try
         {
             using var cn = Open(file);
-            if (ReadMeta(cn, "version") != SchemaVersion) return null;
+            var version = ReadMeta(cn, "version");
+            if (version != SchemaVersion && version != PreviousSchemaVersion) return null;
+            var stale = version != SchemaVersion;
             var refreshed = ReadMeta(cn, "refreshed_at");
             if (refreshed is null) return null;
 
@@ -84,7 +90,8 @@ public sealed class MetadataCache(AppPaths paths)
             var columns = new List<DbColumn>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key, is_identity FROM columns";
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key" +
+                                  (stale ? ", 0" : ", is_identity") + " FROM columns";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
@@ -179,7 +186,8 @@ public sealed class MetadataCache(AppPaths paths)
                 Modules = modules,
                 ForeignKeys = foreignKeys,
                 Indexes = indexes,
-                RefreshedAt = DateTimeOffset.Parse(refreshed, CultureInfo.InvariantCulture)
+                RefreshedAt = DateTimeOffset.Parse(refreshed, CultureInfo.InvariantCulture),
+                IsStale = stale
             };
         }
         catch (Exception ex) when (ex is SqliteException or FormatException or InvalidCastException or ArgumentException)

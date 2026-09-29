@@ -134,8 +134,20 @@ public partial class MainWindowViewModel : ViewModelBase
         if (Session is { } s) await s.DisposeAsync();
     }
 
+    partial void OnSessionChanging(DatabaseSession? value)
+    {
+        if (Session is { } old) old.SnapshotChanged -= OnSnapshotChanged;
+    }
+
+    /// <summary>A background catalog refresh (e.g. after an app update changed the cache format) finished.</summary>
+    private void OnSnapshotChanged(object? sender, EventArgs e)
+    {
+        if (sender is DatabaseSession s && ReferenceEquals(s, Session) && !IsBusy) StatusText = BuildStatus(s);
+    }
+
     partial void OnSessionChanged(DatabaseSession? value)
     {
+        if (value is not null) value.SnapshotChanged += OnSnapshotChanged;
         OnPropertyChanged(nameof(IsConnected));
         OnPropertyChanged(nameof(ConnectedEnvironment));
         OnPropertyChanged(nameof(ShowEnvironmentBanner));
@@ -211,7 +223,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             Session = await _sessions.ConnectAsync(profile);
-            StatusText = BuildStatus(Session);
+            StatusText = BuildStatus(Session) + (Session.Snapshot.IsStale ? " · updating metadata in the background…" : "");
         }
         catch (Exception ex)
         {

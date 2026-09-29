@@ -1,26 +1,74 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:views="using:DbExplorer.Desktop.Views"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
+  <UserControl.Styles>
+	<!-- Header content fills the header so the filter button sits at its right edge -->
+	<Style Selector="DataGridColumnHeader">
+	  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+	  <Setter Property="Padding" Value="8,0,4,0" />
+	</Style>
+	<Style Selector="DataGridRowHeader">
+	  <Setter Property="FontSize" Value="11" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="MinWidth" Value="36" />
+	  <Setter Property="Padding" Value="6,0" />
+	</Style>
+	<Style Selector="Button.headerFilter">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0" />
+	  <Setter Property="Padding" Value="4,2" />
+	  <Setter Property="MinHeight" Value="20" />
+	  <Setter Property="MinWidth" Value="20" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	</Style>
+	<Style Selector="Border.chip">
+	  <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+	  <Setter Property="BorderThickness" Value="1" />
+	  <Setter Property="CornerRadius" Value="10" />
+	  <Setter Property="Padding" Value="8,1,2,1" />
+	  <Setter Property="Margin" Value="0,0,6,4" />
+	</Style>
+	<Style Selector="Border.chip Button">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0" />
+	  <Setter Property="Padding" Value="4,0" />
+	  <Setter Property="MinHeight" Value="18" />
+	  <Setter Property="FontSize" Value="11" />
+	</Style>
+  </UserControl.Styles>
   <DockPanel>
 	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,2">
-	  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-		<TextBox x:Name="FilterBox" Width="200" MinHeight="26" Padding="6,2" FontSize="12" Watermark="Filter rows…"
-				 ToolTip.Tip="Show only rows where any cell contains this text" />
-		<TextBlock x:Name="RowCountText" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-		<TextBlock x:Name="AggregateText" Classes="hint" VerticalAlignment="Center" FontWeight="SemiBold"
+	  <WrapPanel Grid.Column="0" Orientation="Horizontal">
+		<TextBox x:Name="FilterBox" Width="220" MinHeight="26" Padding="6,2" FontSize="12" Margin="0,0,6,2"
+				 Watermark="Search all columns…"
+				 ToolTip.Tip="Show only rows where any cell contains this text (Ctrl+F in the grid, Esc clears)" />
+		<Button x:Name="ColumnsButton" Classes="compact" Content="Columns ▾" Margin="0,0,6,2"
+				ToolTip.Tip="Show, hide and find columns" />
+		<ToggleButton x:Name="DetailsToggle" Classes="compact" Content="Row details" Margin="0,0,6,2"
+					  MinHeight="26" Padding="10,2" FontSize="12" CornerRadius="6"
+					  ToolTip.Tip="Show the selected row as a list of column / value pairs — handy for wide results" />
+		<Button x:Name="ClearAllButton" Classes="compact" Content="Clear filters &amp; sort" Margin="0,0,10,2" IsVisible="False"
+				Click="OnClearAll" ToolTip.Tip="Remove every filter and sort and show all fetched rows" />
+		<TextBlock x:Name="RowCountText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" TextTrimming="CharacterEllipsis" />
+		<TextBlock x:Name="AggregateText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" FontWeight="SemiBold"
 				   ToolTip.Tip="Summary of the current column over the selected rows" />
-	  </StackPanel>
-	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+	  </WrapPanel>
+	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
 		<Button Classes="compact" Content="Copy ▾"
-				ToolTip.Tip="Copy every row. Ctrl+C (or right-click) copies the selected rows.">
+				ToolTip.Tip="Copy the rows in view. Ctrl+C (or right-click) copies the selected rows.">
 		  <Button.Flyout>
 			<MenuFlyout Placement="BottomEdgeAlignedRight">
-			  <MenuItem Header="All rows as text (pastes into Excel as cells)" Click="OnCopyAll" />
-			  <MenuItem Header="All rows as INSERT statements" Click="OnCopyAllInsert" />
+			  <MenuItem Header="Rows in view as text (pastes into Excel as cells)" Click="OnCopyAll" />
+			  <MenuItem Header="Rows in view as INSERT statements" Click="OnCopyAllInsert" />
+			  <Separator />
+			  <MenuItem Header="All fetched rows and columns as text (ignores filters)" Click="OnCopyEverything" />
 			</MenuFlyout>
 		  </Button.Flyout>
 		</Button>
-		<Button Classes="compact" Content="Export ▾">
+		<Button Classes="compact" Content="Export ▾"
+				ToolTip.Tip="Exports the rows and columns in view: filters, sort order and hidden columns apply">
 		  <Button.Flyout>
 			<MenuFlyout Placement="BottomEdgeAlignedRight">
 			  <MenuItem Header="CSV (.csv)…" Click="OnExportCsv" />
@@ -33,21 +81,63 @@
 		</Button>
 	  </StackPanel>
 	</Grid>
-	<DataGrid x:Name="Grid" IsReadOnly="True" AutoGenerateColumns="False"
-			  CanUserResizeColumns="True" CanUserSortColumns="True"
-			  SelectionMode="Extended"
-			  GridLinesVisibility="Horizontal">
-	  <DataGrid.ContextMenu>
-		<ContextMenu>
-		  <MenuItem Header="View cell value…" Click="OnViewCell" />
-		  <MenuItem Header="Copy cell value" Click="OnCopyCell" />
-		  <MenuItem Header="Copy selected rows" InputGesture="Ctrl+C" Click="OnCopySelected" />
-		  <MenuItem Header="Copy selected rows with header" Click="OnCopySelectedWithHeader" />
-		  <MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
-		  <Separator />
-		  <MenuItem Header="Copy all rows" Click="OnCopyAll" />
-		</ContextMenu>
-	  </DataGrid.ContextMenu>
-	</DataGrid>
+
+	<!-- Active column filters as removable chips -->
+	<WrapPanel x:Name="FilterChips" DockPanel.Dock="Top" Orientation="Horizontal" IsVisible="False" Margin="0,2,0,0" />
+
+	<Grid x:Name="BodyGrid" ColumnDefinitions="*,Auto,0">
+	  <DataGrid x:Name="Grid" Grid.Column="0" IsReadOnly="True" AutoGenerateColumns="False"
+				CanUserResizeColumns="True" CanUserSortColumns="True" CanUserReorderColumns="True"
+				SelectionMode="Extended" HeadersVisibility="All"
+				GridLinesVisibility="Horizontal" RowHeight="26">
+		<DataGrid.ContextMenu>
+		  <ContextMenu>
+			<MenuItem Header="View cell value…" InputGesture="Enter" Click="OnViewCell" />
+			<MenuItem Header="Copy cell value" Click="OnCopyCell" />
+			<MenuItem Header="Copy selected rows" InputGesture="Ctrl+C" Click="OnCopySelected" />
+			<MenuItem Header="Copy selected rows with header" Click="OnCopySelectedWithHeader" />
+			<MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
+			<Separator />
+			<MenuItem Header="Filter by this value" Click="OnFilterByCell" />
+			<MenuItem Header="Exclude this value" Click="OnExcludeCell" />
+			<MenuItem Header="Clear this column's filter" Click="OnClearCellColumnFilter" />
+			<Separator />
+			<MenuItem Header="Sort ascending" Click="OnSortCellColumnAsc" />
+			<MenuItem Header="Sort descending" Click="OnSortCellColumnDesc" />
+			<MenuItem Header="Hide this column" Click="OnHideCellColumn" />
+			<MenuItem Header="Freeze columns up to this one" Click="OnFreezeCellColumn" />
+			<Separator />
+			<MenuItem Header="Copy rows in view" Click="OnCopyAll" />
+		  </ContextMenu>
+		</DataGrid.ContextMenu>
+	  </DataGrid>
+	  <GridSplitter x:Name="DetailsSplitter" Grid.Column="1" Width="6" ResizeDirection="Columns" Background="Transparent" IsVisible="False" />
+	  <Border x:Name="DetailsPanel" Grid.Column="2" IsVisible="False" BorderThickness="1" CornerRadius="6"
+			  BorderBrush="{DynamicResource AppBorderBrush}" Padding="6">
+		<DockPanel>
+		  <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+			<TextBlock x:Name="DetailsTitle" Classes="section" Margin="0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+			<Button Grid.Column="1" Classes="compact" Content="✕" Padding="6,0" Click="OnCloseDetails" ToolTip.Tip="Close row details" />
+		  </Grid>
+		  <TextBox x:Name="DetailsFilterBox" DockPanel.Dock="Top" MinHeight="26" Padding="6,2" FontSize="12" Margin="0,0,0,4"
+				   Watermark="Find column…" />
+		  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+			<ItemsControl x:Name="DetailsList">
+			  <ItemsControl.ItemTemplate>
+				<DataTemplate x:DataType="views:RowDetailItem">
+				  <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}" Padding="2,4">
+					<StackPanel Spacing="1">
+					  <TextBlock Text="{Binding Name}" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis" />
+					  <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12.5"
+										   Opacity="{Binding Opacity}" FontStyle="{Binding FontStyle}" />
+					</StackPanel>
+				  </Border>
+				</DataTemplate>
+			  </ItemsControl.ItemTemplate>
+			</ItemsControl>
+		  </ScrollViewer>
+		</DockPanel>
+	  </Border>
+	</Grid>
   </DockPanel>
 </UserControl>

@@ -91,7 +91,10 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     }
 
     /// <summary>Opens <paramref name="sql"/> in a new tab (history, "script as", …).</summary>
-    public void OpenInNewTab(string sql, string? title = null) => AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false);
+    public void OpenInNewTab(string sql, string? title = null, string? database = null) =>
+        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database));
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 
     [RelayCommand]
     private async Task CloseTabAsync(QueryViewModel? doc)

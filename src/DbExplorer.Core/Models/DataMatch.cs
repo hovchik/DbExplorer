@@ -11,4 +11,8 @@ public sealed record DataMatch
 
     /// <summary>Primary key of the matching row, e.g. "Id=42", when the table has one.</summary>
     public string? RowKey { get; init; }
+
+    /// <summary>Primary key column/value pairs of the matching row (values as text; null = SQL NULL); empty when the
+    /// table has no primary key.</summary>
+    public IReadOnlyList<KeyValuePair<string, string?>> KeyValues { get; init; } = [];
 }

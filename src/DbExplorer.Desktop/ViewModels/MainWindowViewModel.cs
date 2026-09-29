@@ -64,6 +64,16 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
         };
+        dataSearch.ShowTableRequested += table =>
+        {
+            SelectedTab = AppTab.Objects;
+            objects.Reveal(table);
+        };
+        dataSearch.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
     }
 
     public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();

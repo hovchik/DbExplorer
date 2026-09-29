@@ -17,17 +17,42 @@ public partial class GetDataViewModel : ViewModelBase
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private IReadOnlyList<ResultSetView> _resultSets = [];
 
+    /// <summary>WHERE condition limiting the rows (e.g. one record found by data search); null = whole table.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFiltered))]
+    [NotifyCanExecuteChangedFor(nameof(ShowAllRowsCommand))]
+    private string? _filter;
+
+    [ObservableProperty] private string _filterDescription = "";
+
+    public bool IsFiltered => Filter is not null;
+
     private QueryExecutionService? _service;
     private DatabaseSession? _session;
     private DbObject? _table;
 
-    public void Initialize(QueryExecutionService service, DatabaseSession session, DbObject table)
+    /// <param name="filter">Optional WHERE condition, e.g. the primary key of one record.</param>
+    public void Initialize(QueryExecutionService service, DatabaseSession session, DbObject table,
+        string? filter = null, string? filterDescription = null)
     {
         _service = service;
         _session = session;
         _table = table;
-        Title = $"Data: {table.Schema}.{table.Name}";
+        Filter = filter;
+        FilterDescription = filterDescription ?? filter ?? "";
+        UpdateTitle();
         _ = LoadAsync();
+    }
+
+    private void UpdateTitle() =>
+        Title = $"Data: {_table?.Schema}.{_table?.Name}" + (IsFiltered ? $" — {FilterDescription}" : "");
+
+    [RelayCommand(CanExecute = nameof(IsFiltered))]
+    private async Task ShowAllRowsAsync()
+    {
+        Filter = null;
+        UpdateTitle();
+        await LoadAsync();
     }
 
     [RelayCommand]
@@ -40,7 +65,7 @@ public partial class GetDataViewModel : ViewModelBase
         try
         {
             var limit = Math.Max(1, (int)Limit);
-            var sql = BuildSelect(_table, limit, _session.Provider.ProviderKey, _session.Provider.QuoteIdentifier);
+            var sql = BuildSelect(_table, limit, _session.Provider.ProviderKey, _session.Provider.QuoteIdentifier, Filter);
             var result = await _service.ExecuteScriptAsync(_session, sql, _table.Database, timeoutSeconds: 60);
 
             ResultSets = result.ResultSets
@@ -61,13 +86,14 @@ public partial class GetDataViewModel : ViewModelBase
         }
     }
 
-    private static string BuildSelect(DbObject table, int limit, string providerKey, Func<string, string> quote)
+    private static string BuildSelect(DbObject table, int limit, string providerKey, Func<string, string> quote, string? filter)
     {
         var schema = quote(table.Schema);
         var name = quote(table.Name);
+        var where = filter is null ? "" : $" WHERE {filter}";
 
         return providerKey == SqlServerProviderKey
-            ? $"SELECT TOP ({limit}) * FROM {schema}.{name};"
-            : $"SELECT * FROM {schema}.{name} LIMIT {limit};";
+            ? $"SELECT TOP ({limit}) * FROM {schema}.{name}{where};"
+            : $"SELECT * FROM {schema}.{name}{where} LIMIT {limit};";
     }
 }

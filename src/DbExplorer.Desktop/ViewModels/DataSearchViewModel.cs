@@ -2,19 +2,24 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
 using DbExplorer.Core.Search;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
-public partial class DataSearchViewModel(DataSearchService service) : ViewModelBase, ISessionAware
+public partial class DataSearchViewModel(
+    DataSearchService service, QueryExecutionService queryService, IDialogService dialogs) : ViewModelBase, ISessionAware
 {
     private const int MaxDisplayedMatches = 20_000;
 
     private DatabaseSession? _session;
     private CancellationTokenSource? _cts;
+    private string _searchedTerm = "";
+    private IReadOnlyList<DataMatch> _selectedMatches = [];
 
     public IReadOnlyList<SearchMatchMode> Modes { get; } = Enum.GetValues<SearchMatchMode>();
 
@@ -41,6 +46,20 @@ public partial class DataSearchViewModel(DataSearchService service) : ViewModelB
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     private bool _isRunning;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenRecordCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GoToTableCommand))]
+    private DataMatch? _selectedMatch;
+
+    /// <summary>Summary of where the value was found, e.g. "in 3 tables".</summary>
+    [ObservableProperty] private string _foundInSummary = "";
+
+    /// <summary>Raised to reveal a table in the Objects tab.</summary>
+    public event Action<DbObject>? ShowTableRequested;
+
+    /// <summary>Raised to open SQL (text, database) in a new Query tab.</summary>
+    public event Action<string, string?>? OpenSqlRequested;
+
     public void Attach(DatabaseSession? session)
     {
         _cts?.Cancel();
@@ -48,7 +67,9 @@ public partial class DataSearchViewModel(DataSearchService service) : ViewModelB
         Matches.Clear();
         Skipped.Clear();
         Progress = 0;
+        FoundInSummary = "";
         StartCommand.NotifyCanExecuteChanged();
+        ShowRelationsCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanStart => _session is not null && !IsRunning;
@@ -76,9 +97,11 @@ public partial class DataSearchViewModel(DataSearchService service) : ViewModelB
         };
 
         _cts = new CancellationTokenSource();
+        _searchedTerm = Term;
         Matches.Clear();
         Skipped.Clear();
         Progress = 0;
+        FoundInSummary = "";
         IsRunning = true;
 
         var sw = Stopwatch.StartNew();
@@ -93,7 +116,12 @@ public partial class DataSearchViewModel(DataSearchService service) : ViewModelB
                 {
                     case DataMatchFound found:
                         matchCount++;
-                        if (Matches.Count < MaxDisplayedMatches) Matches.Add(found.Match);
+                        if (Matches.Count < MaxDisplayedMatches)
+                        {
+                            Matches.Add(found.Match);
+                            if (Matches.Count == 1) ShowRelationsCommand.NotifyCanExecuteChanged();
+                            UpdateFoundInSummary();
+                        }
                         break;
 
                     case TableSearched t:
@@ -131,6 +159,72 @@ public partial class DataSearchViewModel(DataSearchService service) : ViewModelB
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void Cancel() => _cts?.Cancel();
+
+    /// <summary>Rows currently selected in the results grid (set by the view).</summary>
+    public void SetSelectedMatches(IReadOnlyList<DataMatch> matches)
+    {
+        _selectedMatches = matches;
+        ShowRelationsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void UpdateFoundInSummary()
+    {
+        var tables = Matches.Select(m => (m.Database, m.Schema, m.Table)).Distinct().Count();
+        FoundInSummary = tables == 1 ? "Found in 1 table" : $"Found in {tables:N0} tables";
+    }
+
+    private bool HasSelectedMatch => SelectedMatch is not null;
+
+    /// <summary>Opens the found row (all its columns) in a data window, located by its primary key.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedMatch))]
+    private async Task OpenRecordAsync()
+    {
+        if (_session is null || SelectedMatch is not { } match) return;
+        var provider = _session.Provider;
+        var filter = DataMatchSql.RowPredicate(match, provider.ProviderKey, provider.QuoteIdentifier);
+        var description = match.RowKey ?? $"{match.Column} = {match.Value}";
+        await dialogs.ShowGetDataAsync(queryService, _session, ResolveTable(match), filter, description);
+    }
+
+    /// <summary>Opens the found row's SELECT in a new Query tab.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedMatch))]
+    private void OpenRecordSql()
+    {
+        if (_session is null || SelectedMatch is not { } match) return;
+        var provider = _session.Provider;
+        var sql = DataMatchSql.SelectRows(ResolveTable(match), [match], provider.ProviderKey, provider.QuoteIdentifier, limit: 100);
+        OpenSqlRequested?.Invoke(sql, match.Database);
+    }
+
+    /// <summary>Shows the matched table in the Objects tab (columns, keys, indexes, definition).</summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedMatch))]
+    private void GoToTable()
+    {
+        if (SelectedMatch is { } match) ShowTableRequested?.Invoke(ResolveTable(match));
+    }
+
+    private bool CanShowRelations => _session is not null && Matches.Count > 0;
+
+    /// <summary>
+    /// Diagram of the tables the value was found in, how they relate, and their rows combined. Uses the selected
+    /// results when more than one is selected, otherwise every result.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanShowRelations))]
+    private void ShowRelations()
+    {
+        if (_session is null || Matches.Count == 0) return;
+        var matches = _selectedMatches.Count > 1 ? _selectedMatches : Matches.ToList();
+        dialogs.ShowDataRelations(queryService, _session, _searchedTerm, matches,
+            (sql, database) => OpenSqlRequested?.Invoke(sql, database),
+            table => ShowTableRequested?.Invoke(table));
+    }
+
+    private DbObject ResolveTable(DataMatch m) =>
+        _session?.Snapshot.Objects.FirstOrDefault(o =>
+            string.Equals(o.Database, m.Database, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(o.Schema, m.Schema, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(o.Name, m.Table, StringComparison.OrdinalIgnoreCase))
+        ?? new DbObject { Database = m.Database, Schema = m.Schema, Name = m.Table, Type = DbObjectType.Table };
 
     private static int ToInt(decimal? value, int fallback, int min) =>
         value is decimal d ? Math.Max(min, (int)d) : fallback;

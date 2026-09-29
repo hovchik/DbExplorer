@@ -72,6 +72,7 @@ public partial class QueryView : UserControl
         Editor.PointerHoverStopped += (_, _) => HideHover();
         Editor.TextArea.AddHandler(PointerPressedEvent, OnEditorPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
         DataContextChanged += (_, _) => BindDocument();
 
@@ -285,6 +286,22 @@ public partial class QueryView : UserControl
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c is '_' or '@' or '#' or '$';
 
+    // ----- Editor / results split -----
+
+    private const double DefaultEditorShare = 2;
+    private const double DefaultResultsShare = 3;
+
+    /// <summary>Shares the height between editor and results (proportions; each keeps its minimum height).</summary>
+    private void SetSplit(double editor, double results)
+    {
+        LayoutGrid.RowDefinitions[1].Height = new GridLength(editor, GridUnitType.Star);
+        LayoutGrid.RowDefinitions[3].Height = new GridLength(results, GridUnitType.Star);
+    }
+
+    private void OnMaximizeResults(object? sender, RoutedEventArgs e) => SetSplit(1, 12);
+    private void OnMaximizeEditor(object? sender, RoutedEventArgs e) => SetSplit(12, 1);
+    private void OnResetLayout(object? sender, RoutedEventArgs e) => SetSplit(DefaultEditorShare, DefaultResultsShare);
+
     // ----- Keys -----
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)
@@ -308,6 +325,12 @@ public partial class QueryView : UserControl
         else if (ctrl && e.Key == Key.G) { OpenGoToLine(); e.Handled = true; }
         else if (ctrl && shift && e.Key == Key.U) { ChangeCase(upper: true); e.Handled = true; }
         else if (ctrl && alt && e.Key == Key.U) { ChangeCase(upper: false); e.Handled = true; }
+        else if (ctrl && shift && e.Key is Key.Up or Key.Down)
+        {
+            if (e.Key == Key.Up) SetSplit(1, 12);
+            else SetSplit(12, 1);
+            e.Handled = true;
+        }
         else if (alt && e.Key is Key.Up or Key.Down) { MoveLines(e.Key == Key.Up ? -1 : 1); e.Handled = true; }
         else if (e.Key == Key.F12) { e.Handled = true; await GoToDefinitionAsync(Editor.CaretOffset); }
         else if (e.Key == Key.Back && !ctrl && DeleteEmptyPair()) e.Handled = true;

@@ -92,11 +92,48 @@ public partial class ComparerViewModel(
     [ObservableProperty] private DbObject? _selectedLeftObject;
     [ObservableProperty] private DbObject? _selectedRightObject;
 
-    public bool HasMultipleLeftDatabases => LeftDatabases.Count > 1;
-    public bool HasMultipleRightDatabases => RightDatabases.Count > 1;
+    /// <summary>
+    /// A side's session seen through the catalog of its selected database, when the session's own snapshot does not
+    /// cover that database (e.g. a connection to Shop with Reports picked, or a database just created). Null when the
+    /// session's snapshot already has it.
+    /// </summary>
+    private (DatabaseSession View, string Database)? _leftScope, _rightScope;
 
-    partial void OnLeftDatabasesChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(HasMultipleLeftDatabases));
-    partial void OnRightDatabasesChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(HasMultipleRightDatabases));
+    /// <summary>The session every comparison and copy of a side goes through: its connection plus the selected database's catalog.</summary>
+    private DatabaseSession? LeftTarget => _leftScope?.View ?? LeftSession;
+    private DatabaseSession? RightTarget => _rightScope?.View ?? RightSession;
+
+    /// <summary>Set while a database list is replaced, so the picker's momentary reset does not count as a new pick.</summary>
+    private bool _replacingDatabases;
+
+    /// <summary>The right server's database list has been read (so a missing name really is missing).</summary>
+    private bool _rightServerDatabasesLoaded;
+
+    partial void OnLeftDatabasesChanged(IReadOnlyList<string> value) => RefreshMissingDatabase();
+    partial void OnRightDatabasesChanged(IReadOnlyList<string> value) => RefreshMissingDatabase();
+
+    /// <summary>The left database's name when the right server has no database of that name, so it can be created first.</summary>
+    public string? MissingRightDatabase =>
+        _rightServerDatabasesLoaded && LeftSession is not null && RightSession is not null &&
+        LeftDatabaseName is { Length: > 0 } name && !RightDatabases.Contains(name, StringComparer.OrdinalIgnoreCase)
+            ? name
+            : null;
+
+    public bool HasMissingRightDatabase => MissingRightDatabase is not null;
+    public string CreateRightDatabaseLabel => $"Create database {MissingRightDatabase} on the right";
+    public string MissingRightDatabaseHint =>
+        MissingRightDatabase is { } name ? $"{name} does not exist on {RightSession?.Profile.DisplayName}." : "";
+
+    private string? LeftDatabaseName => string.IsNullOrEmpty(SelectedLeftDatabase) ? LeftSession?.Profile.Database : SelectedLeftDatabase;
+
+    private void RefreshMissingDatabase()
+    {
+        OnPropertyChanged(nameof(MissingRightDatabase));
+        OnPropertyChanged(nameof(HasMissingRightDatabase));
+        OnPropertyChanged(nameof(CreateRightDatabaseLabel));
+        OnPropertyChanged(nameof(MissingRightDatabaseHint));
+        CreateRightDatabaseCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>One-line facts about the picked object (type, approximate rows, last modified).</summary>
     public string LeftObjectInfo => Describe(SelectedLeftObject);
@@ -113,6 +150,8 @@ public partial class ComparerViewModel(
         LeftSession is null && RightSession is null ? "Connect both sides to start: pick a saved connection and Connect, or Use current."
         : LeftSession is null ? "Connect the left side."
         : RightSession is null ? "Connect the right side."
+        : MissingRightDatabase is { } missing && SelectedRightObject is null
+            ? $"Database {missing} does not exist on the right: create it first, or pick another right database."
         : SelectedLeftObject is null && SelectedRightObject is null
             ? "Pick an object to compare, or run Compare all objects on the Overview tab."
         : SelectedLeftObject is null ? "Pick the left object."
@@ -201,12 +240,12 @@ public partial class ComparerViewModel(
         try
         {
             _allOverview = DatabaseSchemaComparer.Compare(
-                LeftSession.Snapshot, SelectedLeftDatabase, RightSession.Snapshot, SelectedRightDatabase, SchemaDiffOptions);
+                LeftTarget!.Snapshot, SelectedLeftDatabase, RightTarget!.Snapshot, SelectedRightDatabase, SchemaDiffOptions);
             var different = _allOverview.Count(e => e.Status != ObjectCompareStatus.Identical && e.Status != ObjectCompareStatus.NotCompared);
             OverviewStatus = different == 0
                 ? $"No differences in {_allOverview.Count:N0} object(s)"
                 : $"{different:N0} of {_allOverview.Count:N0} object(s) differ or exist on one side only";
-            OverviewStatus += $" · from cached metadata (left {LeftSession.Snapshot.RefreshedAt.LocalDateTime:g}, right {RightSession.Snapshot.RefreshedAt.LocalDateTime:g}); refresh metadata for the latest";
+            OverviewStatus += $" · from cached metadata (left {LeftTarget.Snapshot.RefreshedAt.LocalDateTime:g}, right {RightTarget.Snapshot.RefreshedAt.LocalDateTime:g}); refresh metadata for the latest";
         }
         catch (Exception ex)
         {
@@ -500,9 +539,11 @@ public partial class ComparerViewModel(
 
     partial void OnLeftSessionChanged(DatabaseSession? value)
     {
+        _leftScope = null;
         OnPropertyChanged(nameof(IsLeftConnected));
         OnPropertyChanged(nameof(LeftEnvironmentTag));
         OnPropertyChanged(nameof(LeftEnvironment));
+        RefreshMissingDatabase();
         ForgetReportSources();
         RefreshHints();
         RefreshCopyAnalysis();
@@ -510,9 +551,12 @@ public partial class ComparerViewModel(
 
     partial void OnRightSessionChanged(DatabaseSession? value)
     {
+        _rightScope = null;
+        _rightServerDatabasesLoaded = false;
         OnPropertyChanged(nameof(IsRightConnected));
         OnPropertyChanged(nameof(RightEnvironmentTag));
         OnPropertyChanged(nameof(RightEnvironment));
+        RefreshMissingDatabase();
         ForgetReportSources();
         RefreshHints();
         RefreshCopyAnalysis();
@@ -544,12 +588,8 @@ public partial class ComparerViewModel(
     {
         if (value is not null)
         {
-            var match = RightObjects.FirstOrDefault(o =>
-                o.Type == value.Type &&
-                string.Equals(o.Schema, value.Schema, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(o.Name, value.Name, StringComparison.OrdinalIgnoreCase));
             // A right object left over from the previous pick would pair two unrelated objects.
-            SelectedRightObject = match;
+            SelectedRightObject = MatchOnRight(value);
             SetCopyTarget(LeftSession is { } l && RightSession is { } r
                 ? ObjectCopyService.MapSchema(value.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey)
                 : value.Schema, value.Name);
@@ -559,6 +599,15 @@ public partial class ComparerViewModel(
         RefreshCommands();
         RefreshCopyAnalysis();
     }
+
+    /// <summary>The right object with the left object's type, schema and name, if any.</summary>
+    private DbObject? MatchOnRight(DbObject? left) =>
+        left is null
+            ? null
+            : RightObjects.FirstOrDefault(o =>
+                o.Type == left.Type &&
+                string.Equals(o.Schema, left.Schema, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(o.Name, left.Name, StringComparison.OrdinalIgnoreCase));
 
     partial void OnSelectedRightObjectChanged(DbObject? value)
     {
@@ -587,15 +636,174 @@ public partial class ComparerViewModel(
 
     partial void OnSelectedLeftDatabaseChanged(string? value)
     {
+        if (_replacingDatabases) return;
+        _leftScope = null;
         UpdateLeftObjects();
         RefreshHints();
+        RefreshMissingDatabase();
+        _ = ScopeToDatabaseAsync(isLeft: true);
     }
 
     partial void OnSelectedRightDatabaseChanged(string? value)
     {
+        if (_replacingDatabases) return;
+        _rightScope = null;
         UpdateRightObjects();
         RefreshHints();
         RefreshCopyAnalysis();
+        _ = ScopeToDatabaseAsync(isLeft: false);
+    }
+
+    /// <summary>A database the session's snapshot does not cover needs its own catalog (read once, then cached).</summary>
+    private static bool NeedsOwnCatalog(DatabaseSession session, string? database) =>
+        !string.IsNullOrEmpty(database) && !session.Snapshot.ContainsDatabase(database) &&
+        !string.Equals(session.Profile.Database, database, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Loads the selected database's catalog when the side's snapshot lacks it, then lists its objects.</summary>
+    private async Task ScopeToDatabaseAsync(bool isLeft)
+    {
+        var session = isLeft ? LeftSession : RightSession;
+        var database = isLeft ? SelectedLeftDatabase : SelectedRightDatabase;
+        if (session is null || !NeedsOwnCatalog(session, database) || IsScopedTo(isLeft, session, database!)) return;
+
+        var side = isLeft ? "Left" : "Right";
+        Status = $"{side}: loading the objects of {database}…";
+        try
+        {
+            var snapshot = await sessions.GetDatabaseSnapshotAsync(session, database!);
+            // The side may have moved on (another database or connection) while the catalog was read.
+            if (session != (isLeft ? LeftSession : RightSession) ||
+                !string.Equals(database, isLeft ? SelectedLeftDatabase : SelectedRightDatabase, StringComparison.Ordinal) ||
+                IsScopedTo(isLeft, session, database!))
+                return;
+
+            SetScope(isLeft, (session.WithSnapshot(snapshot), database!));
+            Status = $"{side}: {database} · {snapshot.Objects.Count:N0} object(s)";
+        }
+        catch (Exception ex)
+        {
+            Status = $"{side}: could not read the objects of {database}: {ex.Message}";
+        }
+    }
+
+    private bool IsScopedTo(bool isLeft, DatabaseSession session, string database) =>
+        (isLeft ? _leftScope : _rightScope) is { } scope && scope.View.Provider == session.Provider &&
+        string.Equals(scope.Database, database, StringComparison.OrdinalIgnoreCase);
+
+    private void SetScope(bool isLeft, (DatabaseSession View, string Database)? scope)
+    {
+        if (isLeft)
+        {
+            // An object picked while the catalog loaded stays picked when the new list has it.
+            var picked = SelectedLeftObject;
+            _leftScope = scope;
+            UpdateLeftObjects();
+            SelectedLeftObject = picked is null
+                ? null
+                : LeftObjects.FirstOrDefault(o => o.Type == picked.Type &&
+                                                  string.Equals(o.Schema, picked.Schema, StringComparison.OrdinalIgnoreCase) &&
+                                                  string.Equals(o.Name, picked.Name, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            _rightScope = scope;
+            UpdateRightObjects();
+            SelectedRightObject = MatchOnRight(SelectedLeftObject);
+            RefreshCopyAnalysis();
+        }
+        RefreshHints();
+    }
+
+    /// <summary>
+    /// Every database the side's server offers (not only those in the cached catalog), so the right side can target
+    /// any database, and a database missing there can be offered for creation.
+    /// </summary>
+    private async Task LoadServerDatabasesAsync(bool isLeft, DatabaseSession session)
+    {
+        try
+        {
+            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            if (session != (isLeft ? LeftSession : RightSession)) return;
+            SetDatabases(isLeft, MergeNames(names, isLeft ? LeftDatabases : RightDatabases, [session.Profile.Database]));
+        }
+        catch
+        {
+            // Without the server list the picker still offers the databases already in the catalog.
+        }
+        finally
+        {
+            if (!isLeft && session == RightSession)
+            {
+                _rightServerDatabasesLoaded = true;
+                RefreshMissingDatabase();
+                RefreshHints();
+            }
+        }
+    }
+
+    /// <summary>Replaces a side's database list, keeping the selected database (and its object list) as it is.</summary>
+    private void SetDatabases(bool isLeft, IReadOnlyList<string> databases)
+    {
+        var selected = isLeft ? SelectedLeftDatabase : SelectedRightDatabase;
+        _replacingDatabases = true;
+        try
+        {
+            if (isLeft) LeftDatabases = databases;
+            else RightDatabases = databases;
+            var keep = selected is null ? null : databases.FirstOrDefault(d => string.Equals(d, selected, StringComparison.OrdinalIgnoreCase)) ?? selected;
+            if (isLeft) SelectedLeftDatabase = keep;
+            else SelectedRightDatabase = keep;
+        }
+        finally
+        {
+            _replacingDatabases = false;
+        }
+    }
+
+    private static IReadOnlyList<string> MergeNames(params IEnumerable<string?>[] lists) =>
+        lists.SelectMany(l => l).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private bool CanCreateRightDatabase => MissingRightDatabase is not null && !IsBusy;
+
+    /// <summary>Creates the left database's name as an empty database on the right server and switches the right side to it.</summary>
+    [RelayCommand(CanExecute = nameof(CanCreateRightDatabase))]
+    private async Task CreateRightDatabaseAsync()
+    {
+        if (RightSession is not { } right || MissingRightDatabase is not { } name) return;
+
+        var message = $"Create the empty database {name} on {right.Profile.DisplayName}?\n\n" +
+                      "It gets the server's defaults (collation, files, owner). Objects can then be copied into it on the Copy & sync tab.";
+        var tag = right.Profile.Environment.ShortTag();
+        var confirmed = right.Profile.IsProduction
+            ? await dialogs.ConfirmAsync(message + "\n\nThe right side is PRODUCTION.", "Create on production",
+                requiredText: "PRODUCTION", banner: $"PRODUCTION · {right.Profile.DisplayName}")
+            : await dialogs.ConfirmAsync(message, "Create database", banner: tag is null ? null : $"{tag} · {right.Profile.DisplayName}");
+        if (!confirmed) return;
+
+        var ct = BeginOperation();
+        Status = $"Creating database {name} on {right.Profile.DisplayName}…";
+        try
+        {
+            await ObjectCopyService.CreateDatabaseAsync(right, name, ct);
+            if (right != RightSession) return;
+            SetDatabases(isLeft: false, MergeNames(RightDatabases, [name]));
+            SelectedRightDatabase = RightDatabases.First(d => string.Equals(d, name, StringComparison.OrdinalIgnoreCase));
+            Status = $"Database {name} created on {right.Profile.DisplayName}";
+            CopyStatus = $"Database {name} created on the right. Now copy the objects into it.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Cancelled";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not create database {name}: {ex.Message}";
+        }
+        finally
+        {
+            EndOperation();
+        }
     }
 
     private bool CanUseMain => _mainSession is not null && !IsBusy;
@@ -730,6 +938,7 @@ public partial class ComparerViewModel(
     {
         var (lp, ls, ldbs, ldb, lobj) = (LeftProfile, LeftSession, LeftDatabases, SelectedLeftDatabase, SelectedLeftObject);
         var (rp, rs, rdbs, rdb, robj) = (RightProfile, RightSession, RightDatabases, SelectedRightDatabase, SelectedRightObject);
+        var (lscope, rscope) = (_leftScope, _rightScope);
 
         LeftProfile = rp;
         RightProfile = lp;
@@ -739,6 +948,10 @@ public partial class ComparerViewModel(
         RightDatabases = ldbs;
         SelectedLeftDatabase = rdb;
         SelectedRightDatabase = ldb;
+        (_leftScope, _rightScope) = (rscope, lscope);
+        // Only the right server's list is known to be complete; re-read it for the side that became the right.
+        _rightServerDatabasesLoaded = false;
+        if (ls is not null) _ = LoadServerDatabasesAsync(isLeft: false, ls);
         UpdateLeftObjects();
         UpdateRightObjects();
         SelectedLeftObject = robj is null ? null : LeftObjects.FirstOrDefault(o => o == robj);
@@ -773,9 +986,11 @@ public partial class ComparerViewModel(
             await LeftSession.DisposeAsync();
         LeftSession = session;
         LeftDatabases = GetDatabases(session);
-        SelectedLeftDatabase = PreferredDatabase(session, LeftDatabases);
+        SelectedLeftDatabase = PreferredDatabase(session, LeftDatabases, RightDatabaseName);
         UpdateLeftObjects();
         RefreshCommands();
+        _ = ScopeToDatabaseAsync(isLeft: true);
+        await LoadServerDatabasesAsync(isLeft: true, session);
     }
 
     private async Task SetRightSessionAsync(DatabaseSession session)
@@ -784,15 +999,21 @@ public partial class ComparerViewModel(
             await RightSession.DisposeAsync();
         RightSession = session;
         RightDatabases = GetDatabases(session);
-        SelectedRightDatabase = PreferredDatabase(session, RightDatabases);
+        SelectedRightDatabase = PreferredDatabase(session, RightDatabases, LeftDatabaseName);
         UpdateRightObjects();
         RefreshCommands();
+        _ = ScopeToDatabaseAsync(isLeft: false);
+        await LoadServerDatabasesAsync(isLeft: false, session);
     }
 
-    /// <summary>The profile's own database when the server exposes several, otherwise the first one.</summary>
-    private static string? PreferredDatabase(DatabaseSession session, IReadOnlyList<string> databases) =>
+    /// <summary>The profile's own database when it names one; for a whole-server connection the other side's database
+    /// when the server has it (compare like with like), otherwise the first one.</summary>
+    private static string? PreferredDatabase(DatabaseSession session, IReadOnlyList<string> databases, string? otherSide) =>
         databases.FirstOrDefault(d => string.Equals(d, session.Profile.Database, StringComparison.OrdinalIgnoreCase))
+        ?? databases.FirstOrDefault(d => string.Equals(d, otherSide, StringComparison.OrdinalIgnoreCase))
         ?? (databases.Count > 0 ? databases[0] : null);
+
+    private string? RightDatabaseName => string.IsNullOrEmpty(SelectedRightDatabase) ? RightSession?.Profile.Database : SelectedRightDatabase;
 
     private static IReadOnlyList<string> GetDatabases(DatabaseSession session) =>
         session.Snapshot.Objects
@@ -804,13 +1025,13 @@ public partial class ComparerViewModel(
 
     private void UpdateLeftObjects()
     {
-        LeftObjects = ObjectsOf(LeftSession, SelectedLeftDatabase);
+        LeftObjects = ObjectsOf(LeftTarget, SelectedLeftDatabase);
         SelectedLeftObject = null;
     }
 
     private void UpdateRightObjects()
     {
-        RightObjects = ObjectsOf(RightSession, SelectedRightDatabase);
+        RightObjects = ObjectsOf(RightTarget, SelectedRightDatabase);
         SelectedRightObject = null;
     }
 
@@ -849,7 +1070,7 @@ public partial class ComparerViewModel(
     {
         if (LeftSession is null || RightSession is null || SelectedLeftObject is null || SelectedRightObject is null) return;
 
-        var (leftSession, leftObject, rightSession, rightObject) = (LeftSession, SelectedLeftObject, RightSession, SelectedRightObject);
+        var (leftSession, leftObject, rightSession, rightObject) = (LeftTarget!, SelectedLeftObject, RightTarget!, SelectedRightObject);
         var ct = BeginOperation();
         SchemaStatus = "Comparing definitions…";
         try
@@ -916,7 +1137,7 @@ public partial class ComparerViewModel(
             return;
         }
 
-        var (leftSession, leftObject, rightSession, rightObject) = (LeftSession, SelectedLeftObject, RightSession, SelectedRightObject);
+        var (leftSession, leftObject, rightSession, rightObject) = (LeftTarget!, SelectedLeftObject, RightTarget!, SelectedRightObject);
         var ct = BeginOperation();
         DataStatus = "Comparing data…";
         try
@@ -995,7 +1216,7 @@ public partial class ComparerViewModel(
         try
         {
             var limit = Math.Max(1, (int)RowLimit);
-            var result = await comparer.LoadTableDataAsync(LeftSession, SelectedLeftObject, limit, ct);
+            var result = await comparer.LoadTableDataAsync(LeftTarget!, SelectedLeftObject, limit, ct);
             var rs = result.ResultSets.FirstOrDefault();
             LeftDataResult = rs is null
                 ? null
@@ -1028,7 +1249,7 @@ public partial class ComparerViewModel(
         try
         {
             var limit = Math.Max(1, (int)RowLimit);
-            var result = await comparer.LoadTableDataAsync(RightSession, SelectedRightObject, limit, ct);
+            var result = await comparer.LoadTableDataAsync(RightTarget!, SelectedRightObject, limit, ct);
             var rs = result.ResultSets.FirstOrDefault();
             RightDataResult = rs is null
                 ? null
@@ -1079,6 +1300,7 @@ public partial class ComparerViewModel(
         LoadRightDataCommand.NotifyCanExecuteChanged();
         LoadBothDataCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        CreateRightDatabaseCommand.NotifyCanExecuteChanged();
         RefreshCopyCommands();
     }
 }

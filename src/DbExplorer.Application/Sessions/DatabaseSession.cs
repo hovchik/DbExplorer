@@ -32,5 +32,15 @@ public sealed class DatabaseSession(
         SnapshotChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public ValueTask DisposeAsync() => Provider.DisposeAsync();
+    /// <summary>False for a view made by <see cref="WithSnapshot"/>: it borrows the provider and must not dispose it.</summary>
+    public bool OwnsProvider { get; private init; } = true;
+
+    /// <summary>
+    /// The same connection seen through another catalog, e.g. one database of the server that the session's own
+    /// snapshot does not cover. The view shares the provider (disposing it does nothing) and never refreshes itself.
+    /// </summary>
+    public DatabaseSession WithSnapshot(MetadataSnapshot snapshot) =>
+        new(Profile, Factory, Provider, ServerVersion, snapshot) { OwnsProvider = false };
+
+    public ValueTask DisposeAsync() => OwnsProvider ? Provider.DisposeAsync() : ValueTask.CompletedTask;
 }

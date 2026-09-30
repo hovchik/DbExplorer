@@ -30,6 +30,9 @@ public abstract class SqlDialect
 
     public string Table(string schema, string name) => Quote(schema) + "." + Quote(name);
 
+    /// <summary>Creates an empty database with the server's defaults (must run outside a transaction).</summary>
+    public string CreateDatabase(string name) => $"CREATE DATABASE {Quote(name)};";
+
     /// <summary>Ends a step. SQL Server splits scripts on GO, so DDL that must start a batch (CREATE VIEW, ...) gets one.</summary>
     public abstract string EndOfStep { get; }
 

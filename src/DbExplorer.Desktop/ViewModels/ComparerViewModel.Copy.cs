@@ -11,6 +11,54 @@ namespace DbExplorer.Desktop.ViewModels;
 /// <summary>One choice of the Copy &amp; sync tab, with what it does in plain words.</summary>
 public sealed record CopyActionOption(CopyAction Action, string Label, string Description);
 
+/// <summary>One step of the copy plan in the steps list, with how it went while the plan runs.</summary>
+public sealed partial class CopyStepItem(CopyStep step) : ObservableObject
+{
+    public CopyStep Step { get; } = step;
+    public string Title => Step.Title;
+    public CopyStepKind Kind => Step.Kind;
+
+    [ObservableProperty] private CopyStepState _state = CopyStepState.Pending;
+    [ObservableProperty] private string _details = "";
+
+    /// <summary>"✓ Done", "✗ Failed", ...: short enough for a narrow column; the details say why.</summary>
+    public string StateText => State switch
+    {
+        CopyStepState.Pending => "",
+        CopyStepState.Running => "▶ Running…",
+        CopyStepState.Done => "✓ Done",
+        CopyStepState.Failed => "✗ Failed",
+        CopyStepState.RolledBack => "↺ Rolled back",
+        _ => "– Not run"
+    };
+
+    public bool IsDone => State == CopyStepState.Done;
+    public bool IsFailed => State == CopyStepState.Failed;
+    public bool IsRunning => State == CopyStepState.Running;
+    public bool IsUndone => State is CopyStepState.RolledBack or CopyStepState.NotRun;
+
+    partial void OnStateChanged(CopyStepState value)
+    {
+        OnPropertyChanged(nameof(StateText));
+        OnPropertyChanged(nameof(IsDone));
+        OnPropertyChanged(nameof(IsFailed));
+        OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsUndone));
+    }
+
+    public void Apply(CopyStepUpdate update)
+    {
+        State = update.State;
+        Details = update.Details ?? "";
+    }
+
+    public void Reset()
+    {
+        State = CopyStepState.Pending;
+        Details = "";
+    }
+}
+
 /// <summary>
 /// Copy &amp; sync tab: creates the left object on the right when it is missing, or merges / replaces the
 /// data (or definition) when it exists. The analysis is instant (cached metadata); Preview builds the exact
@@ -22,6 +70,10 @@ public partial class ComparerViewModel
 
     private CopyAnalysis? _copyAnalysis;
     private CopyPlan? _copyPlan;
+
+    /// <summary>The plan that last ran: its steps keep showing how each went, and its script can still be saved,
+    /// but running again builds a fresh plan against the changed right side.</summary>
+    private CopyPlan? _ranCopyPlan;
 
     [ObservableProperty] private string _copyTargetSchema = "";
     [ObservableProperty] private string _copyTargetName = "";
@@ -49,7 +101,7 @@ public partial class ComparerViewModel
     [ObservableProperty] private decimal _copyMaxRows = 100_000;
 
     [ObservableProperty] private string _copyPlanSummary = "";
-    [ObservableProperty] private IReadOnlyList<CopyStep> _copySteps = [];
+    [ObservableProperty] private IReadOnlyList<CopyStepItem> _copySteps = [];
     [ObservableProperty] private IReadOnlyList<string> _copyNotes = [];
     [ObservableProperty] private string _copyScriptPreview = "";
     [ObservableProperty] private string _copyStatus = "";
@@ -58,6 +110,9 @@ public partial class ComparerViewModel
     public bool HasCopyNotes => CopyNotes.Count > 0;
     public bool HasCopyActions => CopyActions.Count > 0;
     public bool HasCopyPlan => _copyPlan is not null;
+
+    /// <summary>A plan is previewed or has just run: its steps and script are on screen.</summary>
+    public bool HasCopySteps => _copyPlan is not null || _ranCopyPlan is not null;
     public bool HasCopyColumnInfo => CopyColumnInfo.Length > 0;
 
     private CopyAction? SelectedAction => SelectedCopyAction?.Action;
@@ -86,7 +141,7 @@ public partial class ComparerViewModel
           $" · {_copyAnalysis.TargetFullName} " +
           (_copyAnalysis.TargetExists ? $"(exists{RowsText(_copyAnalysis.Target?.RowCount)})" : "(missing)");
 
-    public string CopyScript => _copyPlan?.Script ?? "";
+    public string CopyScript => (_copyPlan ?? _ranCopyPlan)?.Script ?? "";
 
     public string CopyScriptFileStem =>
         $"copy-{_copyAnalysis?.TargetFullName ?? "object"}-{DateTime.Now:yyyyMMdd-HHmmss}".Replace(' ', '_');
@@ -198,7 +253,7 @@ public partial class ComparerViewModel
     /// <summary>The left object against the selected right database under the given target name (cached metadata only).</summary>
     private CopyAnalysis? AnalyzeCopy(DbObject source, string targetSchema, string targetName)
     {
-        if (LeftSession is not { } left || RightSession is not { } right) return null;
+        if (LeftTarget is not { } left || RightTarget is not { } right) return null;
         var sameServer = left == right ||
                          (left.Profile.ProviderKey == right.Profile.ProviderKey &&
                           string.Equals(left.Profile.Host, right.Profile.Host, StringComparison.OrdinalIgnoreCase) &&
@@ -274,21 +329,24 @@ public partial class ComparerViewModel
 
     private void InvalidateCopyPlan()
     {
-        if (_copyPlan is null && CopySteps.Count == 0 && CopyPlanSummary.Length == 0) return;
+        if (_copyPlan is null && _ranCopyPlan is null && CopySteps.Count == 0 && CopyPlanSummary.Length == 0) return;
         _copyPlan = null;
+        _ranCopyPlan = null;
         CopySteps = [];
         CopyNotes = [];
         CopyScriptPreview = "";
         CopyPlanSummary = "";
         OnPropertyChanged(nameof(HasCopyPlan));
+        OnPropertyChanged(nameof(HasCopySteps));
         OnPropertyChanged(nameof(CopyScript));
         RefreshCopyCommands();
     }
 
-    private void ShowCopyPlan(CopyPlan plan)
+    private void ShowCopyPlan(CopyPlan plan, IReadOnlyList<CopyStepItem>? steps = null)
     {
         _copyPlan = plan;
-        CopySteps = plan.Steps;
+        _ranCopyPlan = null;
+        CopySteps = steps ?? plan.Steps.Select(s => new CopyStepItem(s)).ToList();
         CopyNotes = plan.Notes;
         var script = plan.Script;
         CopyScriptPreview = script.Length <= MaxScriptPreviewLength
@@ -297,6 +355,19 @@ public partial class ComparerViewModel
               $"\n\n-- … preview truncated: the full script is {script.Length:N0} characters; use Save script or Copy script.";
         CopyPlanSummary = plan.Summary;
         OnPropertyChanged(nameof(HasCopyPlan));
+        OnPropertyChanged(nameof(HasCopySteps));
+        OnPropertyChanged(nameof(CopyScript));
+        RefreshCopyCommands();
+    }
+
+    /// <summary>After a run the plan is spent (the right side changed), but its steps stay on screen with their outcome.</summary>
+    private void KeepRunResult(CopyPlan plan, IReadOnlyList<CopyStepItem> steps)
+    {
+        ShowCopyPlan(plan, steps);
+        _copyPlan = null;
+        _ranCopyPlan = plan;
+        OnPropertyChanged(nameof(HasCopyPlan));
+        OnPropertyChanged(nameof(HasCopySteps));
         OnPropertyChanged(nameof(CopyScript));
         RefreshCopyCommands();
     }
@@ -329,10 +400,10 @@ public partial class ComparerViewModel
 
     private async Task<CopyPlan?> BuildCopyPlanAsync(CancellationToken ct)
     {
-        if (LeftSession is null || RightSession is null || _copyAnalysis is null || SelectedAction is not { } action) return null;
+        if (LeftTarget is not { } left || RightTarget is not { } right || _copyAnalysis is null || SelectedAction is not { } action) return null;
         CopyStatus = "Preparing the copy…";
         var progress = new Progress<string>(message => CopyStatus = message);
-        var plan = await copier.BuildPlanAsync(LeftSession, RightSession, _copyAnalysis, action, CurrentCopyOptions(), progress, ct);
+        var plan = await copier.BuildPlanAsync(left, right, _copyAnalysis, action, CurrentCopyOptions(), progress, ct);
         ShowCopyPlan(plan);
         CopyStatus = plan.IsEmpty ? "Nothing to do: the right side already matches." : $"Ready: {plan.Steps.Count:N0} step(s). Review the script, then Run.";
         return plan;
@@ -342,9 +413,11 @@ public partial class ComparerViewModel
     [RelayCommand(CanExecute = nameof(CanPlanCopy))]
     private async Task RunCopyAsync()
     {
-        if (LeftSession is not { } left || RightSession is not { } right || _copyAnalysis is not { } analysis) return;
+        if (LeftTarget is not { } left || RightTarget is not { } right || _copyAnalysis is not { } analysis) return;
 
         var ct = BeginOperation();
+        CopyPlan? ran = null;
+        IReadOnlyList<CopyStepItem> steps = [];
         try
         {
             var plan = _copyPlan ?? await BuildCopyPlanAsync(ct);
@@ -361,8 +434,16 @@ public partial class ComparerViewModel
                 return;
             }
 
+            // Every step is marked running, done or failed as it goes (and rolled back / not run after a failure).
+            steps = CopySteps;
+            foreach (var step in steps) step.Reset();
+            ran = plan;
             var progress = new Progress<string>(message => CopyStatus = message);
-            var result = await copier.ExecuteAsync(left, right, plan, progress, ct);
+            var stepProgress = new Progress<CopyStepUpdate>(u =>
+            {
+                if (u.Index >= 0 && u.Index < steps.Count) steps[u.Index].Apply(u);
+            });
+            var result = await copier.ExecuteAsync(left, right, plan, progress, ct, stepProgress);
             var done = $"{ObjectCopyService.Humanize(plan.Action)} finished in {result.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture)} s" +
                        (result.RowsAffected > 0 ? $" · {result.RowsAffected:N0} row(s) affected" : "");
             CopyStatus = done;
@@ -379,14 +460,13 @@ public partial class ComparerViewModel
             if (CopyRefreshAfter)
             {
                 CopyStatus = done + " · refreshing right metadata…";
-                await sessions.RefreshMetadataAsync(right, ct);
+                await RefreshRightCatalogAsync(ct);
                 ReloadRightAfterCopy(analysis);
                 CopyStatus = done;
             }
-            else
-            {
-                InvalidateCopyPlan();
-            }
+
+            KeepRunResult(plan, steps);
+            ran = null;
         }
         catch (OperationCanceledException)
         {
@@ -398,8 +478,21 @@ public partial class ComparerViewModel
         }
         finally
         {
+            // A later refresh may have replaced the list; the executed steps and their outcome stay visible.
+            if (ran is not null && !ReferenceEquals(CopySteps, steps)) KeepRunResult(ran, steps);
             EndOperation();
         }
+    }
+
+    /// <summary>Re-reads the right catalog of the selected database after a change there, keeping the side scoped to it.</summary>
+    private async Task RefreshRightCatalogAsync(CancellationToken ct)
+    {
+        if (RightSession is not { } right) return;
+        var database = SelectedRightDatabase;
+        var snapshot = await sessions.RefreshDatabaseSnapshotAsync(right, database, ct);
+        if (right != RightSession || !string.Equals(database, SelectedRightDatabase, StringComparison.Ordinal)) return;
+        _rightScope = NeedsOwnCatalog(right, database) ? (right.WithSnapshot(snapshot), database!) : null;
+        SetDatabases(isLeft: false, MergeNames(RightDatabases, GetDatabases(right)));
     }
 
     private Task<bool> ConfirmCopyAsync(DatabaseSession right, CopyPlan plan)
@@ -426,7 +519,6 @@ public partial class ComparerViewModel
     private void ReloadRightAfterCopy(CopyAnalysis analysis)
     {
         if (RightSession is null) return;
-        RightDatabases = GetDatabases(RightSession);
         if (!string.IsNullOrEmpty(analysis.TargetDatabase) &&
             RightDatabases.Contains(analysis.TargetDatabase, StringComparer.OrdinalIgnoreCase) &&
             !string.Equals(SelectedRightDatabase, analysis.TargetDatabase, StringComparison.OrdinalIgnoreCase))

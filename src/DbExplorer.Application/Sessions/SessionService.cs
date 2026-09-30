@@ -76,6 +76,29 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
         return await metadata.LoadAsync(profile, provider, forceRefresh: false);
     }
 
+    /// <summary>
+    /// Re-reads the catalog of one database of the session's server and returns it: the session's own snapshot when
+    /// it covers that database, otherwise a fresh read over a short-lived connection, which later
+    /// <see cref="GetDatabaseSnapshotAsync"/> calls then return.
+    /// </summary>
+    public async Task<MetadataSnapshot> RefreshDatabaseSnapshotAsync(DatabaseSession session, string? database, CancellationToken ct = default)
+    {
+        var own = string.IsNullOrEmpty(database) || string.Equals(session.Profile.Database, database, StringComparison.OrdinalIgnoreCase);
+        if (own || session.Snapshot.ContainsDatabase(database!))
+        {
+            await RefreshMetadataAsync(session, ct);
+            if (own) return session.Snapshot;
+            if (session.Snapshot.ContainsDatabase(database!)) return session.Snapshot.ForDatabase(database!);
+        }
+
+        var profile = session.Profile.Clone();
+        profile.Database = database!;
+        await using var provider = session.Factory.Create(profile);
+        var fresh = await metadata.LoadAsync(profile, provider, forceRefresh: true, ct);
+        session.DatabaseSnapshots[database!] = new Lazy<Task<MetadataSnapshot>>(() => Task.FromResult(fresh));
+        return fresh;
+    }
+
     public async Task RefreshMetadataAsync(DatabaseSession session, CancellationToken ct = default)
     {
         var snapshot = await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct);

@@ -289,7 +289,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     public async Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue)
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue,
+        ReadOnlyScript? readOnly = null)
     {
         var sw = Stopwatch.StartNew();
         var connectionString = SqlServerSql.BuildConnectionString(
@@ -300,7 +301,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
         cn.InfoMessage += (_, e) => messages.Add(e.Message);
         await cn.OpenAsync(ct);
 
-        var (resultSets, rowsAffected) = await RunBatchesAsync(cn, null, sql, timeoutSeconds, maxRows, ct);
+        var (resultSets, rowsAffected) = await RunBatchesAsync(cn, null, sql, timeoutSeconds, maxRows, readOnly, ct);
         return new QueryExecutionResult
         {
             ResultSets = resultSets,
@@ -312,11 +313,48 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     /// <summary>
     /// Runs every GO-separated batch on the connection, keeping at most <paramref name="maxRows"/> rows per result set
-    /// (the rest is read and discarded so later statements still run). Server errors are rethrown as
+    /// (the rest is read and discarded so later statements still run, unless a read-only script lets the server stop). Server errors are rethrown as
     /// <see cref="SqlExecutionException"/> with the line in the whole script, not in the batch.
     /// </summary>
     private static async Task<(List<QueryResultSet> ResultSets, int RowsAffected)> RunBatchesAsync(
-        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, CancellationToken ct)
+        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, ReadOnlyScript? readOnly, CancellationToken ct)
+    {
+        if (readOnly is null || maxRows is <= 0 or int.MaxValue)
+            return await RunBatchesAsync(cn, tx, sql, timeoutSeconds, maxRows, stoppedOnServer: false, ct);
+
+        // SET ROWCOUNT makes the server stop every result set one row past the limit (and plan for that many rows):
+        // a SELECT over a huge table costs what is shown, not the whole scan. It also caps INSERT/UPDATE/DELETE, which is
+        // why it is only used for read-only scripts, and it outlives the script on the connection, so it is always
+        // reset — and a connection where the reset failed never goes back to the pool.
+        await SetRowCountAsync(cn, tx, maxRows + 1, ct);
+        try
+        {
+            return await RunBatchesAsync(cn, tx, sql, timeoutSeconds, maxRows, stoppedOnServer: true, ct);
+        }
+        finally
+        {
+            try
+            {
+                await SetRowCountAsync(cn, tx, 0, CancellationToken.None);
+            }
+            catch
+            {
+                SqlConnection.ClearPool(cn);
+            }
+        }
+    }
+
+    private static async Task SetRowCountAsync(SqlConnection cn, SqlTransaction? tx, int rows, CancellationToken ct)
+    {
+        await using var cmd = cn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"SET ROWCOUNT {rows};";
+        cmd.CommandTimeout = 30;
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task<(List<QueryResultSet> ResultSets, int RowsAffected)> RunBatchesAsync(
+        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, bool stoppedOnServer, CancellationToken ct)
     {
         var resultSets = new List<QueryResultSet>();
         var rowsAffected = 0;
@@ -349,7 +387,12 @@ public sealed class SqlServerProvider : IDatabaseProvider
                                 if (row[i] == DBNull.Value) row[i] = null;
                             rows.Add(row);
                         }
-                        resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = total > maxRows });
+                        var truncated = total > maxRows;
+                        resultSets.Add(new QueryResultSet
+                        {
+                            Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = truncated,
+                            TotalRowCountIsExact = !(truncated && stoppedOnServer)
+                        });
                     }
                     else
                     {
@@ -533,7 +576,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
             return affected;
         }
 
-        public async Task<QueryExecutionResult> QueryAsync(string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default)
+        public async Task<QueryExecutionResult> QueryAsync(
+            string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default, ReadOnlyScript? readOnly = null)
         {
             var sw = Stopwatch.StartNew();
             var messages = new List<string>();
@@ -541,7 +585,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
             connection.InfoMessage += OnInfo;
             try
             {
-                var (resultSets, rowsAffected) = await RunBatchesAsync(connection, transaction, sql, timeoutSeconds, maxRows, ct);
+                var (resultSets, rowsAffected) = await RunBatchesAsync(connection, transaction, sql, timeoutSeconds, maxRows, readOnly, ct);
                 return new QueryExecutionResult { ResultSets = resultSets, RowsAffected = rowsAffected, Messages = messages, Elapsed = sw.Elapsed };
             }
             finally

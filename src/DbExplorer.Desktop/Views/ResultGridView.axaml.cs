@@ -669,7 +669,7 @@ public partial class ResultGridView : UserControl
             : $"{_viewRows.Count:N0} of {rs.Rows.Count:N0} row(s)";
         var visible = _columns.Count(c => c.Column.IsVisible);
         var columns = visible == _columns.Count ? $"{_columns.Count:N0} column(s)" : $"{visible:N0} of {_columns.Count:N0} column(s)";
-        var truncated = rs.IsTruncated ? $" · first {rs.Rows.Count:N0} of {rs.TotalRowCount:N0} (row limit)" : "";
+        var truncated = rs.IsTruncated ? $" · first {rs.Rows.Count:N0} of {rs.TotalRowsText} (row limit)" : "";
         var sorted = _state.Sorts.Count == 0 ? "" : " · sorted by " + string.Join(", ",
             _state.Sorts.Where(s => s.Column < _columns.Count).Select(s => $"{_columns[s.Column].Name} {(s.Descending ? "↓" : "↑")}"));
         RowCountText.Text = $"{rows} · {columns}{truncated}{sorted}";

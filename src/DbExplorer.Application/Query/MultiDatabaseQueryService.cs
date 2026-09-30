@@ -20,7 +20,7 @@ public sealed class MultiDatabaseQueryService(QueryExecutionService queryService
 
     public async Task<IReadOnlyList<DatabaseRunResult>> RunAsync(
         DatabaseSession session, string sql, IReadOnlyList<string> databases, int timeoutSeconds,
-        int maxParallel = 4, IProgress<int>? completed = null, CancellationToken ct = default)
+        int maxParallel = 4, IProgress<int>? completed = null, CancellationToken ct = default, int maxRows = int.MaxValue)
     {
         var results = new ConcurrentDictionary<string, DatabaseRunResult>(StringComparer.OrdinalIgnoreCase);
         var done = 0;
@@ -33,7 +33,7 @@ public sealed class MultiDatabaseQueryService(QueryExecutionService queryService
         {
             try
             {
-                var result = await queryService.ExecuteScriptAsync(session, sql, database, timeoutSeconds, token);
+                var result = await queryService.ExecuteScriptAsync(session, sql, database, timeoutSeconds, token, maxRows);
                 results[database] = new DatabaseRunResult(database, result, null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)

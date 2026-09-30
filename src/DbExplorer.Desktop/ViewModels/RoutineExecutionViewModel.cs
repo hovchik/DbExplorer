@@ -37,11 +37,18 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
     public bool IsTruncated { get; init; }
     public long TotalRowCount { get; init; }
 
+    /// <summary>False when reading stopped at the row limit on the server: the full size is unknown.</summary>
+    public bool TotalRowCountIsExact { get; init; } = true;
+
+    /// <summary>"12,345" or, when reading stopped at the limit, "more than 10,000".</summary>
+    public string TotalRowsText => TotalRowCountIsExact ? $"{TotalRowCount:N0}" : $"more than {Rows.Count:N0}";
+
     public static ResultSetView From(string title, QueryResultSet rs, DatabaseSession session, string? sourceTable = null) =>
         new(title, rs.Columns, rs.Rows.Select(r => new ResultRow(r)).ToList())
         {
             IsTruncated = rs.IsTruncated,
             TotalRowCount = rs.TotalRowCount,
+            TotalRowCountIsExact = rs.TotalRowCountIsExact,
             SourceTable = sourceTable,
             Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
             Quote = session.Provider.QuoteIdentifier

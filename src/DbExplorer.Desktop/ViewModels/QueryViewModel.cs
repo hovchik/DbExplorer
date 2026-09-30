@@ -414,8 +414,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private void ShowResult(DatabaseSession session, QueryExecutionResult result, string prefix = "")
     {
         ResultSets = result.ResultSets
-            .Select((rs, i) => ResultSetView.From(
-                $"Result {i + 1}" + (rs.IsTruncated ? $" (first {rs.Rows.Count:N0} of {rs.TotalRowCount:N0})" : ""), rs, session))
+            .Select((rs, i) => ResultSetView.From($"Result {i + 1}", rs, session))
+            .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
 
         foreach (var m in result.Messages) Messages.Add(m);
@@ -423,7 +423,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Status = prefix + $"Completed in {result.Elapsed.TotalMilliseconds:N0} ms" +
                  (result.RowsAffected > 0 ? $" · {result.RowsAffected:N0} row(s) affected" : "") +
                  (result.ResultSets.Count > 0 ? $" · {result.ResultSets.Count} result set(s)" : "") +
-                 (truncated.Count > 0 ? $" · showing the first {RowLimit:N0} rows (raise the row limit to see more)" : "");
+                 (truncated.Count == 0 ? "" :
+                  truncated.All(r => !r.TotalRowCountIsExact)
+                      ? $" · stopped at the row limit ({RowLimit:N0}) without reading the rest (raise the limit to see more)"
+                      : $" · showing the first {RowLimit:N0} rows (raise the row limit to see more)");
     }
 
     private async Task RunOnDatabasesAsync(DatabaseSession session, string sql, IReadOnlyList<string> databases, CancellationToken ct)
@@ -432,7 +435,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Status = $"Running on {databases.Count} database(s)…";
         var progress = new Progress<int>(n => Status = $"Running… {n}/{databases.Count} database(s) done");
 
-        var results = await multiQuery.RunAsync(session, sql, databases, TimeoutSeconds, (int)Math.Clamp(Parallelism, 1, 16), progress, ct);
+        var results = await multiQuery.RunAsync(session, sql, databases, TimeoutSeconds, (int)Math.Clamp(Parallelism, 1, 16), progress, ct, RowLimit);
 
         var merged = MultiDatabaseQueryService.Merge(results);
         ResultSets = merged
@@ -451,6 +454,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             {
                 var rows = r.Result!.ResultSets.Sum(s => s.Rows.Count);
                 Messages.Add($"✓ {r.Database}: {rows:N0} row(s)" +
+                             (r.Result.ResultSets.Any(s => s.IsTruncated) ? $" (row limit {RowLimit:N0} reached)" : "") +
                              (r.Result.RowsAffected > 0 ? $", {r.Result.RowsAffected:N0} affected" : "") +
                              $" in {r.Result.Elapsed.TotalMilliseconds:N0} ms");
                 foreach (var m in r.Result.Messages) Messages.Add($"    {r.Database}: {m}");

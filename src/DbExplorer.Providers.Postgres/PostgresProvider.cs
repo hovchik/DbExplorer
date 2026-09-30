@@ -281,7 +281,8 @@ public sealed class PostgresProvider : IDatabaseProvider
     }
 
     public async Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue)
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue,
+        ReadOnlyScript? readOnly = null)
     {
         var sw = Stopwatch.StartNew();
         var targetDatabase = database ?? _profile.Database;
@@ -293,8 +294,124 @@ public sealed class PostgresProvider : IDatabaseProvider
         var dataSource = scopedDataSource ?? _dataSource;
 
         await using var cn = await dataSource.OpenConnectionAsync(ct);
-        var result = await RunAsync(cn, null, sql, timeoutSeconds, maxRows, ct);
+        var result = await RunAsync(cn, null, sql, timeoutSeconds, maxRows, readOnly, ct);
         return result with { Elapsed = sw.Elapsed };
+    }
+
+    private static Task<QueryExecutionResult> RunAsync(
+        NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, ReadOnlyScript? readOnly, CancellationToken ct) =>
+        readOnly is not null && maxRows is > 0 and < int.MaxValue
+            ? RunLimitedAsync(cn, tx, sql, readOnly, timeoutSeconds, maxRows, ct)
+            : RunAsync(cn, tx, sql, timeoutSeconds, maxRows, ct);
+
+    private const string LimitCursor = "dbexplorer_rows";
+
+    /// <summary>
+    /// Runs a read-only script statement by statement, each query through a cursor that fetches one row more than the
+    /// limit: the server plans for the first rows (cursor_tuple_fraction) and never produces the rest, however large
+    /// the table. Cursors need a transaction, so one is opened (and committed) when the caller has none.
+    /// </summary>
+    private static async Task<QueryExecutionResult> RunLimitedAsync(
+        NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, ReadOnlyScript script, int timeoutSeconds, int maxRows, CancellationToken ct)
+    {
+        var resultSets = new List<QueryResultSet>();
+        var messages = new List<string>();
+        void OnNotice(object? _, NpgsqlNoticeEventArgs e) => messages.Add(e.Notice.MessageText);
+        cn.Notice += OnNotice;
+
+        await using var ownTx = tx is null ? await cn.BeginTransactionAsync(ct) : null;
+        var transaction = tx ?? ownTx;
+        var deadline = Stopwatch.StartNew();
+        int Remaining() => timeoutSeconds <= 0 ? 0 : Math.Max(1, timeoutSeconds - (int)deadline.Elapsed.TotalSeconds);
+
+        try
+        {
+            foreach (var statement in script.Statements)
+            {
+                var text = statement.Text.TrimEnd().TrimEnd(';').TrimEnd();
+                if (!statement.ReturnsRows)
+                {
+                    try
+                    {
+                        await using var plain = new NpgsqlCommand(text, cn, transaction) { CommandTimeout = Remaining() };
+                        await ReadResultSetsAsync(plain, int.MaxValue, stoppedOnServer: false, resultSets, ct);
+                    }
+                    catch (PostgresException ex)
+                    {
+                        throw ToExecutionException(ex, sql, statement.Offset, 0);
+                    }
+                    continue;
+                }
+
+                var declare = $"DECLARE {LimitCursor} NO SCROLL CURSOR FOR\n";
+                try
+                {
+                    await using (var cmd = new NpgsqlCommand(declare + text, cn, transaction) { CommandTimeout = Remaining() })
+                        await cmd.ExecuteNonQueryAsync(ct);
+                }
+                catch (PostgresException ex)
+                {
+                    throw ToExecutionException(ex, sql, statement.Offset, declare.Length);
+                }
+
+                try
+                {
+                    await using (var fetch = new NpgsqlCommand($"FETCH FORWARD {(long)maxRows + 1} FROM {LimitCursor}", cn, transaction) { CommandTimeout = Remaining() })
+                        await ReadResultSetsAsync(fetch, maxRows, stoppedOnServer: true, resultSets, ct);
+                    await using (var close = new NpgsqlCommand($"CLOSE {LimitCursor}", cn, transaction) { CommandTimeout = Remaining() })
+                        await close.ExecuteNonQueryAsync(ct);
+                }
+                catch (PostgresException ex)
+                {
+                    // Raised while producing rows (division by zero, a bad cast, …): no position inside the statement.
+                    throw ToExecutionException(ex, sql, statement.Offset, int.MaxValue);
+                }
+            }
+
+            if (ownTx is not null) await ownTx.CommitAsync(ct);
+        }
+        finally
+        {
+            cn.Notice -= OnNotice;
+        }
+
+        return new QueryExecutionResult { ResultSets = resultSets, Messages = messages };
+    }
+
+    /// <summary>Reads every result set of the command, keeping at most <paramref name="maxRows"/> rows of each.</summary>
+    private static async Task<int> ReadResultSetsAsync(
+        NpgsqlCommand cmd, int maxRows, bool stoppedOnServer, List<QueryResultSet> resultSets, CancellationToken ct)
+    {
+        var rowsAffected = 0;
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        do
+        {
+            if (reader.FieldCount > 0)
+            {
+                var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                var rows = new List<IReadOnlyList<object?>>();
+                long total = 0;
+                while (await reader.ReadAsync(ct))
+                {
+                    if (++total > maxRows) continue;
+                    var row = new object?[reader.FieldCount];
+                    for (var i = 0; i < row.Length; i++)
+                        row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    rows.Add(row);
+                }
+                var truncated = total > maxRows;
+                resultSets.Add(new QueryResultSet
+                {
+                    Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = truncated,
+                    TotalRowCountIsExact = !(truncated && stoppedOnServer)
+                });
+            }
+            else
+            {
+                rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
+            }
+        } while (await reader.NextResultAsync(ct));
+        return rowsAffected;
     }
 
     /// <summary>
@@ -315,29 +432,7 @@ public sealed class PostgresProvider : IDatabaseProvider
         try
         {
             await using var cmd = new NpgsqlCommand(sql, cn, tx) { CommandTimeout = timeoutSeconds };
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            do
-            {
-                if (reader.FieldCount > 0)
-                {
-                    var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
-                    var rows = new List<IReadOnlyList<object?>>();
-                    long total = 0;
-                    while (await reader.ReadAsync(ct))
-                    {
-                        if (++total > maxRows) continue;
-                        var row = new object?[reader.FieldCount];
-                        for (var i = 0; i < row.Length; i++)
-                            row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                        rows.Add(row);
-                    }
-                    resultSets.Add(new QueryResultSet { Columns = columns, Rows = rows, TotalRowCount = total, IsTruncated = total > maxRows });
-                }
-                else
-                {
-                    rowsAffected += reader.RecordsAffected > 0 ? reader.RecordsAffected : 0;
-                }
-            } while (await reader.NextResultAsync(ct));
+            rowsAffected = await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
         }
         catch (PostgresException ex)
         {
@@ -349,6 +444,23 @@ public sealed class PostgresProvider : IDatabaseProvider
         }
 
         return new QueryExecutionResult { ResultSets = resultSets, RowsAffected = rowsAffected, Messages = messages };
+    }
+
+    /// <summary>
+    /// An error from a statement run on its own: <paramref name="statementOffset"/> is where it starts in the script and
+    /// <paramref name="prefixLength"/> the text put in front of it (a cursor declaration). A position inside that prefix,
+    /// or past it when the error came from a later command, is not reported.
+    /// </summary>
+    private static SqlExecutionException ToExecutionException(PostgresException ex, string sql, int statementOffset, int prefixLength)
+    {
+        var message = ex.MessageText + (string.IsNullOrEmpty(ex.Detail) ? "" : $" ({ex.Detail})") +
+                      (string.IsNullOrEmpty(ex.Hint) ? "" : $" Hint: {ex.Hint}");
+        var inStatement = ex.Position - 1 - prefixLength;
+        if (ex.Position <= 0 || prefixLength == int.MaxValue || inStatement < 0)
+            return new SqlExecutionException($"{ex.SqlState}: {message}", null, null, ex);
+
+        var (line, column) = SqlExecutionException.LocationOf(sql, Math.Min(sql.Length, statementOffset + inStatement));
+        return new SqlExecutionException($"Line {line}, column {column}: {ex.SqlState}: {message}", line, column, ex);
     }
 
     /// <summary>Position is 1-based inside the failing statement; find that statement in the script to get a script offset.</summary>
@@ -486,10 +598,11 @@ public sealed class PostgresProvider : IDatabaseProvider
             }
         }
 
-        public async Task<QueryExecutionResult> QueryAsync(string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default)
+        public async Task<QueryExecutionResult> QueryAsync(
+            string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default, ReadOnlyScript? readOnly = null)
         {
             var sw = Stopwatch.StartNew();
-            var result = await RunAsync(connection, transaction, sql, timeoutSeconds, maxRows, ct);
+            var result = await RunAsync(connection, transaction, sql, timeoutSeconds, maxRows, readOnly, ct);
             return result with { Elapsed = sw.Elapsed };
         }
 

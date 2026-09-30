@@ -9,8 +9,14 @@ public sealed record QueryResultSet
     /// <summary>True when the result set had more rows than the row limit; only the first ones are in <see cref="Rows"/>.</summary>
     public bool IsTruncated { get; init; }
 
-    /// <summary>Rows the server returned, including those beyond the row limit that were read and discarded.</summary>
+    /// <summary>
+    /// Rows the server returned, including those beyond the row limit that were read and discarded. When the provider
+    /// stopped at the limit on the server (<see cref="TotalRowCountIsExact"/> false) it is only a lower bound.
+    /// </summary>
     public long TotalRowCount { get; init; }
+
+    /// <summary>False when reading stopped just past the row limit: the result set has at least <see cref="TotalRowCount"/> rows.</summary>
+    public bool TotalRowCountIsExact { get; init; } = true;
 }
 
 /// <summary>The outcome of executing an ad-hoc script or a routine call.</summary>

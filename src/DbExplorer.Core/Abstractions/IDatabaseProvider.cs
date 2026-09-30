@@ -69,9 +69,13 @@ public interface IDatabaseProvider : IAsyncDisposable
     /// </summary>
     /// <param name="maxRows">Rows kept per result set; further rows are read and discarded (never cancelled, so the
     /// rest of the script still runs) and the result set is flagged as truncated.</param>
+    /// <param name="readOnly">The script's statements when it only reads. With a row limit, the provider then stops
+    /// every result set on the server just past <paramref name="maxRows"/> rows instead of reading the rest, and
+    /// reports the total as a lower bound (<see cref="QueryResultSet.TotalRowCountIsExact"/>).</param>
     /// <exception cref="SqlExecutionException">The server rejected the script; carries the error position when known.</exception>
     Task<QueryExecutionResult> ExecuteScriptAsync(
-        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue);
+        string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue,
+        ReadOnlyScript? readOnly = null);
 
     /// <summary>Executes a stored procedure or function call with the given argument values.</summary>
     Task<QueryExecutionResult> ExecuteRoutineAsync(

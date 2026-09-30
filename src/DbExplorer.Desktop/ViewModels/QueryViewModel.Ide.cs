@@ -60,7 +60,7 @@ public partial class QueryViewModel
         }
         HasOpenTransaction = true;
         Status = "Running in the open transaction…";
-        var result = await _transaction.QueryAsync(sql, TimeoutSeconds, RowLimit, ct);
+        var result = await _transaction.QueryAsync(sql, TimeoutSeconds, RowLimit, ct, QueryExecutionService.ReadOnlyFor(sql, RowLimit));
         ShowResult(session, result, prefix: "In transaction · ");
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }

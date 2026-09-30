@@ -82,7 +82,7 @@
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
 			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
-						PlaceholderText="(database)" IsVisible="{Binding HasMultipleLeftDatabases}" ToolTip.Tip="Database" />
+						PlaceholderText="(database)" IsEnabled="{Binding IsLeftConnected}" ToolTip.Tip="Database of the left server" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsLeftConnected}"
@@ -107,7 +107,7 @@
 				Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides: the right becomes the baseline" />
 
 		<Border Grid.Column="2" Classes="card" IsVisible="{Binding IsRightPanelVisible}">
-		  <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
+		  <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
 			<TextBlock Grid.Column="0" Text="Right" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
 					   ToolTip.Tip="Comparand side" />
 			<Border Grid.Column="1" Classes="env" Margin="0,0,6,0" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
@@ -125,7 +125,8 @@
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
 			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
-						PlaceholderText="(database)" IsVisible="{Binding HasMultipleRightDatabases}" ToolTip.Tip="Database" />
+						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}"
+						ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsRightConnected}"
@@ -143,6 +144,14 @@
 			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300"
 						 TextTrimming="CharacterEllipsis" Text="{Binding RightObjectInfo}" ToolTip.Tip="{Binding RightObjectInfo}" />
 			</Grid>
+
+			<!-- The left database is missing on the right server: offer to create it before copying into it -->
+			<StackPanel Grid.Row="2" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0"
+						IsVisible="{Binding HasMissingRightDatabase}">
+			  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MissingRightDatabaseHint}" />
+			  <Button Classes="accent" Content="{Binding CreateRightDatabaseLabel}" Command="{Binding CreateRightDatabaseCommand}"
+					  ToolTip.Tip="Create an empty database with this name on the right server (server defaults), then switch the right side to it so objects can be copied into it" />
+			</StackPanel>
 		  </Grid>
 		</Border>
 	</Grid>
@@ -492,6 +501,9 @@
 			<TextBox Width="260" Text="{Binding CopyTargetName}" Watermark="name"
 					 ToolTip.Tip="Name on the right. Defaults to the left name; change it to copy a table under another name (e.g. a backup copy)" />
 			<TextBlock Classes="hint" Text="{Binding CopyTargetInfo}" TextWrapping="Wrap" />
+			<Button Content="{Binding CreateRightDatabaseLabel}" Command="{Binding CreateRightDatabaseCommand}"
+					IsVisible="{Binding HasMissingRightDatabase}"
+					ToolTip.Tip="The left database does not exist on the right server: create it (empty) first, then copy into it" />
 		  </WrapPanel>
 
 		  <!-- What was found and what is suggested -->
@@ -569,21 +581,57 @@
 					ToolTip.Tip="Read what is needed and build the exact script and row counts; nothing is changed" />
 			<Button Content="Run on the right" Classes="accent" Command="{Binding RunCopyCommand}"
 					ToolTip.Tip="Run the script on the right side after a confirmation (builds it first if needed)" />
-			<Button Content="Copy script" Click="OnCopyScriptToClipboard" IsEnabled="{Binding HasCopyPlan}"
+			<Button Content="Copy script" Click="OnCopyScriptToClipboard" IsEnabled="{Binding HasCopySteps}"
 					ToolTip.Tip="Copy the full script to the clipboard, e.g. to run it through a deployment tool" />
-			<Button Content="Save script…" Click="OnSaveCopyScript" IsEnabled="{Binding HasCopyPlan}" />
+			<Button Content="Save script…" Click="OnSaveCopyScript" IsEnabled="{Binding HasCopySteps}" />
 			<TextBlock FontWeight="SemiBold" Text="{Binding CopyPlanSummary}" TextWrapping="Wrap" />
 			<TextBlock Classes="hint" Text="{Binding CopyStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
 
 		  <!-- Steps and script -->
-		  <Grid Grid.Row="4" ColumnDefinitions="380,Auto,*" IsVisible="{Binding HasCopyPlan}">
+		  <Grid Grid.Row="4" ColumnDefinitions="560,Auto,*" IsVisible="{Binding HasCopySteps}">
 			<Grid Grid.Column="0" RowDefinitions="*,Auto">
 			  <DataGrid ItemsSource="{Binding CopySteps}" IsReadOnly="True" AutoGenerateColumns="False"
 						CanUserResizeColumns="True" CanUserSortColumns="False" GridLinesVisibility="Horizontal">
+				<DataGrid.Styles>
+				  <Style Selector="TextBlock.state">
+					<Setter Property="Margin" Value="12,0" />
+					<Setter Property="VerticalAlignment" Value="Center" />
+					<Setter Property="FontWeight" Value="SemiBold" />
+				  </Style>
+				  <Style Selector="TextBlock.state.running">
+					<Setter Property="Foreground" Value="#FF3B82F6" />
+				  </Style>
+				  <Style Selector="TextBlock.state.done">
+					<Setter Property="Foreground" Value="#FF2E9E4F" />
+				  </Style>
+				  <Style Selector="TextBlock.state.failed">
+					<Setter Property="Foreground" Value="#FFD9453B" />
+				  </Style>
+				  <Style Selector="TextBlock.state.undone">
+					<Setter Property="Foreground" Value="#FFD08A00" />
+				  </Style>
+				</DataGrid.Styles>
 				<DataGrid.Columns>
-				  <DataGridTextColumn Header="Step" Binding="{Binding Title}" Width="*" />
+				  <DataGridTemplateColumn Header="Status" Width="120">
+					<DataGridTemplateColumn.CellTemplate>
+					  <DataTemplate x:DataType="vm:CopyStepItem">
+						<TextBlock Classes="state" Text="{Binding StateText}"
+								   Classes.running="{Binding IsRunning}" Classes.done="{Binding IsDone}"
+								   Classes.failed="{Binding IsFailed}" Classes.undone="{Binding IsUndone}" />
+					  </DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				  </DataGridTemplateColumn>
+				  <DataGridTextColumn Header="Step" Binding="{Binding Title}" Width="2*" />
 				  <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="Auto" />
+				  <DataGridTemplateColumn Header="Result" Width="*">
+					<DataGridTemplateColumn.CellTemplate>
+					  <DataTemplate x:DataType="vm:CopyStepItem">
+						<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Details}" TextTrimming="CharacterEllipsis"
+								   ToolTip.Tip="{Binding Details}" />
+					  </DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				  </DataGridTemplateColumn>
 				</DataGrid.Columns>
 			  </DataGrid>
 			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
@@ -594,7 +642,7 @@
 					 AcceptsReturn="True" TextWrapping="NoWrap"
 					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
 		  </Grid>
-		  <TextBlock Grid.Row="4" Classes="empty" IsVisible="{Binding !HasCopyPlan}"
+		  <TextBlock Grid.Row="4" Classes="empty" IsVisible="{Binding !HasCopySteps}"
 					 Text="Pick an object on the left and the target database on the right. When the object is missing on the right you can create it (with its data); when it exists you can merge the data, replace it, or drop and re-create the table. Preview shows the exact script and row counts before anything runs." />
 		</Grid>
 

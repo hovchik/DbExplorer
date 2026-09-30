@@ -24,6 +24,9 @@ public sealed partial class BatchCopyItem(DbObject source, IReadOnlyList<CopyAct
     [ObservableProperty] private bool _include = selected is not null;
     [ObservableProperty] private string _status = selected is null ? "Not possible" : "Pending";
     [ObservableProperty] private string _details = summary;
+
+    /// <summary>Steps of the object's plan, for "Step 3 of 8 ✓" while it runs.</summary>
+    public int StepCount { get; set; }
 }
 
 /// <summary>
@@ -70,9 +73,9 @@ public partial class ComparerViewModel
 
     private void StartBatch(IEnumerable<DbObject> objects)
     {
-        if (LeftSession is null) return;
+        if (LeftTarget is not { } left) return;
         BatchItems.Clear();
-        foreach (var obj in ObjectCopyService.OrderForCopy(objects, LeftSession.Snapshot))
+        foreach (var obj in ObjectCopyService.OrderForCopy(objects, left.Snapshot))
         {
             var analysis = AnalyzeCopy(obj, TargetSchemaFor(obj), obj.Name);
             var actions = analysis is null ? [] : ActionOptions(analysis);
@@ -99,7 +102,7 @@ public partial class ComparerViewModel
     [RelayCommand(CanExecute = nameof(CanRunBatch))]
     private async Task RunBatchAsync()
     {
-        if (LeftSession is not { } left || RightSession is not { } right) return;
+        if (LeftTarget is not { } left || RightTarget is not { } right) return;
         var items = BatchItems.Where(i => i.Include && i.SelectedAction is not null).ToList();
         if (items.Count == 0)
         {
@@ -153,6 +156,12 @@ public partial class ComparerViewModel
                     }
 
                     var progress = new Progress<string>(m => item.Details = m);
+                    var stepsDone = 0;
+                    var stepProgress = new Progress<CopyStepUpdate>(u =>
+                    {
+                        if (u.State == CopyStepState.Done) item.Status = $"Step {++stepsDone} of {item.StepCount} ✓";
+                        else if (u.State == CopyStepState.Failed) item.Status = $"✗ Step {u.Index + 1} failed";
+                    });
                     var plan = await copier.BuildPlanAsync(left, right, analysis, action, options, progress, ct, created);
                     if (plan.IsEmpty)
                     {
@@ -162,7 +171,8 @@ public partial class ComparerViewModel
                         continue;
                     }
 
-                    var result = await copier.ExecuteAsync(left, right, plan, progress, ct);
+                    item.StepCount = plan.Steps.Count;
+                    var result = await copier.ExecuteAsync(left, right, plan, progress, ct, stepProgress);
                     created.AddRange(plan.CreatedTables);
                     var details = $"{plan.Summary} · {result.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture)} s";
 
@@ -204,8 +214,7 @@ public partial class ComparerViewModel
                 try
                 {
                     CopyStatus += " Refreshing right metadata…";
-                    await sessions.RefreshMetadataAsync(right, CancellationToken.None);
-                    RightDatabases = GetDatabases(right);
+                    await RefreshRightCatalogAsync(CancellationToken.None);
                     UpdateRightObjects();
                     CopyStatus = CopyStatus.Replace(" Refreshing right metadata…", "");
                 }

@@ -993,11 +993,22 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     /// </summary>
     public async Task<CopyRunResult> ExecuteAsync(
         DatabaseSession sourceSession, DatabaseSession targetSession, CopyPlan plan,
-        IProgress<string>? progress = null, CancellationToken ct = default)
+        IProgress<string>? progress = null, CancellationToken ct = default, IProgress<CopyStepUpdate>? stepProgress = null)
     {
         var started = DateTime.UtcNow;
         var affected = 0;
         var transactional = plan.Options.SingleTransaction;
+        var done = 0;
+
+        // After a failure or cancel at step `stopped`: the steps before it were undone (in a transaction) or stay
+        // applied, and the steps after it never started.
+        void ReportStop(int stopped)
+        {
+            if (stepProgress is null) return;
+            if (transactional)
+                for (var j = 0; j < Math.Min(stopped, plan.Steps.Count); j++) stepProgress.Report(new CopyStepUpdate(j, CopyStepState.RolledBack, "Undone: the transaction was rolled back"));
+            for (var j = stopped + 1; j < plan.Steps.Count; j++) stepProgress.Report(new CopyStepUpdate(j, CopyStepState.NotRun));
+        }
 
         await using var session = await targetSession.Provider.BeginScriptSessionAsync(
             NullIfBlank(plan.Analysis.TargetDatabase), transactional, ct);
@@ -1007,15 +1018,32 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             var step = plan.Steps[i];
             var prefix = $"Step {i + 1:N0} of {plan.Steps.Count:N0}";
             progress?.Report($"{prefix}: {step.Title}");
+            stepProgress?.Report(new CopyStepUpdate(i, CopyStepState.Running));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                affected += step.Stream is { } stream
+                var rows = step.Stream is { } stream
                     ? await StreamRowsAsync(sourceSession, targetSession, session, stream, plan.Options,
-                        copied => progress?.Report($"{prefix}: {copied:N0} of ≈{stream.EstimatedRows:N0} row(s) copied into {stream.TargetSchema}.{stream.TargetName}"), ct)
+                        copied =>
+                        {
+                            progress?.Report($"{prefix}: {copied:N0} of ≈{stream.EstimatedRows:N0} row(s) copied into {stream.TargetSchema}.{stream.TargetName}");
+                            stepProgress?.Report(new CopyStepUpdate(i, CopyStepState.Running, $"{copied:N0} of ≈{stream.EstimatedRows:N0} row(s)"));
+                        }, ct)
                     : await session.ExecuteAsync(step.Sql, plan.Options.TimeoutSeconds, ct);
+                affected += Math.Max(0, rows);
+                done = i + 1;
+                stepProgress?.Report(new CopyStepUpdate(i, CopyStepState.Done, StepDetails(rows, watch.Elapsed)));
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
             {
+                stepProgress?.Report(new CopyStepUpdate(i, CopyStepState.Failed, "Cancelled"));
+                ReportStop(i);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                stepProgress?.Report(new CopyStepUpdate(i, CopyStepState.Failed, ex.Message));
+                ReportStop(i);
                 throw new InvalidOperationException(
                     $"Step {i + 1} ({step.Title}) failed" +
                     (transactional ? "; everything was rolled back. " : "; the steps before it were applied. ") + ex.Message, ex);
@@ -1023,8 +1051,33 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         }
 
         progress?.Report("Committing…");
-        await session.CommitAsync(ct);
+        try
+        {
+            await session.CommitAsync(ct);
+        }
+        catch
+        {
+            ReportStop(done);
+            throw;
+        }
         return new CopyRunResult(affected, DateTime.UtcNow - started, []);
+    }
+
+    private static string StepDetails(int rows, TimeSpan elapsed)
+    {
+        var time = elapsed.TotalSeconds < 1
+            ? $"{elapsed.TotalMilliseconds:N0} ms"
+            : $"{elapsed.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture)} s";
+        return rows > 0 ? $"{rows:N0} row(s) · {time}" : time;
+    }
+
+    /// <summary>Creates an empty database on the session's server (outside any transaction, as both engines require).</summary>
+    public static async Task CreateDatabaseAsync(DatabaseSession session, string name, CancellationToken ct = default)
+    {
+        name = name.Trim();
+        if (name.Length == 0) throw new ArgumentException("Enter a database name.", nameof(name));
+        var dialect = SqlDialect.For(session.Provider.ProviderKey);
+        await session.Provider.ExecuteScriptAsync(dialect.CreateDatabase(name), database: null, ReadTimeoutSeconds, ct);
     }
 
     private async Task<int> StreamRowsAsync(

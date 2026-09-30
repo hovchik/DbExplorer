@@ -188,6 +188,24 @@ public sealed record CopyPlan
     public bool HasStreamedSteps => Steps.Any(s => s.Stream is not null);
 }
 
+/// <summary>Where a step stands while a plan runs.</summary>
+public enum CopyStepState
+{
+    Pending,
+    Running,
+    Done,
+    Failed,
+
+    /// <summary>A later step failed (or the run was cancelled) inside the single transaction, so this one was undone.</summary>
+    RolledBack,
+
+    /// <summary>An earlier step failed or the run was cancelled before this step started.</summary>
+    NotRun
+}
+
+/// <summary>Reported for each step as the plan runs: its new state plus rows/time or the error.</summary>
+public sealed record CopyStepUpdate(int Index, CopyStepState State, string? Details = null);
+
 public sealed record CopyRunResult(int RowsAffected, TimeSpan Elapsed, IReadOnlyList<string> Messages);
 
 public sealed record CopyVerification(long SourceRows, long TargetRows, bool Matches, string Summary);

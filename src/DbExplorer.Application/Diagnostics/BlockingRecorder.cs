@@ -29,6 +29,8 @@ public sealed record BlockingIncident(DateTimeOffset Start, DateTimeOffset End, 
         .Where(l => l.IsWaiting && !string.IsNullOrEmpty(l.ObjectName)).Select(l => l.ObjectName!)
         .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
 
+    public string ObjectsText => Objects.Count == 0 ? "" : "contended: " + string.Join(", ", Objects);
+
     public string Title =>
         $"{Start:T} – {End:T} ({FormatDuration(Duration)}) · up to {MaxWaitingSessions} waiting · head blocker(s) {string.Join(", ", HeadBlockers)}";
 

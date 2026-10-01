@@ -200,9 +200,10 @@ public static class RelationshipInference
         var sample = providerKey == SqlDialect.SqlServerKey
             ? $"SELECT TOP ({n}) {c} AS v FROM {child} WHERE {c} IS NOT NULL"
             : $"SELECT {c} AS v FROM {child} WHERE {c} IS NOT NULL LIMIT {n}";
-        return $"SELECT COUNT(*) AS sampled, " +
-               $"SUM(CASE WHEN EXISTS (SELECT 1 FROM {parent} x WHERE x.{p} = s.v) THEN 1 ELSE 0 END) AS matched " +
-               $"FROM ({sample}) s;";
+        // The EXISTS is evaluated per row in a derived table: SQL Server cannot aggregate over a subquery (error 130).
+        return $"SELECT COUNT(*) AS sampled, COALESCE(SUM(m.found), 0) AS matched FROM (" +
+               $"SELECT CASE WHEN EXISTS (SELECT 1 FROM {parent} x WHERE x.{p} = s.v) THEN 1 ELSE 0 END AS found " +
+               $"FROM ({sample}) s) m;";
     }
 
     private static long ToLong(object? value) => value is null ? 0 : Convert.ToInt64(value, CultureInfo.InvariantCulture);

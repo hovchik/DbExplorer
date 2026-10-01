@@ -82,6 +82,9 @@
       <TabItem Header="Activity" IsEnabled="{Binding IsConnected}">
         <views:ActivityView DataContext="{Binding Activity}" />
       </TabItem>
+      <TabItem Header="Lab" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Experimental: change recorder, schema history, inferred relationships">
+        <views:LabView DataContext="{Binding Lab}" />
+      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

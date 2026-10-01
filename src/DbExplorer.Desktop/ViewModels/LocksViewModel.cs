@@ -39,8 +39,104 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
 
     partial void OnSelectedNodeChanged(BlockingNode? value) => SelectedSql = value?.SqlText;
 
-    partial void OnShowTreeChanged(bool value) => SelectedSql = value ? SelectedNode?.SqlText : SelectedLock?.SqlText;
+    partial void OnShowTreeChanged(bool value)
+    {
+        if (value) ShowRecorder = false;
+        SelectedSql = value ? SelectedNode?.SqlText : SelectedLock?.SqlText;
+        OnPropertyChanged(nameof(ShowList));
+    }
+
+    partial void OnShowRecorderChanged(bool value)
+    {
+        if (value) ShowTree = false;
+        OnPropertyChanged(nameof(ShowList));
+    }
+
+    /// <summary>The flat lock list is shown (neither the blocking tree nor the flight recorder).</summary>
+    public bool ShowList
+    {
+        get => !ShowTree && !ShowRecorder;
+        set
+        {
+            if (!value) return;
+            ShowTree = false;
+            ShowRecorder = false;
+        }
+    }
     [ObservableProperty] private string _status = "Needs VIEW SERVER STATE on SQL Server.";
+
+    // ----- Flight recorder: every refresh is kept (an hour at the 5 s auto-refresh) and replayable as incidents -----
+
+    private readonly BlockingRecorder _recorder = new();
+
+    [ObservableProperty] private bool _showRecorder;
+    [ObservableProperty] private bool _recordHistory = true;
+    [ObservableProperty] private IReadOnlyList<BlockingIncident> _incidents = [];
+    [ObservableProperty] private BlockingIncident? _selectedIncident;
+    [ObservableProperty] private int _replayIndex;
+    [ObservableProperty] private int _replayMaximum;
+    [ObservableProperty] private IReadOnlyList<BlockingNode> _replayTree = [];
+    [ObservableProperty] private string _replayInfo = "";
+    [ObservableProperty] private string _recorderStatus = "Turn on auto-refresh to record: blocking seen by any refresh is kept for replay.";
+
+    public event Func<string, Task>? CopyRequested;
+
+    partial void OnSelectedIncidentChanged(BlockingIncident? value)
+    {
+        ReplayMaximum = Math.Max(0, (value?.Samples.Count ?? 1) - 1);
+        // Start at the worst moment.
+        ReplayIndex = value is null ? 0 : value.Samples.Select((s, i) => (s, i)).OrderByDescending(x => x.s.WaitingSessions).First().i;
+        OnReplayIndexChanged(ReplayIndex);
+        CopyIncidentCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnReplayIndexChanged(int value)
+    {
+        if (SelectedIncident is not { } incident || incident.Samples.Count == 0)
+        {
+            ReplayTree = [];
+            ReplayInfo = "";
+            return;
+        }
+        var sample = incident.Samples[Math.Clamp(value, 0, incident.Samples.Count - 1)];
+        ReplayTree = BlockingChainBuilder.Build(sample.Locks);
+        ReplayInfo = $"{sample.At:HH:mm:ss} · sample {value + 1} of {incident.Samples.Count} · {sample.WaitingSessions} waiting";
+    }
+
+    private void Record(IReadOnlyList<DbLock> locks)
+    {
+        if (!RecordHistory) return;
+        _recorder.Add(DateTimeOffset.Now, locks);
+        // The list is rebuilt from the samples; keep the incident being replayed and where the slider is.
+        var selected = SelectedIncident?.Start;
+        var position = ReplayIndex;
+        Incidents = _recorder.Incidents(_timer.Interval * 3);
+        if (selected is not null && Incidents.FirstOrDefault(i => i.Start == selected) is { } same)
+        {
+            SelectedIncident = same;
+            ReplayIndex = Math.Min(position, ReplayMaximum);
+        }
+        var span = _recorder.Samples is { Count: > 0 } samples ? samples[^1].At - samples[0].At : TimeSpan.Zero;
+        RecorderStatus = $"{_recorder.Count:N0} sample(s) over {(int)span.TotalMinutes} min {span.Seconds} s · {Incidents.Count} blocking incident(s)" +
+                         (AutoRefresh ? " · recording" : " · turn on auto-refresh to keep recording");
+    }
+
+    [RelayCommand]
+    private void ClearRecording()
+    {
+        _recorder.Clear();
+        Incidents = [];
+        SelectedIncident = null;
+        RecorderStatus = "Cleared.";
+    }
+
+    private bool HasIncident => SelectedIncident is not null;
+
+    [RelayCommand(CanExecute = nameof(HasIncident))]
+    private async Task CopyIncidentAsync()
+    {
+        if (SelectedIncident is { } incident && CopyRequested is { } copy) await copy(BlockingRecorder.Report(incident));
+    }
 
     public void Attach(DatabaseSession? session)
     {
@@ -49,6 +145,8 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
         _all = [];
         Locks = [];
         BlockingTree = [];
+        ClearRecording();
+        RecorderStatus = "Turn on auto-refresh to record: blocking seen by any refresh is kept for replay.";
         RefreshCommand.NotifyCanExecuteChanged();
     }
 
@@ -73,6 +171,7 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
         {
             _all = await _session.Provider.GetLocksAsync();
             ApplyFilter();
+            Record(_all);
         }
         catch (Exception ex)
         {

@@ -68,6 +68,9 @@ public sealed class WhyNotDebugger
             return Done(steps, "Queries with UNION / INTERSECT / EXCEPT are not supported: debug each branch on its own.");
         if (string.IsNullOrWhiteSpace(expected))
             return Done(steps, "Describe the expected row with a condition, e.g. o.OrderId = 1001.");
+        // The condition is pasted into every probe: one statement only, so a probe can never turn into a script.
+        if (Query.SqlLexer.Tokenize(expected).Any(t => t.Kind == Query.SqlTokenKind.Semicolon))
+            return Done(steps, "The expected-row condition must be a single condition (no ';').");
 
         var anchor = FindAnchor(q, expected);
         var anchorItem = q.From[anchor];

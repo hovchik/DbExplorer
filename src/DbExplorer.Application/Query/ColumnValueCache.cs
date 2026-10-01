@@ -13,7 +13,7 @@ namespace DbExplorer.Application.Query;
 public sealed class ColumnValueCache(DatabaseSession session, int sampleRows = 10_000, int top = 30)
 {
     private static readonly DataSearchOptions Options = new(1000, 10, 1000);
-    private readonly ConcurrentDictionary<string, Task<IReadOnlyList<ValueFrequency>>> _values = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<ValueFrequency>>>> _values = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A column's values finished loading (raised on a worker thread).</summary>
     public event Action? ValuesLoaded;
@@ -25,7 +25,13 @@ public sealed class ColumnValueCache(DatabaseSession session, int sampleRows = 1
     {
         if (!IsSuggestible(column, Session.Provider.ProviderKey) || !table.IsTableLike || Session.Provider.GetProfileLevel(column) == ColumnProfileLevel.NullsOnly) return null;
         var key = $"{table.Database}\u0001{table.Schema}\u0001{table.Name}\u0001{column.Name}";
-        var task = _values.GetOrAdd(key, _ => LoadAsync(table, column));
+        var task = _values.GetOrAdd(key, _ => new Lazy<Task<IReadOnlyList<ValueFrequency>>>(() =>
+        {
+            var load = LoadAsync(table, column);
+            // Raised once the task has completed (not from inside it), so a listener that reads the cache sees the values.
+            load.ContinueWith(_ => ValuesLoaded?.Invoke(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return load;
+        })).Value;
         return task.IsCompletedSuccessfully ? task.Result : null;
     }
 
@@ -40,10 +46,6 @@ public sealed class ColumnValueCache(DatabaseSession session, int sampleRows = 1
         catch
         {
             return []; // a locked or unreadable table simply offers no values
-        }
-        finally
-        {
-            ValuesLoaded?.Invoke();
         }
     }
 

@@ -122,7 +122,8 @@ public sealed class ErDiagramControl : Control
         var refColumns = ErDiagramBuilder.SplitColumns(edge.ForeignKey.ReferencedColumns).FirstOrDefault();
         var y1 = RowY(child, fkColumns);
         var y2 = RowY(parent, refColumns);
-        var pen = new Pen(brush, thickness);
+        // Relationships the user accepted from inference are not constraints: dashed, so they never pass for one.
+        var pen = new Pen(brush, thickness) { DashStyle = edge.ForeignKey.IsVirtual ? DashStyle.Dash : null };
 
         Point start, end;
         double c1, c2;

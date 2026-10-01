@@ -32,6 +32,35 @@ public partial class QueryView : UserControl
     private static readonly Regex KeywordBeforeSpace = new(@"\b(FROM|JOIN|ON|INTO|UPDATE|EXEC|EXECUTE|CALL|APPLY|TABLE|WHERE|AND|OR|BY|SELECT|SET)\s$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>Right after "col = ", "col <> '", "col LIKE ", "col IN (" or a comma inside such a list: values of the column fit here.</summary>
+    private static readonly Regex ValuePosition = new(@"[\w\]""]\s*(=|<>|!=|\bLIKE|\bILIKE|\bIN\s*\((?:[^()]*,)?)\s*'?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private int? _pendingValueCaret;
+
+    /// <summary>Shows the column's values when they are known; otherwise remembers the spot and retries when they arrive.</summary>
+    private void ShowValueCompletion()
+    {
+        if (_vm is null) return;
+        var caret = Editor.CaretOffset;
+        var result = _vm.GetCompletions(Editor.Document.Text, caret, explicitRequest: false);
+        if (result.Items.Count > 0 && result.Items[0].Kind == CompletionKind.Value)
+        {
+            _pendingValueCaret = null;
+            ShowCompletion(explicitRequest: false);
+        }
+        else
+        {
+            _pendingValueCaret = caret;
+        }
+    }
+
+    private void OnCompletionValuesArrived()
+    {
+        if (_pendingValueCaret is int caret && caret == Editor.CaretOffset && _completion is null && Editor.TextArea.IsKeyboardFocusWithin)
+            ShowValueCompletion();
+    }
+
     private static readonly Regex InsertColumnsOpen = new(@"\bINTO\s+[\w\.\[\]""]+\s*\($", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly IReadOnlyDictionary<char, char> Pairs = new Dictionary<char, char>
@@ -90,6 +119,7 @@ public partial class QueryView : UserControl
         {
             _vm.ErrorLocated -= OnErrorLocated;
             _vm.ErrorCleared -= OnErrorCleared;
+            _vm.CompletionValuesArrived -= OnCompletionValuesArrived;
             Editor.Document.Changed -= OnDocumentChanged;
         }
 
@@ -99,6 +129,7 @@ public partial class QueryView : UserControl
             if (!ReferenceEquals(Editor.Document, _vm.Document)) Editor.Document = _vm.Document;
             _vm.ErrorLocated += OnErrorLocated;
             _vm.ErrorCleared += OnErrorCleared;
+            _vm.CompletionValuesArrived += OnCompletionValuesArrived;
             Editor.Document.Changed += OnDocumentChanged;
         }
 
@@ -173,7 +204,7 @@ public partial class QueryView : UserControl
 
         document.Insert(caret, $"{ch}{close}");
         Editor.CaretOffset = caret + 1;
-        if (ch == '(') OnTextEntered(this, new TextInputEventArgs { Text = "(" });
+        if (ch is '(' or '\'') OnTextEntered(this, new TextInputEventArgs { Text = ch.ToString() });
         return true;
     }
 
@@ -200,12 +231,14 @@ public partial class QueryView : UserControl
             if (wordStart == 0 || !IsWordChar(Editor.Document.GetCharAt(wordStart - 1)) || Editor.Document.GetCharAt(wordStart - 1) == '.')
                 ShowCompletion(explicitRequest: false);
         }
-        else if (ch == ' ' || ch == '(')
+        else if (ch is ' ' or '(' or '\'' or ',')
         {
             var line = Editor.Document.GetLineByOffset(caret);
             var before = Editor.Document.GetText(line.Offset, caret - line.Offset);
             if ((ch == ' ' && KeywordBeforeSpace.IsMatch(before)) || (ch == '(' && InsertColumnsOpen.IsMatch(before)))
                 ShowCompletion(explicitRequest: true);
+            else if (ValuePosition.IsMatch(before))
+                ShowValueCompletion();
         }
     }
 
@@ -352,6 +385,18 @@ public partial class QueryView : UserControl
 
     private void OnRun(object? sender, RoutedEventArgs e) => Run(currentStatement: false);
     private void OnRunStatement(object? sender, RoutedEventArgs e) => Run(currentStatement: true);
+    private void OnWhyNot(object? sender, RoutedEventArgs e) => RunLab(_vm?.WhyNotCommand, currentStatement: true);
+    private void OnDryRun(object? sender, RoutedEventArgs e) => RunLab(_vm?.DryRunCommand, currentStatement: false);
+    private void OnLockImpact(object? sender, RoutedEventArgs e) => RunLab(_vm?.LockImpactCommand, currentStatement: false);
+
+    /// <summary>The why-not debugger works on the statement at the caret; dry run and lock impact on the selection or whole script.</summary>
+    private void RunLab(System.Windows.Input.ICommand? command, bool currentStatement)
+    {
+        if (command is null) return;
+        var run = Target(currentStatement);
+        if (command.CanExecute(run)) command.Execute(run);
+    }
+
     private void OnExplain(object? sender, RoutedEventArgs e) => Explain(analyze: false);
     private void OnExplainAnalyze(object? sender, RoutedEventArgs e) => Explain(analyze: true);
     private void OnFormat(object? sender, RoutedEventArgs e) => Format();

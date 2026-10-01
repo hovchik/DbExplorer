@@ -17,6 +17,17 @@ SQL Server is the primary engine; PostgreSQL is included as a second provider to
 | **Activity** | **Running now**: executing requests (and SQL Server sessions sleeping inside an open transaction) with elapsed/CPU/reads/waits/blocker. **Top queries**: most expensive cached statements by CPU, duration, reads or executions (plan cache on SQL Server, `pg_stat_statements` on PostgreSQL). |
 | **Comparer** | Two connections side by side (environment badges, swap sides, cancel with Esc). **Overview** compares every table, view, routine and trigger of both databases from the cached metadata (instant, no server load) and lists what differs or exists on one side only; double-click for details. **Schema** diffs definitions line by line or by content, optionally ignoring case/whitespace, with *only changes* folding, F8 / Shift+F8 change navigation and a similarity score. **Structure** compares a table's columns (type, nullability, key, position), indexes and foreign keys, recognising renamed indexes. **Data** matches rows by primary key with filters per status and key, per-column difference counts (click to filter), ignored columns, case/padding-insensitive text, value-based numeric and binary equality, and warnings for duplicate keys, row-limit truncation and columns missing on one side. Schema and data results export as a self-contained HTML or Markdown report. |
 
+| **Lab** *(experimental)* | **Change recorder**: press Start, do something in your application, press Stop — lists every table whose insert/update/delete counters moved (`sys.dm_db_index_operational_stats` / `pg_stat_user_tables`) and the rows involved: an exact before/after diff for tables snapshotted at Start (tables up to 2,000 rows by default), otherwise the rows written since Start (PostgreSQL `xmin`, SQL Server `rowversion` columns), otherwise counts only. **Schema history**: every catalog read from the server is stored locally as a version when something changed (definitions de-duplicated by hash), so you can compare any two versions or see one object's revisions — no DDL triggers or audit on the server. **Inferred relationships**: foreign keys the schema does not declare, proposed from column names and types (`Orders.CustomerId → Customers.Id`, `order_lines.product_id → products.id`), checked against 2,000 sampled values, and — once accepted — used by the Diagram (dashed), Relations and JOIN suggestions. Accepted ones live in a local file, never in the database. |
+
+**Lab tools in the Query tab** (*Lab ▾*):
+
+- **Why isn't my row here?** — give the row you expected as a condition (`o.OrderId = 1001`); the statement at the caret is replayed with read-only COUNT probes: does the row exist, which join drops it (and which part of its ON condition, with the values it looked for), which WHERE condition excludes it (with the row's actual values and a hint when a NULL is involved), whether HAVING removes its group, or whether TOP / LIMIT cut it (and its position).
+- **Dry run** — runs the selection / script in a transaction that is always rolled back and shows what it would change: per UPDATE the old and new value of every changed column, per DELETE the rows, per INSERT the new rows (RETURNING / OUTPUT). Probes run under savepoints, so a shape it cannot preview (OUTPUT on a table with triggers, an unreadable type) only loses its detail. Locks are held until the rollback (5 s lock timeout); triggers fire and sequences / identities still advance.
+- **Lock impact** — before running a script: the estimated plan (nothing is executed) gives the tables it writes and how many rows; engine rules turn that into the locks it will take (SQL Server lock escalation past 5,000 rows, Sch-M / ACCESS EXCLUSIVE for most DDL, SHARE for a non-concurrent CREATE INDEX…), and the live lock list and running requests name the sessions in the way right now.
+- **Value suggestions** — after `column =`, `<>`, `LIKE` or inside `IN (`, the editor suggests the values the column actually holds, most frequent first (sampled once per column and connection from the first 10,000 rows, like profiling).
+
+**Locks → Flight recorder**: every refresh (auto-refresh: every 5 s) is kept for the last hour; periods with blocking become incidents that can be replayed afterwards with a slider (who blocked whom at each moment) and copied as a text report.
+
 Everywhere:
 
 - **Result grids** — refine fetched rows without re-running the query: search across all columns; per-column filters from each header's funnel (conditions such as contains / starts with / = / > / ≤ / is NULL, comparing numbers and dates as values, plus an Excel-style value list with counts), shown as removable chips; *Filter by / Exclude this value* from a cell's context menu; typed multi-column sort (click a header, Shift+click to add; numbers, dates and NULLs order correctly); a *Columns* chooser to hide, find and jump to columns; freeze columns; drag to reorder; row numbers; IDE-style colouring by value type (numbers, dates / times, booleans, GUIDs, binary, NULL — in light and dark themes), zebra rows and right-aligned numbers; and a *Row details* pane that lists the selected row as column / value pairs for wide results. Filters and sort are kept per result tab. Ctrl+C / context menu copy (cell, rows, rows with header, rows as INSERT) and export to CSV, Excel (.xlsx), JSON, Markdown or an INSERT script use the rows and columns in view. CSV neutralizes spreadsheet formulas in text values.
@@ -31,6 +42,13 @@ Requires the .NET 8 SDK.
 dotnet restore
 dotnet run --project src/DbExplorer.Desktop
 dotnet test
+```
+
+Integration tests for the Lab features run against real servers when these are set (otherwise they are skipped); each creates and drops a `dbx_lab_test` database:
+
+```bash
+DBEXPLORER_TEST_PG="localhost;5432;postgres;<password>" \
+DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" dotnet test
 ```
 
 Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as the startup project.
@@ -70,6 +88,11 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 - The metadata snapshot makes browsing, name/code search, diagrams and the schema overview independent of data size.
 - Query tab (also inside a manual transaction and *Run on multiple databases*): when the script only reads — `SELECT` / `WITH` / `VALUES` / `TABLE` queries plus `DECLARE`, `SET`, `PRINT`, `USE`, `SHOW`, and nothing that writes, calls procedures, uses `SELECT … INTO`, cursors, control flow or transaction control — each result set stops on the server one row past the row limit, and the grid shows "first N of more than N". SQL Server uses `SET ROWCOUNT` for the run (reset afterwards; functions and subqueries are not affected); PostgreSQL runs each query through a cursor and `FETCH`es limit + 1 rows, so the planner also optimises for the first rows. Any other script runs unchanged: rows past the limit are read and discarded so every statement still runs, and the total is exact.
 - Functions called in the select list of a limited query run only for the rows fetched.
+
+**Lab features**
+- Change recorder, why-not debugger and relationship verification read through the data-search path (SQL Server: dirty reads, lock timeout; PostgreSQL: read-only transaction with statement and lock timeouts). The change counters need `VIEW DATABASE STATE` on SQL Server and are read from the primary.
+- PostgreSQL publishes other sessions' table counters when their transaction ends, at most about once a second and up to ~10 s later for busy sessions: if a change is missing, press *Check again*.
+- Lock impact only asks for the estimated plan; dry run is the one Lab tool that executes statements (always rolled back, after a confirmation — typing `PRODUCTION` on production connections).
 
 **Caveats**
 - READ UNCOMMITTED can return uncommitted or duplicated rows. For finding where a value lives that is acceptable; do not use the results as exact counts.

@@ -34,7 +34,8 @@ public partial class MainWindowViewModel : ViewModelBase
         ActivityViewModel activity,
         DiagramViewModel diagram,
         QueryWorkspaceViewModel query,
-        ComparerViewModel comparer)
+        ComparerViewModel comparer,
+        LabViewModel lab)
     {
         _store = store;
         _sessions = sessions;
@@ -52,7 +53,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, query, comparer];
+        Lab = lab;
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, query, comparer, lab];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -94,6 +96,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
     public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
+    public LabViewModel Lab { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -384,5 +387,6 @@ public enum AppTab
     Diagram,
     Indexes,
     Locks,
-    Activity
+    Activity,
+    Lab
 }

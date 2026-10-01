@@ -62,7 +62,13 @@ public sealed class SqlCompletionData(CompletionItem item) : ICompletionData
     {
         // Read the offset first: the segment is anchored and moves when text is inserted at an empty range.
         var start = completionSegment.Offset;
-        textArea.Document.Replace(start, completionSegment.Length, Item.InsertText);
+        var length = completionSegment.Length;
+        // A value literal replaces the closing quote the editor inserted with the opening one: 'Ac|' → 'Acme'.
+        var end = start + length;
+        if (Item.Kind == CompletionKind.Value && Item.InsertText.EndsWith('\'') && end < textArea.Document.TextLength &&
+            textArea.Document.GetCharAt(end) == '\'' && textArea.Document.GetText(start, length).Count(c => c == '\'') % 2 == 1)
+            length++;
+        textArea.Document.Replace(start, length, Item.InsertText);
         textArea.Caret.Offset = Math.Min(start + (Item.CaretOffset ?? Item.InsertText.Length), textArea.Document.TextLength);
     }
 

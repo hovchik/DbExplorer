@@ -114,6 +114,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         RunOnMultipleDatabases = false;
         SetDatabases([]);
         ExecuteCommand.NotifyCanExecuteChanged();
+        NotifyLabCommands();
 
         _attaching = true;
         AvailableDatabases = session is null ? [] : MergeNames(session.Snapshot.Databases, [session.Profile.Database, preferredDatabase]);
@@ -239,7 +240,11 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     private void SetCompletion(MetadataSnapshot snapshot, DatabaseSession session, string? scope)
     {
-        _completion = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
+        var values = ValueCacheFor(session);
+        _completion = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
+        {
+            ValueSource = values is null ? null : values.TryGet
+        };
         var objects = snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger);
         CompletionInfo = $"Suggestions: {objects:N0} objects" + (scope is null ? "" : $" in {scope}");
     }
@@ -273,6 +278,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         ExecuteCommand.NotifyCanExecuteChanged();
         ExplainCommand.NotifyCanExecuteChanged();
         ExplainAnalyzeCommand.NotifyCanExecuteChanged();
+        NotifyLabCommands();
     }
 
     partial void OnIsRunningChanged(bool value)
@@ -283,6 +289,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         ExplainAnalyzeCommand.NotifyCanExecuteChanged();
         CommitCommand.NotifyCanExecuteChanged();
         RollbackCommand.NotifyCanExecuteChanged();
+        NotifyLabCommands();
     }
 
     partial void OnRunOnMultipleDatabasesChanged(bool value)

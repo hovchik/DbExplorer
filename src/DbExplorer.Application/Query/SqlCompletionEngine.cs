@@ -650,20 +650,22 @@ public sealed class SqlCompletionEngine
         var joined = references[^1];
         foreach (var other in references.Take(references.Count - 1))
         {
-            foreach (var condition in ForeignKeyConditions(joined, other))
-                yield return new CompletionItem(condition, condition, CompletionKind.Join, "foreign key");
+            foreach (var (condition, inferred) in ForeignKeyConditions(joined, other))
+                yield return new CompletionItem(condition, condition, CompletionKind.Join, inferred ? "inferred relationship (Lab)" : "foreign key");
         }
     }
 
-    private IEnumerable<string> ForeignKeyConditions(TableReferenceInfo a, TableReferenceInfo b)
+    /// <summary>ON conditions from foreign keys between two tables, flagged when the key is an accepted inferred one.</summary>
+    private IEnumerable<(string Condition, bool Inferred)> ForeignKeyConditions(TableReferenceInfo a, TableReferenceInfo b)
     {
         string Q(TableReferenceInfo r) => r.Alias ?? QuoteIfNeeded(r.Object.Name);
 
-        IEnumerable<string> From(TableReferenceInfo child, TableReferenceInfo parent) =>
+        IEnumerable<(string, bool)> From(TableReferenceInfo child, TableReferenceInfo parent) =>
             _snapshot.ForeignKeysOf(child.Object.Database, child.Object.Schema, child.Object.Name)
                 .Where(fk => Same(fk.ReferencedSchema, parent.Object.Schema) && Same(fk.ReferencedTable, parent.Object.Name))
-                .Select(fk => Condition(Q(child), fk.Columns, Q(parent), fk.ReferencedColumns))
-                .Where(c => c is not null)!;
+                .Select(fk => (Condition: Condition(Q(child), fk.Columns, Q(parent), fk.ReferencedColumns), fk.IsVirtual))
+                .Where(c => c.Condition is not null)
+                .Select(c => (c.Condition!, c.IsVirtual));
 
         return From(a, b).Concat(From(b, a));
     }
@@ -693,10 +695,10 @@ public sealed class SqlCompletionEngine
             {
                 var alias = MakeAlias(related!.Name, usedAliases);
                 var candidate = new TableReferenceInfo(related, alias);
-                var condition = ForeignKeyConditions(candidate, existing).FirstOrDefault();
+                var (condition, inferred) = ForeignKeyConditions(candidate, existing).FirstOrDefault();
                 if (condition is null) continue;
                 yield return new CompletionItem(related.Name, $"{QualifiedName(related)} {alias} ON {condition}", CompletionKind.Join,
-                    $"{DatabasePrefix(related)}{related.Schema} · ON {condition}");
+                    $"{DatabasePrefix(related)}{related.Schema} · ON {condition}" + (inferred ? " · inferred" : ""));
             }
         }
     }

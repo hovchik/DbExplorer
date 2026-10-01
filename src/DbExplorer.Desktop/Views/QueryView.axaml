@@ -47,6 +47,15 @@
 		  </MenuFlyout>
 		</Button.Flyout>
 	  </Button>
+	  <Button Content="Lab ▾" Classes="tool" ToolTip.Tip="Experimental: debug a missing row, preview a script's changes or its locks">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Why isn't my row here? (statement at the caret)…" Click="OnWhyNot" />
+			<MenuItem Header="Dry run: execute, show changed rows, roll back" Click="OnDryRun" />
+			<MenuItem Header="Lock impact: who would this block? (does not run it)" Click="OnLockImpact" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
 	  <CheckBox Content="Auto-commit" IsChecked="{Binding AutoCommit}" Margin="4,0,4,4"
 				ToolTip.Tip="Off: runs happen inside a transaction that stays open until you Commit or Rollback, so you can check changes first" />
 	  <Button Content="✔ Commit" Classes="tool" Command="{Binding CommitCommand}" IsVisible="{Binding HasOpenTransaction}"

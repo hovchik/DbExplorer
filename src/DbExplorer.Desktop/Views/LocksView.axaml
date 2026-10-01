@@ -7,8 +7,10 @@
     <WrapPanel Grid.Row="0" Classes="toolbar">
       <Button Content="Refresh" Classes="accent" Command="{Binding RefreshCommand}" />
       <CheckBox Content="Auto-refresh (5 s)" IsChecked="{Binding AutoRefresh}" Margin="0,0,10,4" />
-      <RadioButton GroupName="LockView" Content="Lock list" IsChecked="{Binding !ShowTree}" />
+      <RadioButton GroupName="LockView" Content="Lock list" IsChecked="{Binding ShowList}" />
       <RadioButton GroupName="LockView" Content="Blocking tree" IsChecked="{Binding ShowTree}" />
+      <RadioButton GroupName="LockView" Content="Flight recorder" IsChecked="{Binding ShowRecorder}"
+                   ToolTip.Tip="Blocking seen by every refresh is kept (the last hour at the 5 s auto-refresh) and can be replayed after it is gone" />
       <CheckBox Content="Hide shared DB / virtual xid locks" IsChecked="{Binding HideNoise}" Margin="0,0,10,4"
                 ToolTip.Tip="Hide the shared database locks every session holds (SQL Server) and virtual transaction id locks (PostgreSQL)" />
       <CheckBox Content="Blocking chains only" IsChecked="{Binding BlockingOnly}" Margin="0,0,10,4" />
@@ -37,7 +39,61 @@
                  IsVisible="{Binding !BlockingTree.Count}" />
     </Grid>
 
-    <DataGrid Grid.Row="2" ItemsSource="{Binding Locks}" IsVisible="{Binding !ShowTree}"
+    <Grid Grid.Row="2" IsVisible="{Binding ShowRecorder}" ColumnDefinitions="360,6,*">
+      <DockPanel Grid.Column="0">
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,4">
+          <CheckBox Content="Record every refresh" IsChecked="{Binding RecordHistory}" />
+          <TextBlock Classes="hint" Text="{Binding RecorderStatus}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Content="Copy incident report" Command="{Binding CopyIncidentCommand}"
+                    ToolTip.Tip="Timeline and the blocking tree at the worst moment, as plain text" />
+            <Button Content="Clear" Command="{Binding ClearRecordingCommand}" />
+          </StackPanel>
+        </StackPanel>
+        <ListBox ItemsSource="{Binding Incidents}" SelectedItem="{Binding SelectedIncident, Mode=TwoWay}"
+                 BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="diag:BlockingIncident">
+              <StackPanel Margin="0,2">
+                <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                <TextBlock Classes="hint" Text="{Binding ObjectsText}" TextWrapping="Wrap" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+      <DockPanel Grid.Column="2">
+        <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="4,0,0,4">
+          <Slider Minimum="0" Maximum="{Binding ReplayMaximum}" Value="{Binding ReplayIndex}" IsSnapToTickEnabled="True" TickFrequency="1"
+                  IsEnabled="{Binding SelectedIncident, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <TextBlock Classes="hint" Text="{Binding ReplayInfo}" />
+        </StackPanel>
+        <Grid>
+          <TreeView ItemsSource="{Binding ReplayTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem">
+                <Setter Property="IsExpanded" Value="True" />
+              </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate x:DataType="diag:BlockingNode" ItemsSource="{Binding Children}">
+                <StackPanel Margin="0,3">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                  <TextBlock Classes="hint" Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+          <TextBlock Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="20"
+                     Text="Pick an incident to replay it: drag the slider to see who blocked whom at each refresh."
+                     IsVisible="{Binding SelectedIncident, Converter={x:Static ObjectConverters.IsNull}}" />
+        </Grid>
+      </DockPanel>
+    </Grid>
+
+    <DataGrid Grid.Row="2" ItemsSource="{Binding Locks}" IsVisible="{Binding ShowList}"
               SelectedItem="{Binding SelectedLock, Mode=TwoWay}"
               IsReadOnly="True" AutoGenerateColumns="False"
               CanUserResizeColumns="True" CanUserSortColumns="True"

@@ -400,3 +400,21 @@ public class ValueCompletionTests
         Assert.All(Engine().Complete(sql, sql.Length).Items, i => Assert.Equal(CompletionKind.Column, i.Kind));
     }
 }
+
+public class VirtualForeignKeyDiagramTests
+{
+    [Fact]
+    public void Accepted_relationships_are_dotted_in_mermaid()
+    {
+        var snapshot = TestSnapshots.Shop().WithVirtualForeignKeys([new DbForeignKey
+        {
+            Name = "inferred_Audit_Id", Schema = "dbo", Table = "Audit", Columns = "Id",
+            ReferencedSchema = "dbo", ReferencedTable = "Customers", ReferencedColumns = "CustomerId"
+        }]);
+        var customers = snapshot.Objects.Single(o => o.Name == "Customers");
+        var mermaid = DbExplorer.Application.Diagram.ErDiagramBuilder.ToMermaid(
+            DbExplorer.Application.Diagram.ErDiagramBuilder.AroundTable(snapshot, customers, 1, DbExplorer.Application.Diagram.ErColumnMode.KeysOnly));
+        Assert.Contains("dbo_Customers ||..o{ dbo_Audit", mermaid);
+        Assert.Contains("dbo_Customers ||--o{ sales_Orders", mermaid);
+    }
+}

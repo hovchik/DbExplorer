@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lab="using:DbExplorer.Application.Lab"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             x:Class="DbExplorer.Desktop.Views.LabView">
+  <TabControl Margin="4" Padding="0,4,0,0">
+
+    <!-- ===== Change recorder ===== -->
+    <TabItem Header="Change recorder">
+      <Grid DataContext="{Binding Recorder}" RowDefinitions="Auto,Auto,Auto,*,6,200">
+        <WrapPanel Grid.Row="0" Classes="toolbar">
+          <ComboBox Width="200" ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}"
+                    PlaceholderText="Connection's database" IsEnabled="{Binding !IsRecording}"
+                    ToolTip.Tip="Database to watch" Margin="0,0,8,4" />
+          <Button Content="● Start" Classes="accent" Command="{Binding StartCommand}"
+                  ToolTip.Tip="Reads every table's insert/update/delete counters (and snapshots small tables) as the starting point" />
+          <Button Content="■ Stop" Command="{Binding StopCommand}"
+                  ToolTip.Tip="Reads the counters again and lists the tables and rows that changed in between" />
+          <Button Content="Check again" Command="{Binding CheckAgainCommand}"
+                  ToolTip.Tip="Re-read the counters for the same recording (PostgreSQL publishes other sessions' counts up to ~10 s late)" />
+          <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+          <CheckBox Content="Exact before/after diff for tables up to" IsChecked="{Binding SnapshotSmallTables}" Margin="12,0,4,4"
+                    IsEnabled="{Binding !IsRecording}"
+                    ToolTip.Tip="At Start, small tables (catalog row estimate) are read in full, so Stop can show old and new values and deleted rows" />
+          <NumericUpDown Value="{Binding SnapshotMaxRows}" Minimum="1" Maximum="100000" Increment="1000" FormatString="N0" Width="140"
+                         IsEnabled="{Binding SnapshotSmallTables}" Margin="0,0,4,4" />
+          <TextBlock Text="rows" VerticalAlignment="Center" Margin="0,0,12,4" />
+          <Button Content="Copy report" Command="{Binding CopyReportCommand}" />
+        </WrapPanel>
+        <TextBlock Grid.Row="1" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="2,0,0,4" />
+        <ItemsControl Grid.Row="2" ItemsSource="{Binding Notes}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding StringFormat='ℹ {0}'}" TextWrapping="Wrap" Foreground="#E08A00" Margin="2,0,0,2" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="3" ColumnDefinitions="2*,6,3*">
+          <DataGrid Grid.Column="0" ItemsSource="{Binding Tables}" SelectedItem="{Binding SelectedTable, Mode=TwoWay}"
+                    IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
+                    GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Table" Binding="{Binding FullName}" Width="Auto" MinWidth="140" />
+              <DataGridTextColumn Header="Inserted" Binding="{Binding Inserts, StringFormat='{}{0:N0}'}" Width="Auto" />
+              <DataGridTextColumn Header="Updated" Binding="{Binding Updates, StringFormat='{}{0:N0}'}" Width="Auto" />
+              <DataGridTextColumn Header="Deleted" Binding="{Binding Deletes, StringFormat='{}{0:N0}'}" Width="Auto" />
+              <DataGridTextColumn Header="Rows found by" Binding="{Binding Detail}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+          <DataGrid Grid.Column="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                    IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
+                    GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Change" Binding="{Binding Change}" Width="Auto" />
+              <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="Auto" />
+              <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="*" />
+              <DataGridTextColumn Header="Changed columns" Binding="{Binding Columns}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </Grid>
+        <GridSplitter Grid.Row="4" ResizeDirection="Rows" Background="Transparent" />
+        <DataGrid Grid.Row="5" ItemsSource="{Binding Values}" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridCheckBoxColumn Header="Changed" Binding="{Binding Changed}" Width="Auto" />
+            <DataGridTextColumn Header="Column" Binding="{Binding Column}" Width="Auto" />
+            <DataGridTextColumn Header="Before" Binding="{Binding Before}" Width="*" />
+            <DataGridTextColumn Header="After" Binding="{Binding After}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </TabItem>
+
+    <!-- ===== Schema history ===== -->
+    <TabItem Header="Schema history">
+      <Grid DataContext="{Binding History}" RowDefinitions="Auto,Auto,*">
+        <WrapPanel Grid.Row="0" Classes="toolbar">
+          <TextBlock Text="From" VerticalAlignment="Center" Margin="0,0,4,4" />
+          <ComboBox Width="220" ItemsSource="{Binding Versions}" SelectedItem="{Binding FromVersion}" Margin="0,0,8,4">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="lab:SchemaVersion">
+                <TextBlock Text="{Binding TakenAt, StringFormat='{}{0:g}'}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Text="to" VerticalAlignment="Center" Margin="0,0,4,4" />
+          <ComboBox Width="220" ItemsSource="{Binding Versions}" SelectedItem="{Binding ToVersion}" Margin="0,0,8,4">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="lab:SchemaVersion">
+                <TextBlock Text="{Binding TakenAt, StringFormat='{}{0:g}'}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Content="Compare" Classes="accent" Command="{Binding CompareCommand}" />
+          <Button Content="Reload" Command="{Binding LoadVersionsCommand}" />
+          <TextBox Width="220" Text="{Binding ObjectName}" Watermark="schema.object" Margin="16,0,4,4" />
+          <Button Content="History of this object" Command="{Binding ShowObjectHistoryCommand}"
+                  ToolTip.Tip="Every recorded version in which the object appeared, changed or disappeared" />
+        </WrapPanel>
+        <TextBlock Grid.Row="1" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="2,0,0,4" />
+        <Grid Grid.Row="2" ColumnDefinitions="360,6,*">
+          <Grid Grid.Column="0" RowDefinitions="2*,6,*">
+            <DataGrid Grid.Row="0" ItemsSource="{Binding Changes}" SelectedItem="{Binding SelectedChange, Mode=TwoWay}"
+                      IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
+                      GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Change" Binding="{Binding Kind}" Width="Auto" />
+                <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
+                <DataGridTextColumn Header="Object" Binding="{Binding FullName}" Width="*" />
+              </DataGrid.Columns>
+            </DataGrid>
+            <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
+            <DataGrid Grid.Row="2" ItemsSource="{Binding Revisions}" SelectedItem="{Binding SelectedRevision, Mode=TwoWay}"
+                      IsReadOnly="True" AutoGenerateColumns="False" GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Seen at" Binding="{Binding Version.TakenAt, StringFormat='{}{0:g}'}" Width="*" />
+                <DataGridTextColumn Header="Revision" Binding="{Binding Kind}" Width="Auto" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </Grid>
+          <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+          <TextBox Grid.Column="2" Classes="code" Text="{Binding DiffText}" IsReadOnly="True" AcceptsReturn="True"
+                   TextWrapping="NoWrap" Watermark="Pick a change (or a revision) to see what changed: - old line, + new line" />
+        </Grid>
+      </Grid>
+    </TabItem>
+
+    <!-- ===== Inferred relationships ===== -->
+    <TabItem Header="Inferred relationships">
+      <Grid DataContext="{Binding Relationships}" RowDefinitions="Auto,Auto,*">
+        <WrapPanel Grid.Row="0" Classes="toolbar">
+          <Button Content="Find candidates" Classes="accent" Command="{Binding FindCommand}"
+                  ToolTip.Tip="From the cached catalog: column names and types that point at another table's key (no server load)" />
+          <Button Content="Verify selected" Command="{Binding VerifySelectedCommand}" />
+          <Button Content="Verify all" Command="{Binding VerifyAllCommand}"
+                  ToolTip.Tip="Samples 2,000 child values per candidate and counts how many exist in the parent (one bounded, non-blocking query each)" />
+          <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+          <Button Content="✔ Accept" Command="{Binding AcceptCommand}" Margin="12,0,4,4"
+                  ToolTip.Tip="Use it like a foreign key in the Diagram, Relations and JOIN suggestions (stored locally, never in the database)" />
+          <Button Content="Remove" Command="{Binding RemoveCommand}" />
+        </WrapPanel>
+        <TextBlock Grid.Row="1" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="2,0,0,4" />
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                  IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
+                  GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridCheckBoxColumn Header="Accepted" Binding="{Binding IsAccepted}" Width="Auto" />
+            <DataGridTextColumn Header="Child column" Binding="{Binding Relationship.Child}" Width="*" />
+            <DataGridTextColumn Header="→ Parent key" Binding="{Binding Relationship.Parent}" Width="*" />
+            <DataGridTextColumn Header="Confidence" Binding="{Binding Relationship.Confidence}" Width="Auto" />
+            <DataGridTextColumn Header="Why" Binding="{Binding Relationship.Reason}" Width="*" />
+            <DataGridTextColumn Header="Data check" Binding="{Binding Verification}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </TabItem>
+  </TabControl>
+</UserControl>

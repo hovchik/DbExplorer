@@ -286,7 +286,7 @@ public sealed class ChangeRecorder
     private static IEnumerable<DbObject> SnapshotCandidates(DatabaseSession session, string? database, RecorderOptions options) =>
         session.Snapshot.Objects
             .Where(o => o.Type == DbObjectType.Table && InDatabase(session, o, database))
-            .Where(o => o.RowCount is long n && n <= options.SnapshotMaxRows)
+            .Where(o => o.RowCount is long n && n >= 0 && n <= options.SnapshotMaxRows) // -1: never analyzed, size unknown
             .Where(o => session.Snapshot.ColumnsOf(o.Database, o.Schema, o.Name).Any(c => c.IsPrimaryKey))
             .OrderBy(o => o.RowCount)
             .Take(options.MaxSnapshotTables);

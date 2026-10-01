@@ -303,10 +303,12 @@ public sealed class LockImpactAnalyzer
             return findings;
         }
 
-        foreach (var target in targets)
+        // One report per table, however many statements of the script touch it; the strongest lock decides.
+        foreach (var group in targets.GroupBy(t => Normalize(t.Table), StringComparer.OrdinalIgnoreCase))
         {
-            var exclusive = target.LockKind is "Sch-M" or "ACCESS EXCLUSIVE" or "S table" or "SHARE" ||
-                            target.EstimatedRows is >= EscalationThreshold && session.Provider.ProviderKey == SqlDialect.SqlServerKey;
+            var target = group.First();
+            var exclusive = group.Any(t => t.LockKind is "Sch-M" or "ACCESS EXCLUSIVE" or "S table" or "SHARE" ||
+                                           t.EstimatedRows is >= EscalationThreshold && session.Provider.ProviderKey == SqlDialect.SqlServerKey);
 
             var holders = locks.Where(l => SameTable(l.ObjectName, target.Table))
                 .GroupBy(l => l.SessionId)

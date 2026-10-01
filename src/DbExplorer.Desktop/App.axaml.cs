@@ -37,6 +37,10 @@ public partial class App : Avalonia.Application
         services.AddSingleton<Func<QueryViewModel>>(sp => sp.GetRequiredService<QueryViewModel>);
         services.AddSingleton<QueryWorkspaceViewModel>();
         services.AddSingleton<ComparerViewModel>();
+        services.AddSingleton<ChangeRecorderViewModel>();
+        services.AddSingleton<SchemaHistoryViewModel>();
+        services.AddSingleton<RelationshipsViewModel>();
+        services.AddSingleton<LabViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         var provider = services.BuildServiceProvider();

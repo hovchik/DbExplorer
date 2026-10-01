@@ -147,6 +147,7 @@ public partial class QueryViewModel
 
     private async Task RunLabAsync(string status, Func<CancellationToken, Task> work)
     {
+        if (!await ConfirmDiscardEditsAsync()) return;
         _runCts?.Dispose();
         _runCts = new CancellationTokenSource();
         IsRunning = true;

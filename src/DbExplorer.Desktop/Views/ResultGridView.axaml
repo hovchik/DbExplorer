@@ -63,6 +63,7 @@
 					  ToolTip.Tip="Show the selected row as a list of column / value pairs — handy for wide results" />
 		<Button x:Name="ClearAllButton" Classes="compact" Content="Clear filters &amp; sort" Margin="0,0,10,2" IsVisible="False"
 				Click="OnClearAll" ToolTip.Tip="Remove every filter and sort and show all fetched rows" />
+		<TextBlock x:Name="EditInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" IsVisible="False" />
 		<TextBlock x:Name="RowCountText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" TextTrimming="CharacterEllipsis" />
 		<TextBlock x:Name="AggregateText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" FontWeight="SemiBold"
 				   ToolTip.Tip="Summary of the current column over the selected rows" />
@@ -98,17 +99,33 @@
 	<!-- Active column filters as removable chips -->
 	<WrapPanel x:Name="FilterChips" DockPanel.Dock="Top" Orientation="Horizontal" IsVisible="False" Margin="0,2,0,0" />
 
+	<!-- Edited values waiting to be committed, and the outcome of the last commit -->
+	<Border x:Name="EditBar" DockPanel.Dock="Top" IsVisible="False" Margin="0,2,0,4" Padding="8,4" CornerRadius="6"
+			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}">
+	  <DockPanel>
+		<StackPanel x:Name="EditButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
+		  <Button x:Name="CommitEditsButton" Classes="compact accent" Content="Commit" Click="OnCommitEdits"
+				  ToolTip.Tip="Write the edited values to the database (Ctrl+S)" />
+		  <Button x:Name="RevertEditsButton" Classes="compact" Content="Revert all" Click="OnRevertEdits"
+				  ToolTip.Tip="Discard every edit that is not committed yet" />
+		  <Button x:Name="DismissEditMessageButton" Classes="compact" Content="✕" Padding="6,0" Click="OnDismissEditMessage"
+				  ToolTip.Tip="Hide this message" />
+		</StackPanel>
+		<SelectableTextBlock x:Name="EditStatusText" VerticalAlignment="Center" TextWrapping="Wrap" MaxHeight="120" />
+	  </DockPanel>
+	</Border>
+
 	<Grid x:Name="BodyGrid" ColumnDefinitions="*,Auto,0">
-	  <DataGrid x:Name="Grid" Grid.Column="0" IsReadOnly="True" AutoGenerateColumns="False"
+	  <DataGrid x:Name="Grid" Grid.Column="0" IsReadOnly="False" AutoGenerateColumns="False"
 				CanUserResizeColumns="True" CanUserSortColumns="True" CanUserReorderColumns="True"
 				SelectionMode="Extended" HeadersVisibility="All"
 				GridLinesVisibility="Horizontal" RowHeight="26">
 		<DataGrid.ContextMenu>
 		  <ContextMenu>
 			<MenuItem Header="View cell value…" InputGesture="Enter" Click="OnViewCell" />
-			<MenuItem Header="Copy cell value" Click="OnCopyCell" />
-			<MenuItem Header="Copy selected rows" InputGesture="Ctrl+C" Click="OnCopySelected" />
-			<MenuItem Header="Copy selected rows with header" Click="OnCopySelectedWithHeader" />
+			<MenuItem Header="Copy cell value" InputGesture="Ctrl+C" Click="OnCopyCell" />
+			<MenuItem Header="Copy selected rows" Click="OnCopySelected" />
+			<MenuItem Header="Copy selected rows with header" InputGesture="Ctrl+Shift+C" Click="OnCopySelectedWithHeader" />
 			<MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
 			<Separator />
 			<MenuItem Header="Filter by this value" Click="OnFilterByCell" />

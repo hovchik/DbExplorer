@@ -23,6 +23,8 @@
           <SolidColorBrush x:Key="AppCellNullBrush">#FF9A9A9A</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridAltRowBrush">#07000000</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#0D000000</SolidColorBrush>
+          <!-- An edited, not yet committed value in a result grid -->
+          <SolidColorBrush x:Key="AppCellEditedBrush">#40F5A623</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -41,6 +43,7 @@
           <SolidColorBrush x:Key="AppCellNullBrush">#FF7A7E85</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridAltRowBrush">#08FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#12FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellEditedBrush">#4DB8860B</SolidColorBrush>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

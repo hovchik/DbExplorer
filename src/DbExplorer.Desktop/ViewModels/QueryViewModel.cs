@@ -212,6 +212,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         if (_session is not { } session)
         {
             _completion = null;
+            _completionSnapshot = null;
             CompletionInfo = "";
             return;
         }
@@ -241,6 +242,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private void SetCompletion(MetadataSnapshot snapshot, DatabaseSession session, string? scope)
     {
         var values = ValueCacheFor(session);
+        _completionSnapshot = snapshot;
         _completion = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
         {
             ValueSource = values is null ? null : values.TryGet
@@ -370,6 +372,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         var sql = run is { Sql: { Length: > 0 } part } && !string.IsNullOrWhiteSpace(part) ? part : Sql;
         var startOffset = run is { Sql.Length: > 0 } ? run.StartOffset : 0;
         if (string.IsNullOrWhiteSpace(sql)) return;
+        if (!await ConfirmDiscardEditsAsync()) return;
         ErrorCleared?.Invoke();
 
         sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
@@ -414,14 +417,15 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     {
         Status = "Running…";
         var result = await queryService.ExecuteScriptAsync(session, sql, TargetDatabase, TimeoutSeconds, ct, RowLimit);
-        ShowResult(session, result);
+        ShowResult(session, sql, result);
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }
 
-    private void ShowResult(DatabaseSession session, QueryExecutionResult result, string prefix = "")
+    private void ShowResult(DatabaseSession session, string sql, QueryExecutionResult result, string prefix = "")
     {
+        var sources = ResolveSources(session, sql, result);
         ResultSets = result.ResultSets
-            .Select((rs, i) => ResultSetView.From($"Result {i + 1}", rs, session))
+            .Select((rs, i) => WithSource(ResultSetView.From($"Result {i + 1}", rs, session), sources[i]))
             .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
 

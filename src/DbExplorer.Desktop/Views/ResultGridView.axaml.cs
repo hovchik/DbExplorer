@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Avalonia;
@@ -9,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -31,7 +33,8 @@ public sealed record RowDetailItem(string Name, string Value, bool IsNull, IBrus
 /// can be refined without re-running the query: a search box over all cells, per-column filters
 /// (condition and value list) from each header's funnel, typed multi-column sort (click / Shift+click
 /// a header), hidden / frozen / reordered columns, and a row-details pane. Copy and export work on
-/// the rows and columns in view.</summary>
+/// the rows and columns in view. When the result set knows its source tables, values can be edited in place (committed
+/// or reverted from the edit bar) and foreign key values link to the row they reference.</summary>
 public partial class ResultGridView : UserControl
 {
     public static readonly StyledProperty<ResultSetView?> ResultSetProperty =
@@ -90,6 +93,29 @@ public partial class ResultGridView : UserControl
     private ResultRow? _pressedRow;
     private int? _pressedColumn;
 
+    // In-place editing: the grid only enters edit mode when asked to (F2, double-click, menu), never on a plain click.
+    private bool _editRequested;
+    private bool _isEditing;
+    private bool _committing;
+    private string? _retryText; // text of a rejected edit, put back when the editor reopens
+    private string? _editMessage;
+    private bool _editMessageIsError;
+    private static readonly IBrush ErrorBrush = new ImmutableSolidColorBrush(Color.Parse("#D13438"));
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+    private const string LinkClass = "fkLink";
+
+    // A plain left press on a foreign key value; releasing over the same value opens the referenced row. (The grid
+    // handles and captures the pointer, so the value's own Tapped event never comes.)
+    private TextBlock? _pressedLink;
+
+    private readonly MenuItem _openReferenceItem;
+    private readonly MenuItem _editCellItem;
+    private readonly MenuItem _setNullItem;
+    private readonly MenuItem _revertCellItem;
+    private readonly MenuItem _revertRowItem;
+    private readonly MenuItem _selectTextItem;
+    private readonly Separator _editSeparator = new();
+
     public ResultGridView()
     {
         InitializeComponent();
@@ -102,6 +128,15 @@ public partial class ResultGridView : UserControl
         Grid.DoubleTapped += OnGridDoubleTapped;
         Grid.Sorting += OnSorting;
         Grid.CellPointerPressed += OnCellPointerPressed;
+        Grid.AddHandler(PointerReleasedEvent, OnGridPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+        Grid.BeginningEdit += (_, e) =>
+        {
+            if (!_editRequested) e.Cancel = true;
+            _editRequested = false;
+        };
+        Grid.PreparingCellForEdit += OnPreparingCellForEdit;
+        Grid.CellEditEnding += OnCellEditEnding;
+        Grid.CellEditEnded += (_, _) => _isEditing = false;
         Grid.LoadingRow += (_, e) =>
         {
             e.Row.Header = (e.Row.Index + 1).ToString("N0");
@@ -126,6 +161,23 @@ public partial class ResultGridView : UserControl
         _columnsFlyout.Opening +=(_, _) => _columnsFlyout.Content = BuildColumnsPanel();
         DetailsToggle.IsCheckedChanged += (_, _) => SetDetailsVisible(DetailsToggle.IsChecked == true);
         DetailsFilterBox.TextChanged += (_, _) => UpdateDetails();
+
+        _openReferenceItem = Item("Open referenced row", () => OpenReference(TargetCell()));
+        _editCellItem = Item("Edit value", () => BeginCellEdit(TargetCell()));
+        _editCellItem.InputGesture = new KeyGesture(Key.F2);
+        _setNullItem = Item("Set to NULL", () => EditTarget((row, column) => row.SetValue(column, null)));
+        _revertCellItem = Item("Revert this value", () => EditTarget((row, column) => row.RevertCell(column)));
+        _revertRowItem = Item("Revert this row", () => EditTarget((row, _) => row.Revert()));
+        _selectTextItem = Item("Select text in cell", () => BeginCellEdit(TargetCell()));
+        _selectTextItem.InputGesture = new KeyGesture(Key.F2);
+        if (Grid.ContextMenu is { } menu)
+        {
+            var items = new Control[] { _openReferenceItem, _editCellItem, _setNullItem, _revertCellItem, _revertRowItem, _editSeparator };
+            for (var i = 0; i < items.Length; i++) menu.Items.Insert(i, items[i]);
+            var view = menu.Items.OfType<MenuItem>().First(m => m.Header as string == "View cell value…");
+            menu.Items.Insert(menu.Items.IndexOf(view) + 1, _selectTextItem);
+            menu.Opening += (_, _) => UpdateCellMenu();
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -148,6 +200,8 @@ public partial class ResultGridView : UserControl
             _columns.Clear();
             _pressedRow = null;
             _pressedColumn = null;
+            _editMessage = null;
+            _isEditing = false;
 
             if (resultSet is null)
             {
@@ -159,6 +213,8 @@ public partial class ResultGridView : UserControl
                 AggregateText.Text = "";
                 UpdateChips();
                 UpdateDetails();
+                UpdateEditBar();
+                UpdateEditInfo();
                 return;
             }
 
@@ -172,6 +228,8 @@ public partial class ResultGridView : UserControl
                 {
                     Header = BuildHeader(state),
                     CellTemplate = new FuncDataTemplate<ResultRow>((_, _) => BuildCell(index, state.IsNumeric), supportsRecycling: true),
+                    CellEditingTemplate = new FuncDataTemplate<ResultRow>((row, _) => BuildEditor(row, index, state.IsNumeric), supportsRecycling: false),
+                    IsReadOnly = false, // read-only cells still open a read-only editor, to select part of the text
                     SortMemberPath = $"Values[{index}]",
                     CanUserSort = true,
                     Width = DataGridLength.Auto,
@@ -187,6 +245,8 @@ public partial class ResultGridView : UserControl
             }
             Grid.FrozenColumnCount = Math.Min(_state.FrozenColumnCount, _columns.Count);
             FilterBox.Text = _state.QuickFilter;
+            UpdateEditBar();
+            UpdateEditInfo();
         }
         finally
         {
@@ -195,9 +255,10 @@ public partial class ResultGridView : UserControl
         ApplyView();
     }
 
-    private static Control BuildCell(int index, bool numeric)
+    /// <summary>A cell: the value coloured by type, tinted when edited and not committed yet, underlined when it is a
+    /// foreign key value that opens the row it references.</summary>
+    private Control BuildCell(int index, bool numeric)
     {
-        var path = $"Values[{index}]";
         var text = new TextBlock
         {
             Margin = new Thickness(8, 0),
@@ -206,20 +267,84 @@ public partial class ResultGridView : UserControl
             TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
-        text.Bind(TextBlock.TextProperty, new Binding(path) { Mode = BindingMode.OneWay, Converter = ResultCellTextConverter.Instance });
+        var cell = new Border { Background = Brushes.Transparent, Child = text };
 
-        // Colour by value type; cells are recycled, so re-pick on each new row, rebinding only when the kind changes.
+        // Cells are recycled and rows change when edited, so re-read the row each time; rebind brushes only when they change.
         string? colorKey = null;
-        text.DataContextChanged += (_, _) =>
+        bool? edited = null, linked = null;
+        IDisposable? editedBackground = null;
+        void Refresh()
         {
-            var value = text.DataContext is ResultRow row ? Cell(row, index) : null;
+            var row = cell.DataContext as ResultRow;
+            var value = row is null ? null : Cell(row, index);
+            text.Text = ResultCellTextConverter.Instance.Convert(value, typeof(string), null, CultureInfo.CurrentCulture) as string;
             var key = CellValueColors.ResourceKey(value);
             text.FontStyle = key == CellValueColors.Null ? FontStyle.Italic : FontStyle.Normal;
-            if (key == colorKey) return;
-            colorKey = key;
-            text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(key));
+            if (key != colorKey)
+            {
+                colorKey = key;
+                text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(key));
+            }
+
+            var isEdited = row?.IsCellModified(index) == true;
+            if (isEdited != edited)
+            {
+                edited = isEdited;
+                editedBackground?.Dispose();
+                editedBackground = isEdited ? cell.Bind(Border.BackgroundProperty, cell.GetResourceObservable("AppCellEditedBrush")) : null;
+                if (!isEdited) cell.Background = Brushes.Transparent;
+            }
+            ToolTip.SetTip(cell, isEdited ? "Edited, not committed yet. Was: " + OriginalText(row!.OriginalValue(index)) : null);
+
+            var reference = value is null or DBNull ? null : ResultSet?.ReferenceOf(index);
+            var isLinked = reference is not null;
+            if (isLinked != linked)
+            {
+                linked = isLinked;
+                text.TextDecorations = isLinked ? TextDecorations.Underline : null;
+                text.Cursor = isLinked ? HandCursor : null;
+                // Only the value itself is the link, so clicking the rest of the cell still just selects the row.
+                text.HorizontalAlignment = !isLinked ? HorizontalAlignment.Stretch : numeric ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+                text.Classes.Set(LinkClass, isLinked);
+            }
+            ToolTip.SetTip(text, reference is null ? null : $"Click to open the {reference.TargetName} row it references");
+        }
+
+        // Bound to the row's value list, which is replaced on every edit, revert and commit.
+        cell.Bind(TagProperty, new Binding(nameof(ResultRow.Values)) { Mode = BindingMode.OneWay });
+        cell.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TagProperty || e.Property == DataContextProperty) Refresh();
         };
-        return text;
+        return cell;
+    }
+
+    private static string OriginalText(object? value) =>
+        value is null or DBNull ? "NULL" : ResultCellTextConverter.Instance.Convert(value, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "";
+
+    /// <summary>The in-place editor: a text box with the value as typed text (read-only for cells that cannot be edited,
+    /// so part of the text can still be selected and copied).</summary>
+    private Control BuildEditor(ResultRow? row, int index, bool numeric)
+    {
+        var value = row is null ? null : Cell(row, index);
+        var editable = row is not null && CanEditCell(row, index);
+        var initial = value is null or DBNull && !editable ? "NULL" : ResultEditSql.EditText(value);
+        var box = new TextBox
+        {
+            Text = initial,
+            Tag = initial,
+            IsReadOnly = !editable,
+            Padding = new Thickness(7, 0),
+            MinHeight = 0,
+            MinWidth = 0, // the theme's minimum would widen an auto-sized column, and that re-layout ends the edit
+            VerticalContentAlignment = VerticalAlignment.Center,
+            TextAlignment = numeric ? TextAlignment.Right : TextAlignment.Left,
+            Watermark = value is null or DBNull && editable ? "NULL" : null
+        };
+        ToolTip.SetTip(box, editable
+            ? "Enter keeps the new value (Commit writes it to the database) · Esc cancels"
+            : "Read-only · select text and press Ctrl+C to copy it · Esc closes");
+        return box;
     }
 
     private Control BuildHeader(ColumnState c)
@@ -244,7 +369,11 @@ public partial class ResultGridView : UserControl
         panel.Children.Add(c.FilterButton);
         panel.Children.Add(c.SortGlyph);
         panel.Children.Add(name);
-        ToolTip.SetTip(panel, $"{c.Name}\nClick to sort · Shift+Click to add to the sort · right-click for more");
+        var about = ResultSet is { } rs
+            ? (rs.CanEdit(c.Index) ? "\n✎ Editable (double-click or F2)" : "") +
+              (rs.ReferenceOf(c.Index) is { } reference ? $"\n↗ References {reference.TargetName}: click a value to open its row" : "")
+            : "";
+        ToolTip.SetTip(panel, $"{c.Name}{about}\nClick to sort · Shift+Click to add to the sort · right-click for more");
         panel.ContextMenu = BuildHeaderMenu(c);
         return panel;
     }
@@ -765,15 +894,38 @@ public partial class ResultGridView : UserControl
     {
         _pressedRow = e.Row.DataContext as ResultRow;
         _pressedColumn = e.Column.Tag as int?;
+        var press = e.PointerPressedEventArgs;
+        _pressedLink = press.KeyModifiers == KeyModifiers.None && press.GetCurrentPoint(Grid).Properties.IsLeftButtonPressed && !_isEditing
+            ? LinkAt(e.Cell, press)
+            : null;
         if (e.PointerPressedEventArgs.GetCurrentPoint(Grid).Properties.IsRightButtonPressed &&
             _pressedRow is not null && !Grid.SelectedItems.Contains(_pressedRow))
             Grid.SelectedItem = _pressedRow;
     }
 
+    /// <summary>The cell's foreign key value when the pointer is over the value itself (not the rest of the cell).</summary>
+    private static TextBlock? LinkAt(Visual cell, PointerEventArgs e) =>
+        cell.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Classes.Contains(LinkClass)) is { } link &&
+        new Rect(link.Bounds.Size).Contains(e.GetPosition(link))
+            ? link
+            : null;
+
+    private void OnGridPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var link = _pressedLink;
+        _pressedLink = null;
+        if (link is null || e.InitialPressMouseButton != MouseButton.Left || !link.Classes.Contains(LinkClass) ||
+            link.DataContext is not ResultRow row || _pressedColumn is not { } column || !ReferenceEquals(row, _pressedRow))
+            return;
+        if (!new Rect(link.Bounds.Size).Contains(e.GetPosition(link))) return;
+        OpenReference((row, column));
+    }
+
     private void OnGridDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if ((e.Source as Visual)?.FindAncestorOfType<DataGridCell>(includeSelf: true) is null) return;
-        ViewCell(TargetCell());
+        if (_isEditing || (e.Source as Visual)?.FindAncestorOfType<DataGridCell>(includeSelf: true) is null) return;
+        if (TargetCell() is ({ } row, var column) && CanEditCell(row, column)) BeginCellEdit((row, column));
+        else ViewCell(TargetCell());
     }
 
     private void UpdateAggregates()
@@ -848,12 +1000,45 @@ public partial class ResultGridView : UserControl
 
     private void OnGridKeyDown(object? sender, KeyEventArgs e)
     {
+        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (_isEditing)
+        {
+            // The editor keeps its own keys (Enter / Esc end the edit, Ctrl+C copies its selected text); Ctrl+S keeps the
+            // value being typed and commits.
+            if (e.Key == Key.S && ctrl && Grid.CommitEdit() && HasPendingEdits())
+            {
+                _ = CommitEditsAsync();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
+            {
+                // Keep the value and stay on the row; a value that does not parse leaves the editor open.
+                Grid.CommitEdit(DataGridEditingUnit.Cell, exitEditingMode: true);
+                e.Handled = true;
+            }
+            return;
+        }
         _pressedRow = null;
         _pressedColumn = null;
-        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (e.Key == Key.C && ctrl)
         {
-            _ = CopyTsvAsync(VisibleColumns(), SelectedRows(), includeHeader: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            // One row: the current cell's value. Several rows (or Ctrl+Shift+C): the rows.
+            var rows = SelectedRows();
+            if (!shift && rows.Count <= 1 && TargetCell() is ({ } row, var column))
+                _ = SetClipboardAsync(ResultExporter.FormatInvariant(Cell(row, column)));
+            else
+                _ = CopyTsvAsync(VisibleColumns(), rows, includeHeader: shift);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.F2 && e.KeyModifiers == KeyModifiers.None)
+        {
+            BeginCellEdit(TargetCell());
+            e.Handled = true;
+        }
+        else if (e.Key == Key.S && ctrl && HasPendingEdits())
+        {
+            _ = CommitEditsAsync();
             e.Handled = true;
         }
         else if (e.Key == Key.F && ctrl)
@@ -868,6 +1053,221 @@ public partial class ResultGridView : UserControl
             e.Handled = true;
         }
     }
+
+    // ---------------------------------------------------------------- editing and references
+
+    /// <summary>The cell can be changed: an editable column of the result, a value the editor understands, and a row whose
+    /// key is known (a LEFT JOIN may leave it NULL).</summary>
+    private bool CanEditCell(ResultRow row, int column)
+    {
+        if (ResultSet is not { Source: { } source } rs || !rs.CanEdit(column) || column >= row.Values.Count) return false;
+        if (!ResultEditSql.IsEditableValue(row.OriginalValue(column)) || !ResultEditSql.IsEditableValue(row.Values[column])) return false;
+        return source.Tables[source.Columns[column]!.Table].Key.All(k => row.OriginalValue(k.ResultColumn) is not (null or DBNull));
+    }
+
+    private bool HasPendingEdits() => ResultSet?.Rows.Any(r => r.IsModified) == true;
+
+    /// <summary>Opens the in-place editor on a cell (read-only for cells that cannot be edited).</summary>
+    private void BeginCellEdit((ResultRow Row, int Column)? target)
+    {
+        if (_isEditing || target is not ({ } row, var column) || column >= _columns.Count) return;
+        var gridColumn = _columns[column].Column;
+        if (!gridColumn.IsVisible || !_viewRows.Contains(row)) return;
+        try
+        {
+            if (!ReferenceEquals(Grid.SelectedItem, row) || Grid.SelectedItems.Count != 1) Grid.SelectedItem = row;
+            if (!ReferenceEquals(Grid.CurrentColumn, gridColumn)) Grid.CurrentColumn = gridColumn;
+            Grid.ScrollIntoView(row, gridColumn);
+            _editRequested = true;
+            Grid.BeginEdit();
+        }
+        catch (InvalidOperationException)
+        {
+            // The grid had no current row yet; the next F2 / double-click works.
+        }
+        finally
+        {
+            _editRequested = false;
+        }
+        if (!_isEditing && ResultSet?.CanEdit(column) == true && !CanEditCell(row, column))
+            ShowEditMessage("This value cannot be edited: " + (row.Values[column] is { } v && !ResultEditSql.IsEditableValue(v)
+                ? $"values of type {v.GetType().Name} are read-only here."
+                : "the row has no key value (e.g. the missing side of an outer join)."), error: true);
+    }
+
+    private void OnPreparingCellForEdit(object? sender, DataGridPreparingCellForEditEventArgs e)
+    {
+        _isEditing = true;
+        if (e.EditingElement is not TextBox box) return;
+        if (_retryText is { } retry && !box.IsReadOnly) box.Text = retry;
+        _retryText = null;
+        Dispatcher.UIThread.Post(() =>
+        {
+            box.Focus();
+            box.SelectAll();
+        }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Takes the typed text as the cell's new value, converted to the column's type; a value that does not parse
+    /// keeps the editor open with the reason in the edit bar.</summary>
+    private void OnCellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
+    {
+        if (e.EditAction != DataGridEditAction.Commit || e.EditingElement is not TextBox { IsReadOnly: false } box ||
+            e.Row.DataContext is not ResultRow row || e.Column.Tag is not int column || !CanEditCell(row, column))
+            return;
+        var text = box.Text ?? "";
+        if (text == box.Tag as string) return;
+        try
+        {
+            var value = ResultEditSql.ParseValue(text, row.OriginalValue(column), ResultSet?.Source?.ColumnSource(column)?.Column);
+            row.SetValue(column, value);
+            if (_editMessageIsError) _editMessage = null;
+            UpdateEditBar();
+            UpdateDetails();
+        }
+        catch (FormatException ex)
+        {
+            // The grid may close the editor anyway (Enter): reopen it with the typed text so it can be corrected.
+            e.Cancel = true;
+            ShowEditMessage(ex.Message + " Fix it, or press Esc to cancel the edit.", error: true);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_isEditing) return;
+                _retryText = text;
+                BeginCellEdit((row, column));
+                _retryText = null;
+            }, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>Applies a change to the targeted cell when it is editable (Set to NULL, Revert…).</summary>
+    private void EditTarget(Action<ResultRow, int> change)
+    {
+        if (TargetCell() is not ({ } row, var column)) return;
+        if (_isEditing) Grid.CancelEdit();
+        change(row, column);
+        UpdateEditBar();
+        UpdateDetails();
+    }
+
+    private void OpenReference((ResultRow Row, int Column)? target)
+    {
+        if (target is not ({ } row, var column) || ResultSet is not { OpenReference: { } open } rs || rs.ReferenceOf(column) is not { } reference) return;
+        if (Cell(row, column) is null or DBNull) return;
+        open(rs, reference, row);
+    }
+
+    private void UpdateCellMenu()
+    {
+        var target = TargetCell();
+        var rs = ResultSet;
+        var row = target?.Row;
+        var column = target?.Column ?? -1;
+
+        var reference = row is null ? null : rs?.ReferenceOf(column);
+        _openReferenceItem.IsVisible = reference is not null;
+        _openReferenceItem.IsEnabled = row is not null && Cell(row, column) is not (null or DBNull);
+        _openReferenceItem.Header = reference is null ? "Open referenced row" : $"Open referenced {reference.TargetName} row";
+
+        var editableResult = rs?.Source?.HasEditableColumns == true && rs.CommitEdits is not null;
+        var editable = row is not null && CanEditCell(row, column);
+        foreach (var item in new[] { _editCellItem, _setNullItem, _revertCellItem, _revertRowItem }) item.IsVisible = editableResult;
+        _editCellItem.IsEnabled = editable;
+        _setNullItem.IsEnabled = editable && Cell(row!, column) is not (null or DBNull) &&
+                                 rs?.Source?.ColumnSource(column)?.Column.IsNullable != false;
+        _revertCellItem.IsEnabled = row?.IsCellModified(column) == true;
+        _revertRowItem.IsEnabled = row?.IsModified == true;
+        _editSeparator.IsVisible = reference is not null || editableResult;
+        _selectTextItem.IsVisible = !editable;
+        _selectTextItem.IsEnabled = row is not null;
+    }
+
+    private void UpdateEditInfo()
+    {
+        var rs = ResultSet;
+        var editable = rs?.Source?.HasEditableColumns == true && rs.CommitEdits is not null;
+        var links = rs?.OpenReference is not null && rs.Source?.HasReferences == true;
+        if (rs?.Source is null || (rs.CommitEdits is null && !links))
+        {
+            EditInfoText.IsVisible = false;
+            return;
+        }
+
+        var tables = string.Join(", ", rs.Source.Tables.Where(t => t.IsEditable).Select(t => t.Table.FullName));
+        EditInfoText.Text = (editable ? "✎ Editable" : "Read-only") + (links ? " · ↗ links" : "");
+        ToolTip.SetTip(EditInfoText, string.Join("\n", new[]
+        {
+            editable
+                ? $"Double-click or F2 edits a value of {tables}. Edits are written to the database only when you press Commit (Ctrl+S); Revert discards them."
+                : rs.Source.ReadOnlyReason,
+            links ? "Underlined values reference a row of another table: click one to open that row." : null
+        }.Where(t => t is not null)));
+        EditInfoText.IsVisible = true;
+    }
+
+    private void ShowEditMessage(string? message, bool error = false)
+    {
+        _editMessage = message;
+        _editMessageIsError = error && message is not null;
+        UpdateEditBar();
+    }
+
+    private void UpdateEditBar()
+    {
+        var rows = ResultSet?.Rows.Where(r => r.IsModified).ToList() ?? [];
+        var cells = rows.Sum(r => r.ModifiedColumns.Count);
+        var pending = cells > 0;
+
+        CommitEditsButton.IsVisible = RevertEditsButton.IsVisible = pending;
+        CommitEditsButton.IsEnabled = RevertEditsButton.IsEnabled = !_committing && ResultSet?.CommitEdits is not null;
+        DismissEditMessageButton.IsVisible = !pending && _editMessage is not null;
+        EditStatusText.Text = pending
+            ? $"✎ {cells:N0} edited value(s) in {rows.Count:N0} row(s), not committed yet" + (_editMessage is null ? "" : " · " + _editMessage)
+            : _editMessage;
+        if (_editMessageIsError) EditStatusText.Foreground = ErrorBrush;
+        else EditStatusText.ClearValue(TextBlock.ForegroundProperty);
+        EditBar.IsVisible = pending || _editMessage is not null;
+    }
+
+    private void OnCommitEdits(object? sender, RoutedEventArgs e) => _ = CommitEditsAsync();
+
+    /// <summary>Writes every edited row of the result set (also those hidden by filters) through the host.</summary>
+    private async Task CommitEditsAsync()
+    {
+        if (_committing || ResultSet is not { CommitEdits: { } commit } rs) return;
+        if (_isEditing) Grid.CommitEdit();
+        var rows = rs.Rows.Where(r => r.IsModified).ToList();
+        if (rows.Count == 0) return;
+
+        _committing = true;
+        ShowEditMessage("Saving…");
+        try
+        {
+            var message = await commit(rs, rows);
+            if (ReferenceEquals(rs, ResultSet)) ShowEditMessage(message);
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(rs, ResultSet)) ShowEditMessage("Not saved: " + ex.Message, error: true);
+        }
+        finally
+        {
+            _committing = false;
+            UpdateEditBar();
+            UpdateDetails();
+        }
+    }
+
+    private void OnRevertEdits(object? sender, RoutedEventArgs e)
+    {
+        if (ResultSet is not { } rs) return;
+        if (_isEditing) Grid.CancelEdit();
+        var count = ResultEditing.Revert(rs.Rows);
+        ShowEditMessage(count > 0 ? $"Reverted the edits of {count:N0} row(s)." : null);
+        UpdateDetails();
+    }
+
+    private void OnDismissEditMessage(object? sender, RoutedEventArgs e) => ShowEditMessage(null);
 
     // ---------------------------------------------------------------- copy / export
 

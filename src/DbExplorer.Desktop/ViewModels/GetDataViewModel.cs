@@ -1,8 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
@@ -30,13 +32,16 @@ public partial class GetDataViewModel : ViewModelBase
     private QueryExecutionService? _service;
     private DatabaseSession? _session;
     private DbObject? _table;
+    private IDialogService? _dialogs;
 
     /// <param name="filter">Optional WHERE condition, e.g. the primary key of one record.</param>
+    /// <param name="dialogs">Confirms production edits and opens referenced rows; without it the rows are read-only.</param>
     public void Initialize(QueryExecutionService service, DatabaseSession session, DbObject table,
-        string? filter = null, string? filterDescription = null)
+        string? filter = null, string? filterDescription = null, IDialogService? dialogs = null)
     {
         _service = service;
         _session = session;
+        _dialogs = dialogs;
         _table = table;
         Filter = filter;
         FilterDescription = filterDescription ?? filter ?? "";
@@ -50,6 +55,7 @@ public partial class GetDataViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(IsFiltered))]
     private async Task ShowAllRowsAsync()
     {
+        if (!await ConfirmDiscardEditsAsync()) return;
         Filter = null;
         UpdateTitle();
         await LoadAsync();
@@ -59,6 +65,7 @@ public partial class GetDataViewModel : ViewModelBase
     private async Task LoadAsync()
     {
         if (_service is null || _session is null || _table is null) return;
+        if (!await ConfirmDiscardEditsAsync()) return;
 
         IsRunning = true;
         Status = "Loading…";
@@ -68,9 +75,14 @@ public partial class GetDataViewModel : ViewModelBase
             var sql = BuildSelect(_table, limit, _session.Provider.ProviderKey, _session.Provider.QuoteIdentifier, Filter);
             var result = await _service.ExecuteScriptAsync(_session, sql, _table.Database, timeoutSeconds: 60);
 
+            var session = _session;
+            var sources = ResolveSources(session, sql, result);
             ResultSets = result.ResultSets
-                .Select(rs => ResultSetView.From("Rows", rs, _session,
-                    _session.Provider.QuoteIdentifier(_table.Schema) + "." + _session.Provider.QuoteIdentifier(_table.Name)))
+                .Select(rs => ResultSetView.From("Rows", rs, session,
+                    session.Provider.QuoteIdentifier(_table.Schema) + "." + session.Provider.QuoteIdentifier(_table.Name)))
+                .Select((view, i) => sources[i] is { } source && _dialogs is not null
+                    ? view with { Source = source, CommitEdits = CommitEditsAsync, OpenReference = OpenReference }
+                    : view)
                 .ToList();
 
             var rowCount = result.ResultSets.Count > 0 ? result.ResultSets[0].Rows.Count : 0;
@@ -85,6 +97,43 @@ public partial class GetDataViewModel : ViewModelBase
             IsRunning = false;
         }
     }
+
+    private IReadOnlyList<ResultSource?> ResolveSources(DatabaseSession session, string sql, QueryExecutionResult result)
+    {
+        try
+        {
+            return ResultSourceResolver.ResolveScript(sql, result.ResultSets.Select(r => r.Columns).ToList(), session.Snapshot,
+                session.Provider.ProviderKey, string.IsNullOrEmpty(_table?.Database) ? null : _table.Database);
+        }
+        catch
+        {
+            return result.ResultSets.Select(_ => (ResultSource?)null).ToList();
+        }
+    }
+
+    private async Task<string> CommitEditsAsync(ResultSetView view, IReadOnlyList<ResultRow> rows)
+    {
+        if (_session is not { } session || view.Source is not { } source) throw new InvalidOperationException("Not connected.");
+        var status = await ResultEditing.CommitAsync(session, source, rows, openTransaction: null, _dialogs) ?? "Not committed.";
+        Status = status;
+        return status;
+    }
+
+    /// <summary>Opens the referenced row in another data window, filtered to it.</summary>
+    private void OpenReference(ResultSetView view, ResultReference reference, ResultRow row)
+    {
+        if (_service is null || _session is not { } session || _dialogs is null) return;
+        var condition = ResultEditSql.ReferenceCondition(reference, row.Values,
+            ResultExporter.DialectFor(session.Provider.ProviderKey), session.Provider.QuoteIdentifier);
+        if (condition is null) return;
+        var description = string.Join(", ", reference.Columns.Select(c =>
+            $"{c.ReferencedColumn} = {ResultExporter.FormatInvariant(row.Values[c.ResultColumn])}"));
+        _ = _dialogs.ShowGetDataAsync(_service, session, ResultEditSql.ReferencedTable(reference), condition, description);
+    }
+
+    private async Task<bool> ConfirmDiscardEditsAsync() =>
+        !ResultEditing.HasEdits(ResultSets) || _dialogs is null ||
+        await _dialogs.ConfirmAsync("The rows have edited values that are not committed yet. Reload and discard the edits?", "Discard and reload");
 
     private static string BuildSelect(DbObject table, int limit, string providerKey, Func<string, string> quote, string? filter)
     {

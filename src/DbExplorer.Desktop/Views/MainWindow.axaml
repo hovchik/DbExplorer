@@ -55,17 +55,20 @@
     </Border>
 
     <TabControl Margin="4,2,4,2" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
+      <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
+        <views:QueryWorkspaceView DataContext="{Binding Query}" />
+      </TabItem>
       <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
         <views:ObjectsView DataContext="{Binding Objects}" />
+      </TabItem>
+      <TabItem Header="Comparer">
+        <views:ComparerView DataContext="{Binding Comparer}" />
       </TabItem>
       <TabItem Header="Search names &amp; code" IsEnabled="{Binding IsConnected}">
         <views:MetadataSearchView DataContext="{Binding Search}" />
       </TabItem>
       <TabItem Header="Search data" IsEnabled="{Binding IsConnected}">
         <views:DataSearchView DataContext="{Binding DataSearch}" />
-      </TabItem>
-      <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
-        <views:QueryWorkspaceView DataContext="{Binding Query}" />
       </TabItem>
       <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
         <views:DiagramView DataContext="{Binding Diagram}" />
@@ -78,9 +81,6 @@
       </TabItem>
       <TabItem Header="Activity" IsEnabled="{Binding IsConnected}">
         <views:ActivityView DataContext="{Binding Activity}" />
-      </TabItem>
-      <TabItem Header="Comparer">
-        <views:ComparerView DataContext="{Binding Comparer}" />
       </TabItem>
     </TabControl>
   </DockPanel>

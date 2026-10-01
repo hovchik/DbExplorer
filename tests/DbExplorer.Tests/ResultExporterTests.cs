@@ -59,7 +59,8 @@ public class ResultExporterTests
     [Fact]
     public void Html_embeds_rows_as_json_that_cannot_break_out_of_the_script_block()
     {
-        var html = ResultExporter.ToHtml(["Id", "Note"], [[1, "</script><b>x</b> & café"], [2.5m, null]], "<dbo>.T", DateTimeOffset.UnixEpoch);
+        var info = new HtmlExportInfo("<dbo>.T", DateTimeOffset.UnixEpoch) { Connection = "{{HEADING}} & co", FetchedRowCount = 5 };
+        var html = ResultExporter.ToHtml(["Id", "Note"], [[1, "</script><b>x</b> & café"], [2.5m, null]], info);
 
         Assert.Contains("<title>&lt;dbo&gt;.T</title>", html);
         const string open = "<script id=\"data\" type=\"application/json\">";
@@ -70,12 +71,26 @@ public class ResultExporterTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         Assert.Equal("Note", root.GetProperty("columns")[1].GetString());
-        Assert.True(root.GetProperty("numeric")[0].GetBoolean());
-        Assert.False(root.GetProperty("numeric")[1].GetBoolean());
+        Assert.Equal("n", root.GetProperty("kinds")[0].GetString());
+        Assert.Equal("t", root.GetProperty("kinds")[1].GetString());
+        Assert.Equal("number", root.GetProperty("types")[0].GetString()); // int and decimal
+        Assert.Equal("text", root.GetProperty("types")[1].GetString());
         Assert.Equal("</script><b>x</b> & café", root.GetProperty("rows")[0][1].GetString());
         Assert.Equal("2.5", root.GetProperty("rows")[1][0].GetString());
         Assert.Equal(JsonValueKind.Null, root.GetProperty("rows")[1][1].ValueKind);
         Assert.Contains("café", json);
+
+        // About panel: connection text is encoded and not mistaken for a placeholder; the filter note is shown.
+        Assert.Contains("<td>{{HEADING}} &amp; co</td>", html);
+        Assert.Contains("2 of the 5 fetched rows were exported", html);
+    }
+
+    [Fact]
+    public void Html_marks_mixed_columns_with_a_kind_per_cell()
+    {
+        var html = ResultExporter.ToHtml(["v"], [[1], ["a"], [null], [true]], new HtmlExportInfo("t", DateTimeOffset.UnixEpoch));
+        Assert.Contains("\"kinds\":[\"m\"]", html);
+        Assert.Contains("\"cellKinds\":{\"0\":\"nt-b\"}", html);
     }
 
     [Theory]

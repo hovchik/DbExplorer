@@ -941,7 +941,16 @@ public partial class ResultGridView : UserControl
                 ExportFormat.Csv => ResultExporter.ToCsv(columns, rows),
                 ExportFormat.Json => ResultExporter.ToJson(columns, rows),
                 ExportFormat.Markdown => ResultExporter.ToMarkdown(columns, rows),
-                ExportFormat.Html => ResultExporter.ToHtml(columns, rows, rs.SourceTable ?? rs.Title, DateTimeOffset.Now),
+                ExportFormat.Html => ResultExporter.ToHtml(columns, rows, new HtmlExportInfo(rs.SourceTable ?? rs.Title, DateTimeOffset.Now)
+                {
+                    Source = rs.SourceTable is null ? rs.Title : rs.SourceTable,
+                    Connection = rs.Connection,
+                    FetchedRowCount = rs.Rows.Count,
+                    FetchedColumnCount = _columns.Count,
+                    IsTruncated = rs.IsTruncated,
+                    TotalRowCount = rs.TotalRowCount,
+                    TotalRowCountIsExact = rs.TotalRowCountIsExact
+                }),
                 _ => BuildInsert(rs, columns, rows)
             };
             // BOM so Excel detects UTF-8 when opening CSV directly.

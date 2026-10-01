@@ -42,6 +42,7 @@ public partial class QueryViewModel
         OnPropertyChanged(nameof(CanChangeDatabase));
         CommitCommand.NotifyCanExecuteChanged();
         RollbackCommand.NotifyCanExecuteChanged();
+        NotifyLabCommands();
     }
 
     partial void OnAutoCommitChanged(bool value)

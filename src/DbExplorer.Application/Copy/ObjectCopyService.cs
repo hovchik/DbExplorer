@@ -142,7 +142,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
         var keyColumns = sourceColumns.Where(c => c.IsPrimaryKey && targetByName.ContainsKey(c.Name)).Select(c => c.Name).ToList();
         var incoming = targetSnapshot.ReferencesTo(a.TargetDatabase, a.TargetSchema, a.TargetName)
-            .Where(f => !(Same(f.Schema, a.TargetSchema) && Same(f.Table, a.TargetName)))
+            .Where(f => !f.IsVirtual && !(Same(f.Schema, a.TargetSchema) && Same(f.Table, a.TargetName)))
             .Select(f => $"{f.Schema}.{f.Table} ({f.Name})")
             .ToList();
         if (incoming.Count > 0)
@@ -256,7 +256,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
         void Visit(DbObject child)
         {
-            foreach (var fk in sourceSnapshot.ForeignKeysOf(child.Database, child.Schema, child.Name))
+            foreach (var fk in sourceSnapshot.ForeignKeysOf(child.Database, child.Schema, child.Name).Where(f => !f.IsVirtual))
             {
                 var key = $"{fk.ReferencedSchema}.{fk.ReferencedTable}";
                 if (!visited.Add(key)) continue;
@@ -879,7 +879,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     {
         var a = c.Analysis;
         var t = c.Target;
-        foreach (var fk in c.SourceSession.Snapshot.ForeignKeysOf(table.Database, table.Schema, table.Name))
+        foreach (var fk in c.SourceSession.Snapshot.ForeignKeysOf(table.Database, table.Schema, table.Name).Where(f => !f.IsVirtual))
         {
             var selfReference = Same(fk.ReferencedSchema, table.Schema) && Same(fk.ReferencedTable, table.Name);
             var (parentSchema, parentName) = selfReference ? (schema, name)
@@ -1159,7 +1159,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         {
             if (state.ContainsKey(table)) return; // done, or a cycle: keep going
             state[table] = false;
-            foreach (var fk in sourceSnapshot.ForeignKeysOf(table.Database, table.Schema, table.Name))
+            foreach (var fk in sourceSnapshot.ForeignKeysOf(table.Database, table.Schema, table.Name).Where(f => !f.IsVirtual))
                 if (byName.TryGetValue($"{fk.ReferencedSchema}.{fk.ReferencedTable}", out var parent) && parent != table)
                     Visit(parent);
             state[table] = true;

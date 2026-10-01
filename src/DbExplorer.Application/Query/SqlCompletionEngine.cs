@@ -19,6 +19,9 @@ public enum CompletionKind
     Join,
     Snippet,
     Variable,
+
+    /// <summary>A literal value seen in the column's data (after <c>column =</c>).</summary>
+    Value,
     Other
 }
 
@@ -205,6 +208,9 @@ public sealed class SqlCompletionEngine
         _functions = Functions.Where(f => f.Provider is null || providerKey is null || f.Provider == providerKey).ToList();
     }
 
+    /// <summary>The most frequent values of a column, or null while unknown (see <see cref="ColumnValueCache"/>).</summary>
+    public Func<DbObject, DbColumn, IReadOnlyList<ValueFrequency>?>? ValueSource { get; init; }
+
     private bool IsSqlServer => _providerKey is null or "SqlServer";
     private bool IsPostgres => _providerKey is null or "Postgres";
 
@@ -218,6 +224,7 @@ public sealed class SqlCompletionEngine
         while (start > 0 && IsWordChar(text[start - 1])) start--;
         var prefix = text[start..caret];
 
+        if (ValueSource is not null && TryCompleteValue(text, caret, out var values)) return values;
         if (InsideStringOrComment(text, caret)) return CompletionResult.Empty;
 
         var (statement, statementStart) = CurrentStatement(text, caret);
@@ -252,6 +259,102 @@ public sealed class SqlCompletionEngine
             .Take(max)
             .ToList();
         return new CompletionResult(start, list);
+    }
+
+    /// <summary>
+    /// After <c>column =</c>, <c>&lt;&gt;</c>, <c>!=</c>, <c>LIKE</c> or inside <c>column IN (</c>: the values the column
+    /// actually holds, most frequent first, as literals (a half-typed <c>'Ac</c> is replaced as a whole).
+    /// </summary>
+    private bool TryCompleteValue(string text, int caret, out CompletionResult result)
+    {
+        result = CompletionResult.Empty;
+        var (statement, statementStart) = CurrentStatement(text, caret);
+        var local = statement[..Math.Clamp(caret - statementStart, 0, statement.Length)];
+        var tokens = SqlLexer.Tokenize(local).Where(t => !t.IsTrivia || t.Kind == SqlTokenKind.Comment).ToList();
+        if (tokens.Count > 0 && tokens[^1].Kind == SqlTokenKind.Comment) return false;
+        tokens = tokens.Where(t => !t.IsTrivia).ToList();
+
+        var replaceStart = caret;
+        var typed = "";
+        if (tokens.Count > 0 && tokens[^1].End == local.Length)
+        {
+            var last = tokens[^1];
+            if (last.Kind == SqlTokenKind.String)
+            {
+                if (!Unterminated(last)) return false;
+                var quote = last.Text.IndexOf('\'');
+                typed = last.Text[(quote + 1)..];
+                replaceStart = statementStart + last.Start;
+                tokens.RemoveAt(tokens.Count - 1);
+            }
+            else if (last.Kind is SqlTokenKind.Number or SqlTokenKind.Word)
+            {
+                typed = last.Text;
+                replaceStart = statementStart + last.Start;
+                tokens.RemoveAt(tokens.Count - 1);
+            }
+        }
+
+        // Inside IN ( … ): skip the values already listed.
+        var i = tokens.Count - 1;
+        var inList = false;
+        while (i >= 0 && tokens[i].Kind is SqlTokenKind.String or SqlTokenKind.Number or SqlTokenKind.Comma) i--;
+        if (i >= 1 && tokens[i].Kind == SqlTokenKind.OpenParen && tokens[i - 1].Is("IN"))
+        {
+            inList = true;
+            i -= 2;
+            if (i >= 0 && tokens[i].Is("NOT")) i--;
+        }
+        else
+        {
+            i = tokens.Count - 1;
+            if (i < 0) return false;
+            var op = tokens[i];
+            var isComparison = op.Kind == SqlTokenKind.Operator && op.Text is "=" or "<>" or "!=" || op.Is("LIKE") || op.Is("ILIKE");
+            if (!isComparison) return false;
+            i--;
+            if (i >= 0 && tokens[i].Is("NOT")) i--;
+        }
+        if (i < 0 || !tokens[i].IsIdentifier || tokens[i].Kind == SqlTokenKind.Word && ReservedWords.Contains(tokens[i].Text)) return false;
+
+        var columnName = tokens[i].Identifier;
+        var qualifier = i >= 2 && tokens[i - 1].Kind == SqlTokenKind.Dot && tokens[i - 2].IsIdentifier ? tokens[i - 2].Identifier : null;
+        var references = ParseReferences(statement);
+        var owners = qualifier is null
+            ? references
+            : references.Where(r => Same(r.Alias, qualifier) || (r.Alias is null && Same(r.Object.Name, qualifier))).ToList();
+        var (owner, column) = owners.Select(r => (r.Object, Column: ColumnOf(r.Object, columnName)))
+            .FirstOrDefault(x => x.Column is not null);
+        if (owner is null || column is null) return false;
+
+        var values = ValueSource!(owner, column);
+        if (values is null || values.Count == 0) return false;
+
+        var numeric = IsNumericOrBoolean(column);
+        var items = values
+            .Where(v => v.Value is { } value && (typed.Length == 0 || value.Contains(typed, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(v => typed.Length > 0 && v.Value!.StartsWith(typed, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .Select(v =>
+            {
+                var literal = numeric ? v.Value! : ValueLiteral(v.Value!);
+                return new CompletionItem(literal, literal, CompletionKind.Value,
+                    $"{v.Count:N0} in sample · {owner.Name}.{column.Name}" + (inList ? " · IN list" : ""));
+            })
+            .ToList();
+        if (items.Count == 0) return false;
+        result = new CompletionResult(replaceStart, items);
+        return true;
+    }
+
+    private bool IsNumericOrBoolean(DbColumn column) =>
+        column.BaseType.ToLowerInvariant() is "tinyint" or "smallint" or "int" or "bigint" or "decimal" or "numeric" or "money" or "smallmoney"
+            or "float" or "real" or "int2" or "int4" or "int8" or "integer" or "float4" or "float8" or "double precision" or "bit" or "bool" or "boolean";
+
+    /// <summary>A quoted string literal; N'…' on SQL Server when the value needs Unicode.</summary>
+    private string ValueLiteral(string value)
+    {
+        var quoted = "'" + value.Replace("'", "''") + "'";
+        return IsSqlServer && !IsPostgres && value.Any(c => c > 127) ? "N" + quoted : quoted;
     }
 
     /// <summary>What kind of thing belongs at <paramref name="position"/> of the statement.</summary>
@@ -547,20 +650,22 @@ public sealed class SqlCompletionEngine
         var joined = references[^1];
         foreach (var other in references.Take(references.Count - 1))
         {
-            foreach (var condition in ForeignKeyConditions(joined, other))
-                yield return new CompletionItem(condition, condition, CompletionKind.Join, "foreign key");
+            foreach (var (condition, inferred) in ForeignKeyConditions(joined, other))
+                yield return new CompletionItem(condition, condition, CompletionKind.Join, inferred ? "inferred relationship (Lab)" : "foreign key");
         }
     }
 
-    private IEnumerable<string> ForeignKeyConditions(TableReferenceInfo a, TableReferenceInfo b)
+    /// <summary>ON conditions from foreign keys between two tables, flagged when the key is an accepted inferred one.</summary>
+    private IEnumerable<(string Condition, bool Inferred)> ForeignKeyConditions(TableReferenceInfo a, TableReferenceInfo b)
     {
         string Q(TableReferenceInfo r) => r.Alias ?? QuoteIfNeeded(r.Object.Name);
 
-        IEnumerable<string> From(TableReferenceInfo child, TableReferenceInfo parent) =>
+        IEnumerable<(string, bool)> From(TableReferenceInfo child, TableReferenceInfo parent) =>
             _snapshot.ForeignKeysOf(child.Object.Database, child.Object.Schema, child.Object.Name)
                 .Where(fk => Same(fk.ReferencedSchema, parent.Object.Schema) && Same(fk.ReferencedTable, parent.Object.Name))
-                .Select(fk => Condition(Q(child), fk.Columns, Q(parent), fk.ReferencedColumns))
-                .Where(c => c is not null)!;
+                .Select(fk => (Condition: Condition(Q(child), fk.Columns, Q(parent), fk.ReferencedColumns), fk.IsVirtual))
+                .Where(c => c.Condition is not null)
+                .Select(c => (c.Condition!, c.IsVirtual));
 
         return From(a, b).Concat(From(b, a));
     }
@@ -590,10 +695,10 @@ public sealed class SqlCompletionEngine
             {
                 var alias = MakeAlias(related!.Name, usedAliases);
                 var candidate = new TableReferenceInfo(related, alias);
-                var condition = ForeignKeyConditions(candidate, existing).FirstOrDefault();
+                var (condition, inferred) = ForeignKeyConditions(candidate, existing).FirstOrDefault();
                 if (condition is null) continue;
                 yield return new CompletionItem(related.Name, $"{QualifiedName(related)} {alias} ON {condition}", CompletionKind.Join,
-                    $"{DatabasePrefix(related)}{related.Schema} · ON {condition}");
+                    $"{DatabasePrefix(related)}{related.Schema} · ON {condition}" + (inferred ? " · inferred" : ""));
             }
         }
     }

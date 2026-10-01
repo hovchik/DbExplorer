@@ -45,6 +45,18 @@ public sealed class MetadataSnapshot
         };
     }
 
+    /// <summary>The same catalog with the user's accepted virtual foreign keys in place of any previous ones.</summary>
+    public MetadataSnapshot WithVirtualForeignKeys(IReadOnlyList<DbForeignKey> virtualKeys) => new()
+    {
+        Objects = Objects,
+        Columns = Columns,
+        Modules = Modules,
+        ForeignKeys = ForeignKeys.Where(f => !f.IsVirtual).Concat(virtualKeys.Select(f => f with { IsVirtual = true })).ToList(),
+        Indexes = Indexes,
+        RefreshedAt = RefreshedAt,
+        IsStale = IsStale
+    };
+
     public IEnumerable<DbColumn> ColumnsOf(string database, string schema, string table)
     {
         var lookup = LazyInitializer.EnsureInitialized(

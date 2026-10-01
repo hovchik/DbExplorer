@@ -41,6 +41,12 @@ public interface IDialogService
 
     /// <summary>Shows a (possibly long) cell value, pretty-printed when it is JSON or XML.</summary>
     void ShowValue(string title, string value);
+
+    /// <summary>Asks for one line of text; null when cancelled.</summary>
+    Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null);
+
+    /// <summary>Puts text on the clipboard.</summary>
+    Task CopyTextAsync(string text);
 }
 
 public sealed class DialogService(ProviderRegistry registry) : IDialogService
@@ -104,6 +110,17 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
         if (Owner is null) return null;
         var window = new ParametersWindow(names, defaults);
         return await window.ShowDialog<IReadOnlyDictionary<string, string>?>(Owner);
+    }
+
+    public async Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null)
+    {
+        if (Owner is null) return null;
+        return await new TextPromptWindow(title, message, label, initial, watermark).ShowDialog<string?>(Owner);
+    }
+
+    public async Task CopyTextAsync(string text)
+    {
+        if (Owner?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
     }
 
     public void ShowValue(string title, string value)

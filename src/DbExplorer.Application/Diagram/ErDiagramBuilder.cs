@@ -327,7 +327,7 @@ public static class ErDiagramBuilder
             var fkColumns = SplitColumns(e.ForeignKey.Columns);
             var optional = e.Child.Columns.Any(c => c.IsNullable && fkColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase));
             sb.Append("    ").Append(MermaidId(e.Parent))
-              .Append(optional ? " |o--o{ " : " ||--o{ ")
+              .Append((optional ? " |o--o{ " : " ||--o{ ").Replace("--", e.ForeignKey.IsVirtual ? ".." : "--"))
               .Append(MermaidId(e.Child))
               .Append(" : \"").Append(e.ForeignKey.Name.Replace("\"", "'")).Append("\"\n");
         }

@@ -541,6 +541,60 @@ public sealed class SqlServerProvider : IDatabaseProvider
         };
     }
 
+    public async Task<QueryResultSet> QueryReadOnlyAsync(
+        string sql, string? database, DataSearchOptions options, int maxRows = 1000, CancellationToken ct = default)
+    {
+        var connectionString = string.IsNullOrEmpty(database) || string.Equals(database, _profile.Database, StringComparison.OrdinalIgnoreCase)
+            ? _searchConnectionString
+            : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, database);
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = cn.CreateCommand();
+        cmd.CommandText = SqlServerSql.SessionPrefix(options.LockTimeoutMs) + sql;
+        cmd.CommandTimeout = options.QueryTimeoutSeconds;
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await ReadFirstResultSetAsync(reader, maxRows, ct);
+    }
+
+    /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>
+    internal static async Task<QueryResultSet> ReadFirstResultSetAsync(SqlDataReader reader, int maxRows, CancellationToken ct)
+    {
+        while (reader.FieldCount == 0 && await reader.NextResultAsync(ct)) { }
+        if (reader.FieldCount == 0) return new QueryResultSet();
+        var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+        var rows = new List<IReadOnlyList<object?>>();
+        var truncated = false;
+        while (await reader.ReadAsync(ct))
+        {
+            if (rows.Count >= maxRows) { truncated = true; break; }
+            var row = new object?[reader.FieldCount];
+            for (var i = 0; i < row.Length; i++) row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            rows.Add(row);
+        }
+        return new QueryResultSet
+        {
+            Columns = columns, Rows = rows, IsTruncated = truncated,
+            TotalRowCount = rows.Count + (truncated ? 1 : 0), TotalRowCountIsExact = !truncated
+        };
+    }
+
+    public async Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default)
+    {
+        // The primary (read-write intent): a readable secondary does not count the primary's writes.
+        var db = string.IsNullOrEmpty(database) ? _profile.Database : database;
+        var rows = await QueryWithConnectionStringAsync<TableChangeCounter>(SqlServerDiagnostics.ChangeCounters, null,
+            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, db, forceReadWrite: true), ct);
+        return rows.Select(r => r with { Database = db }).ToList();
+    }
+
+    public Task<string?> GetChangeMarkerAsync(string? database, CancellationToken ct = default) =>
+        ScalarWithConnectionStringAsync<string?>(SqlServerDiagnostics.ChangeMarker, null,
+            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName,
+                string.IsNullOrEmpty(database) ? _profile.Database : database, forceReadWrite: true), ct);
+
+    public string? ChangedSincePredicate(IReadOnlyList<DbColumn> columns, string marker) =>
+        SqlServerDiagnostics.ChangedSincePredicate(columns, marker);
+
     private sealed class NameDefinition
     {
         public string Name { get; set; } = "";

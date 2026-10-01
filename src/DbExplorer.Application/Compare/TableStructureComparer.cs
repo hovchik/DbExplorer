@@ -38,10 +38,10 @@ public static class TableStructureComparer
         Compare(
             left.ColumnsOf(leftTable.Database, leftTable.Schema, leftTable.Name).ToList(),
             left.IndexesOf(leftTable.Database, leftTable.Schema, leftTable.Name).ToList(),
-            left.ForeignKeysOf(leftTable.Database, leftTable.Schema, leftTable.Name).ToList(),
+            left.ForeignKeysOf(leftTable.Database, leftTable.Schema, leftTable.Name).Where(f => !f.IsVirtual).ToList(),
             right.ColumnsOf(rightTable.Database, rightTable.Schema, rightTable.Name).ToList(),
             right.IndexesOf(rightTable.Database, rightTable.Schema, rightTable.Name).ToList(),
-            right.ForeignKeysOf(rightTable.Database, rightTable.Schema, rightTable.Name).ToList());
+            right.ForeignKeysOf(rightTable.Database, rightTable.Schema, rightTable.Name).Where(f => !f.IsVirtual).ToList());
 
     public static IReadOnlyList<StructureDiffRow> Compare(
         IReadOnlyList<DbColumn> leftColumns, IReadOnlyList<DbIndex> leftIndexes, IReadOnlyList<DbForeignKey> leftForeignKeys,

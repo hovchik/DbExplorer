@@ -88,4 +88,28 @@ public interface IDatabaseProvider : IAsyncDisposable
 
     /// <summary>Column defaults and check constraints of one table (catalog-only, no locks).</summary>
     Task<DbTableConstraints> GetTableConstraintsAsync(DbObject table, CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs one query that only reads, with the same non-blocking settings as data search (SQL Server: dirty reads and a
+    /// lock timeout on the search pool; PostgreSQL: a read-only transaction with statement and lock timeouts), keeping at
+    /// most <paramref name="maxRows"/> rows. Used by features that probe data on their own (change recorder, query
+    /// debugger, relationship inference) so they never queue behind other sessions.
+    /// </summary>
+    Task<QueryResultSet> QueryReadOnlyAsync(
+        string sql, string? database, DataSearchOptions options, int maxRows = 1000, CancellationToken ct = default);
+
+    /// <summary>Cumulative inserts/updates/deletes per table of the database (or the connection's default when null).
+    /// Reads statistics views only; SQL Server needs VIEW DATABASE STATE.</summary>
+    Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default);
+
+    /// <summary>
+    /// A position in the database's change stream (PostgreSQL: next transaction id; SQL Server:
+    /// MIN_ACTIVE_ROWVERSION), or null when the engine cannot provide one. <see cref="ChangedSincePredicate"/> turns it
+    /// into a filter for the rows written after it.
+    /// </summary>
+    Task<string?> GetChangeMarkerAsync(string? database, CancellationToken ct = default);
+
+    /// <summary>A WHERE condition matching the rows of a table with these columns that were inserted or updated after
+    /// <paramref name="marker"/> (PostgreSQL: xmin; SQL Server: a rowversion column), or null when the table has no way to tell.</summary>
+    string? ChangedSincePredicate(IReadOnlyList<DbColumn> columns, string marker);
 }

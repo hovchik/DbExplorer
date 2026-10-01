@@ -376,13 +376,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
 public enum AppTab
 {
+    Query,
     Objects,
+    Comparer,
     SearchNamesAndCode,
     SearchData,
-    Query,
     Diagram,
     Indexes,
     Locks,
-    Activity,
-    Comparer
+    Activity
 }

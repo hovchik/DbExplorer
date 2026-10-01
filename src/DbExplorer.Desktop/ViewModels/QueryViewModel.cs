@@ -441,6 +441,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         ResultSets = merged
             .Select(m => new ResultSetView(m.Title, m.Columns, m.Rows.Select(r => new ResultRow(r)).ToList())
             {
+                Connection = ResultSetView.DescribeConnection(session),
                 Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
                 Quote = session.Provider.QuoteIdentifier
             })

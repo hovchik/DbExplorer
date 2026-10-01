@@ -29,6 +29,9 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
     /// <summary>Qualified, quoted table the rows came from; used as the target of "Copy as INSERT".</summary>
     public string? SourceTable { get; init; }
 
+    /// <summary>Connection the rows were read from, e.g. "Prod · db01 · SqlServer 16.0"; shown in exports.</summary>
+    public string? Connection { get; init; }
+
     public SqlDialect Dialect { get; init; }
 
     public Func<string, string> Quote { get; init; } = id => id;
@@ -50,9 +53,18 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
             TotalRowCount = rs.TotalRowCount,
             TotalRowCountIsExact = rs.TotalRowCountIsExact,
             SourceTable = sourceTable,
+            Connection = DescribeConnection(session),
             Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
             Quote = session.Provider.QuoteIdentifier
         };
+
+    public static string DescribeConnection(DatabaseSession session) =>
+        string.Join(" · ", new[]
+        {
+            session.Profile.Name,
+            session.Profile.Host,
+            $"{session.Provider.ProviderKey} {session.ServerVersion}".Trim()
+        }.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct());
 }
 
 public partial class RoutineExecutionViewModel : ViewModelBase

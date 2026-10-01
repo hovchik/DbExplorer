@@ -87,6 +87,7 @@
 			  <MenuItem Header="Excel (.xlsx)…" Click="OnExportExcel" />
 			  <MenuItem Header="JSON (.json)…" Click="OnExportJson" />
 			  <MenuItem Header="Markdown table (.md)…" Click="OnExportMarkdown" />
+			  <MenuItem Header="Interactive HTML page (.html)…" Click="OnExportHtml" />
 			  <MenuItem Header="SQL INSERT script (.sql)…" Click="OnExportInsert" />
 			</MenuFlyout>
 		  </Button.Flyout>

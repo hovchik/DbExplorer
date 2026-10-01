@@ -56,6 +56,28 @@ public class ResultExporterTests
         Assert.Contains("| x\\|y | *NULL* |", md);
     }
 
+    [Fact]
+    public void Html_embeds_rows_as_json_that_cannot_break_out_of_the_script_block()
+    {
+        var html = ResultExporter.ToHtml(["Id", "Note"], [[1, "</script><b>x</b> & café"], [2.5m, null]], "<dbo>.T", DateTimeOffset.UnixEpoch);
+
+        Assert.Contains("<title>&lt;dbo&gt;.T</title>", html);
+        const string open = "<script id=\"data\" type=\"application/json\">";
+        var start = html.IndexOf(open, StringComparison.Ordinal) + open.Length;
+        var json = html[start..html.IndexOf("</script>", start, StringComparison.Ordinal)];
+        Assert.DoesNotContain("<", json);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal("Note", root.GetProperty("columns")[1].GetString());
+        Assert.True(root.GetProperty("numeric")[0].GetBoolean());
+        Assert.False(root.GetProperty("numeric")[1].GetBoolean());
+        Assert.Equal("</script><b>x</b> & café", root.GetProperty("rows")[0][1].GetString());
+        Assert.Equal("2.5", root.GetProperty("rows")[1][0].GetString());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("rows")[1][1].ValueKind);
+        Assert.Contains("café", json);
+    }
+
     [Theory]
     [InlineData(SqlDialect.SqlServer, "INSERT INTO [dbo].[T] ([Id], [Name], [Price], [Created], [Active]) VALUES (1, N'Widget, large', 9.5, N'2024-01-02 03:04:05', 1);")]
     [InlineData(SqlDialect.Postgres, "INSERT INTO [dbo].[T] ([Id], [Name], [Price], [Created], [Active]) VALUES (1, 'Widget, large', 9.5, '2024-01-02 03:04:05', TRUE);")]

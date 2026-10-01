@@ -883,6 +883,7 @@ public partial class ResultGridView : UserControl
     private void OnExportJson(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Json);
     private void OnExportMarkdown(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Markdown);
     private void OnExportInsert(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Insert);
+    private void OnExportHtml(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Html);
 
     private Task CopyTsvAsync(IReadOnlyList<ColumnState> columns, IReadOnlyList<ResultRow> rows, bool includeHeader)
     {
@@ -940,6 +941,7 @@ public partial class ResultGridView : UserControl
                 ExportFormat.Csv => ResultExporter.ToCsv(columns, rows),
                 ExportFormat.Json => ResultExporter.ToJson(columns, rows),
                 ExportFormat.Markdown => ResultExporter.ToMarkdown(columns, rows),
+                ExportFormat.Html => ResultExporter.ToHtml(columns, rows, rs.SourceTable ?? rs.Title, DateTimeOffset.Now),
                 _ => BuildInsert(rs, columns, rows)
             };
             // BOM so Excel detects UTF-8 when opening CSV directly.

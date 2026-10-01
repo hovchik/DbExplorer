@@ -18,11 +18,12 @@ public enum ExportFormat
     Excel,
     Json,
     Markdown,
-    Insert
+    Insert,
+    Html
 }
 
 /// <summary>Serializes a tabular result (columns + rows of raw provider values) to common formats.</summary>
-public static class ResultExporter
+public static partial class ResultExporter
 {
     private const int ExcelMaxCellLength = 32_767;
 
@@ -32,6 +33,7 @@ public static class ResultExporter
         ExportFormat.Excel => "xlsx",
         ExportFormat.Json => "json",
         ExportFormat.Markdown => "md",
+        ExportFormat.Html => "html",
         _ => "sql"
     };
 

@@ -1,6 +1,7 @@
 using DbExplorer.Application.Compare;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Copy;
+using DbExplorer.Application.Lab;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
@@ -22,6 +23,9 @@ public static class DependencyInjection
         services.AddSingleton<ConnectionStore>();
         services.AddSingleton<ProviderRegistry>();
         services.AddSingleton<MetadataCache>();
+        services.AddSingleton<SchemaHistoryStore>();
+        services.AddSingleton<VirtualForeignKeyStore>();
+        services.AddSingleton<ChangeRecorder>();
         services.AddSingleton<MetadataService>();
         services.AddSingleton<DefinitionService>();
         services.AddSingleton<MetadataSearchService>();

@@ -99,6 +99,10 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
         return fresh;
     }
 
+    /// <summary>Re-applies the relationships accepted for the session's connection (after the user accepted or removed one).</summary>
+    public void ReloadVirtualForeignKeys(DatabaseSession session) =>
+        session.ReplaceSnapshot(metadata.WithVirtualKeys(session.Profile, session.Snapshot));
+
     public async Task RefreshMetadataAsync(DatabaseSession session, CancellationToken ct = default)
     {
         var snapshot = await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct);

@@ -3,9 +3,14 @@ namespace DbExplorer.Application;
 public sealed class AppPaths
 {
     public AppPaths()
+        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DbExplorer"))
     {
-        Root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DbExplorer");
+    }
+
+    /// <summary>Keeps every file under <paramref name="root"/> (tests use a temporary folder).</summary>
+    public AppPaths(string root)
+    {
+        Root = root;
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(CacheDirectory);
     }

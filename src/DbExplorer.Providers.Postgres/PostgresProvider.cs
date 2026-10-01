@@ -133,9 +133,11 @@ public sealed class PostgresProvider : IDatabaseProvider
     }
 
     /// <summary>A connection to the table's database inside a read-only transaction with the given timeouts; disposing rolls back.</summary>
-    private async Task<ReadOnlyScope> OpenReadOnlyAsync(string? database, DataSearchOptions options, CancellationToken ct)
+    /// <param name="anyDatabase">Open <paramref name="database"/> even on a single-database connection (profiling only
+    /// switches on a server-level one, where the table's database is known to be readable).</param>
+    private async Task<ReadOnlyScope> OpenReadOnlyAsync(string? database, DataSearchOptions options, CancellationToken ct, bool anyDatabase = false)
     {
-        var useOwnDataSource = _allDatabases && !string.IsNullOrEmpty(database) && database != _profile.Database;
+        var useOwnDataSource = (_allDatabases || anyDatabase) && !string.IsNullOrEmpty(database) && database != _profile.Database;
         var scoped = useOwnDataSource ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database)) : null;
         NpgsqlConnection? cn = null;
         try
@@ -572,6 +574,36 @@ public sealed class PostgresProvider : IDatabaseProvider
             Checks = checks.Where(c => c.Definition is not null).Select(c => new DbCheckConstraint(c.Name, c.Definition!)).ToList()
         };
     }
+
+    public async Task<QueryResultSet> QueryReadOnlyAsync(
+        string sql, string? database, DataSearchOptions options, int maxRows = 1000, CancellationToken ct = default)
+    {
+        await using var scope = await OpenReadOnlyAsync(database, options, ct, anyDatabase: true);
+        await using var cmd = new NpgsqlCommand(sql, scope.Connection, scope.Transaction) { CommandTimeout = options.QueryTimeoutSeconds + 5 };
+        var resultSets = new List<QueryResultSet>();
+        await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
+        return resultSets.FirstOrDefault() ?? new QueryResultSet();
+    }
+
+    public async Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default)
+    {
+        var db = string.IsNullOrEmpty(database) ? _profile.Database : database;
+        var rows = string.IsNullOrEmpty(db) || db == _profile.Database
+            ? await QueryAsync<TableChangeCounter>(PostgresDiagnostics.ChangeCounters, null, ct)
+            : await QueryInDatabaseAsync<TableChangeCounter>(PostgresDiagnostics.ChangeCounters, null, db, ct);
+        return rows.Select(r => r with { Database = db ?? "" }).ToList();
+    }
+
+    public async Task<string?> GetChangeMarkerAsync(string? database, CancellationToken ct = default)
+    {
+        var db = string.IsNullOrEmpty(database) ? _profile.Database : database;
+        return string.IsNullOrEmpty(db) || db == _profile.Database
+            ? await ScalarAsync<string?>(PostgresDiagnostics.ChangeMarker, null, ct)
+            : await ScalarInDatabaseAsync<string?>(PostgresDiagnostics.ChangeMarker, null, db, ct);
+    }
+
+    public string? ChangedSincePredicate(IReadOnlyList<DbColumn> columns, string marker) =>
+        PostgresDiagnostics.ChangedSincePredicate(marker);
 
     private sealed class NameDefinition
     {

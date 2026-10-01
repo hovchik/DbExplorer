@@ -161,4 +161,29 @@ public static class SqlServerDiagnostics
         DateTypes.Contains(c.BaseType) ? $"CONVERT(nvarchar(400), {expression}, 121)"
         : c.BaseType is "binary" or "varbinary" or "timestamp" or "rowversion" ? $"CONVERT(nvarchar(400), CAST({expression} AS varbinary(199)), 1)"
         : $"CAST({expression} AS nvarchar(400))";
+    /// <summary>Rows inserted/updated/deleted per user table since its metadata was cached (heap or clustered index only, so
+    /// each row counts once). Deletes on an index leave ghost records first, so ghosts count as deletes. Needs VIEW DATABASE STATE.</summary>
+    public const string ChangeCounters = """
+        SELECT OBJECT_SCHEMA_NAME(s.object_id) AS [Schema],
+               OBJECT_NAME(s.object_id) AS [Table],
+               SUM(s.leaf_insert_count) AS [Inserts],
+               SUM(s.leaf_update_count) AS [Updates],
+               SUM(s.leaf_delete_count + s.leaf_ghost_count) AS [Deletes]
+        FROM sys.dm_db_index_operational_stats(DB_ID(), NULL, NULL, NULL) s
+        JOIN sys.objects o ON o.object_id = s.object_id AND o.type = 'U' AND o.is_ms_shipped = 0
+        WHERE s.index_id IN (0, 1)
+        GROUP BY s.object_id;
+        """;
+
+    /// <summary>The lowest rowversion still in use by an open transaction: rows written from now on get a higher one.</summary>
+    public const string ChangeMarker = "SELECT CONVERT(varchar(30), CONVERT(bigint, MIN_ACTIVE_ROWVERSION()));";
+
+    /// <summary>Rows written at or after <paramref name="marker"/>, through the table's rowversion column; null without one.</summary>
+    public static string? ChangedSincePredicate(IReadOnlyList<DbColumn> columns, string marker)
+    {
+        if (!long.TryParse(marker, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
+            return null;
+        var version = columns.FirstOrDefault(c => c.BaseType is "timestamp" or "rowversion");
+        return version is null ? null : $"CONVERT(bigint, {SqlServerSql.Quote(version.Name)}) >= {value}";
+    }
 }

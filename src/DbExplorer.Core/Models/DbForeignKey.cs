@@ -15,4 +15,8 @@ public sealed record DbForeignKey
     public string? ReferencedColumns { get; init; }
 
     public bool IsDisabled { get; init; }
+
+    /// <summary>Not a constraint in the database: a relationship DbExplorer inferred from names and data that the user
+    /// accepted. Diagrams, relations and join suggestions use it; schema comparison and history ignore it.</summary>
+    public bool IsVirtual { get; init; }
 }

@@ -24,7 +24,8 @@ public sealed class SqlCompletionData(CompletionItem item) : ICompletionData
         [CompletionKind.Snippet] = new SolidColorBrush(Color.Parse("#16A3A3")),
         [CompletionKind.Alias] = new SolidColorBrush(Color.Parse("#7A8B99")),
         [CompletionKind.Variable] = new SolidColorBrush(Color.Parse("#7A5BC4")),
-        [CompletionKind.Schema] = new SolidColorBrush(Color.Parse("#7A8B99"))
+        [CompletionKind.Schema] = new SolidColorBrush(Color.Parse("#7A8B99")),
+        [CompletionKind.Value] = new SolidColorBrush(Color.Parse("#B5523B"))
     };
 
     public CompletionItem Item { get; } = item;

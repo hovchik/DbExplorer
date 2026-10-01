@@ -108,4 +108,26 @@ public static class PostgresDiagnostics
         ORDER BY 2 DESC, 1
         LIMIT @top;
         """;
+    /// <summary>Rows inserted/updated/deleted per user table since the statistics were last reset. Other sessions report
+    /// their counts when their transaction ends, at most about once a second (later while they stay busy).</summary>
+    public const string ChangeCounters = """
+        SELECT schemaname::text AS "Schema", relname::text AS "Table",
+               n_tup_ins AS "Inserts", n_tup_upd AS "Updates", n_tup_del AS "Deletes"
+        FROM pg_stat_user_tables;
+        """;
+
+    /// <summary>The next transaction id to be assigned: every transaction that starts writing from now on has an id at or
+    /// after it. (The oldest running id would also catch transactions already open at the start, but any old transaction
+    /// still running — autovacuum, a forgotten session — would then pull in rows written long before.)</summary>
+    public const string ChangeMarker = "SELECT txid_snapshot_xmax(txid_current_snapshot())::text;";
+
+    /// <summary>Rows whose current version was written by a transaction at or after <paramref name="marker"/> (a 64-bit
+    /// txid). xmin is the 32-bit id that wraps around, so "at or after" is a modular comparison.</summary>
+    public static string? ChangedSincePredicate(string marker)
+    {
+        if (!long.TryParse(marker, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var txid))
+            return null;
+        var xid = txid & 0xFFFFFFFFL;
+        return $"((xmin::text::bigint - {xid} + 4294967296) % 4294967296) < 2147483648";
+    }
 }

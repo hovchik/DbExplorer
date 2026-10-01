@@ -54,7 +54,9 @@ public static class PostgresSql
             Database = databaseOverride ?? p.Database,
             ApplicationName = "DbExplorer",
             Timeout = 15,
-            SslMode = p.Encrypt ? SslMode.Require : SslMode.Prefer
+            // "Encrypt" without "Trust certificate" checks the server certificate and host name, like SQL Server does;
+            // Require alone encrypts but accepts any certificate, so it would not stop a man in the middle.
+            SslMode = !p.Encrypt ? SslMode.Prefer : p.TrustServerCertificate ? SslMode.Require : SslMode.VerifyFull
         };
 
         if (!p.IntegratedSecurity)

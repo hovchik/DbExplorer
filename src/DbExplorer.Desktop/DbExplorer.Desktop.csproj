@@ -24,5 +24,7 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.3" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <!-- Pinned above the version Avalonia.FreeDesktop pulls in (0.20.0, GHSA-xrw6-gwf8-vvr9); used on Linux only. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>

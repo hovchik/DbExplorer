@@ -70,6 +70,10 @@ public partial class MetadataSearchViewModel(
         {
             Status = "Invalid pattern: " + ex.Message;
         }
+        catch (Exception ex)
+        {
+            Status = "Search failed: " + ex.Message;
+        }
     }
 
     [RelayCommand]

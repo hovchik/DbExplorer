@@ -14,8 +14,19 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
     {
         if (!File.Exists(paths.ConnectionsFile)) return [];
 
-        await using var fs = File.OpenRead(paths.ConnectionsFile);
-        var stored = await JsonSerializer.DeserializeAsync<List<StoredProfile>>(fs, Json, ct) ?? [];
+        List<StoredProfile> stored;
+        try
+        {
+            await using var fs = File.OpenRead(paths.ConnectionsFile);
+            stored = await JsonSerializer.DeserializeAsync<List<StoredProfile>>(fs, Json, ct) ?? [];
+        }
+        catch (JsonException ex)
+        {
+            // Keep the damaged file: the next save would otherwise overwrite every saved connection with an empty list.
+            var backup = $"{paths.ConnectionsFile}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Move(paths.ConnectionsFile, backup, overwrite: true);
+            throw new InvalidDataException($"The saved connections file was damaged and has been moved to {backup}.", ex);
+        }
 
         foreach (var s in stored)
         {

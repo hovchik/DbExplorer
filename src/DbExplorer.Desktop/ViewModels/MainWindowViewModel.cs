@@ -138,13 +138,21 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Every step runs even when an earlier one fails (e.g. the server went away), so tabs are saved and
+    /// open transactions are rolled back as far as possible.</summary>
     public async Task ShutdownAsync()
     {
-        await Query.SaveTabsAsync();
-        await Query.RollbackOpenTransactionsAsync();
-        foreach (var tab in _tabs) tab.Attach(null);
-        await Comparer.DisposeIndependentSessionsAsync();
-        if (Session is { } s) await s.DisposeAsync();
+        await Step(Query.SaveTabsAsync);
+        await Step(Query.RollbackOpenTransactionsAsync);
+        foreach (var tab in _tabs) await Step(() => { tab.Attach(null); return Task.CompletedTask; });
+        await Step(() => Comparer.DisposeIndependentSessionsAsync().AsTask());
+        if (Session is { } s) await Step(() => s.DisposeAsync().AsTask());
+
+        static async Task Step(Func<Task> step)
+        {
+            try { await step(); }
+            catch (Exception ex) { Services.ErrorLog.Write("shutdown", ex); }
+        }
     }
 
     partial void OnSessionChanging(DatabaseSession? value)

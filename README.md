@@ -53,6 +53,22 @@ DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" dotnet test
 
 Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as the startup project.
 
+### Distributing to other people
+
+```bash
+# Windows (the FolderProfile publish profile): self-contained, ReadyToRun, no .NET install needed on the target machine
+dotnet publish src/DbExplorer.Desktop -p:PublishProfile=FolderProfile
+# → src/DbExplorer.Desktop/bin/Release/net8.0/publish/  (zip the folder; run DbExplorer.exe)
+
+# Linux / macOS
+dotnet publish src/DbExplorer.Desktop -c Release -r linux-x64 --self-contained -o publish/linux-x64
+dotnet publish src/DbExplorer.Desktop -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
+```
+
+Each user's connections, metadata cache and query tabs live in their own app data folder (see *Metadata cache* below).
+Errors that nothing else handled are written to `DbExplorer/logs/errors.log` in that folder instead of closing the app;
+ask for that file when someone reports a problem.
+
 ## Architecture
 
 ```
@@ -114,7 +130,9 @@ Nothing else changes: the connection dialog, tabs, caches and searches pick the 
 
 ## Security
 
-Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect.
+Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect. A damaged `connections.json` is moved aside (`connections.json.corrupt-<time>`) rather than overwritten.
+
+*Encrypt (TLS)* with *Trust certificate* off validates the server certificate and host name on both engines (PostgreSQL `SslMode=VerifyFull`); with *Trust certificate* on, the connection is encrypted but any certificate is accepted (`TrustServerCertificate=True` / `SslMode=Require`). For servers reached over untrusted networks, turn *Encrypt* on and *Trust certificate* off.
 
 ## Known limitations
 

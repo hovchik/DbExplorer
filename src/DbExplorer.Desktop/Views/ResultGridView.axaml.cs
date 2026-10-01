@@ -78,6 +78,10 @@ public partial class ResultGridView : UserControl
     private readonly Flyout _columnsFlyout = new() { Placement = PlacementMode.BottomEdgeAlignedLeft };
     private ViewState _state = new();
     private List<ResultRow> _viewRows = [];
+    private int _viewVersion;
+
+    /// <summary>Results at least this large are filtered and sorted off the UI thread.</summary>
+    private const int BackgroundViewRows = 20_000;
     private KeyModifiers _headerModifiers;
     private bool _rebuilding;
     private double _detailsWidth = 340;
@@ -527,11 +531,34 @@ public partial class ResultGridView : UserControl
         ApplyView();
     }
 
-    /// <summary>Re-filters and re-sorts the fetched rows into the grid and refreshes everything that describes the view.</summary>
-    private void ApplyView()
+    /// <summary>Re-filters and re-sorts the fetched rows into the grid and refreshes everything that describes the view.
+    /// Large results are filtered on a background thread so typing in a filter never freezes the window; only the
+    /// latest request is shown.</summary>
+    private async void ApplyView()
     {
         if (ResultSet is not { } rs) return;
-        _viewRows = ResultViewQuery.Apply(rs.Rows, r => r.Values, _state.QuickFilter, _state.Filters.Values, _state.Sorts);
+        var version = ++_viewVersion;
+        var quick = _state.QuickFilter;
+        var filters = _state.Filters.Values.ToList();
+        var sorts = _state.Sorts.ToList();
+        List<ResultRow> rows;
+        if (rs.Rows.Count < BackgroundViewRows)
+            rows = ResultViewQuery.Apply(rs.Rows, r => r.Values, quick, filters, sorts);
+        else
+        {
+            RowCountText.Text = $"Filtering {rs.Rows.Count:N0} row(s)…";
+            try
+            {
+                rows = await Task.Run(() => ResultViewQuery.Apply(rs.Rows, r => r.Values, quick, filters, sorts));
+            }
+            catch (Exception ex)
+            {
+                if (version == _viewVersion) RowCountText.Text = "Could not filter the rows: " + ex.Message;
+                return;
+            }
+            if (version != _viewVersion || !ReferenceEquals(rs, ResultSet)) return;
+        }
+        _viewRows = rows;
         Grid.ItemsSource = _viewRows;
         AggregateText.Text = "";
         UpdateHeaders();

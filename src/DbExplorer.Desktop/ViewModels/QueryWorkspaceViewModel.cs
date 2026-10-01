@@ -85,6 +85,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         doc.RestoredDatabase = database ?? SelectedDocument?.CurrentDatabase;
         doc.Attach(_session);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
+        doc.OpenAndRunRequested += (docTitle, text, db) =>
+        {
+            var opened = AddTab(docTitle, text, null, dirty: false, NullIfEmpty(db));
+            if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
+        };
         Documents.Add(doc);
         SelectedDocument = doc;
         return doc;

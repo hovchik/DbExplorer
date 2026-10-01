@@ -143,7 +143,7 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         var vm = new GetDataViewModel();
         var window = new GetDataWindow { DataContext = vm };
-        vm.Initialize(queryService, session, table, filter, filterDescription);
+        vm.Initialize(queryService, session, table, filter, filterDescription, this);
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();

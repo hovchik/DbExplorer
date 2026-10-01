@@ -62,7 +62,7 @@ public partial class QueryViewModel
         HasOpenTransaction = true;
         Status = "Running in the open transaction…";
         var result = await _transaction.QueryAsync(sql, TimeoutSeconds, RowLimit, ct, QueryExecutionService.ReadOnlyFor(sql, RowLimit));
-        ShowResult(session, result, prefix: "In transaction · ");
+        ShowResult(session, sql, result, prefix: "In transaction · ");
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }
 
@@ -133,6 +133,7 @@ public partial class QueryViewModel
                 "Analyze", requiredText: session.Profile.IsProduction ? "PRODUCTION" : null,
                 banner: session.Profile.IsProduction ? $"PRODUCTION · {session.Profile.DisplayName}" : null))
             return;
+        if (!await ConfirmDiscardEditsAsync()) return;
 
         var key = session.Provider.ProviderKey;
         _runCts?.Dispose();

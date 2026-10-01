@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Export;
@@ -21,8 +22,84 @@ public sealed partial class RoutineParameterInput : ObservableObject
     [ObservableProperty] private string _value = "";
 }
 
-/// <summary>A grid-friendly wrapper around one row of a <see cref="QueryResultSet"/>.</summary>
-public sealed record ResultRow(IReadOnlyList<object?> Values);
+/// <summary>A grid-friendly wrapper around one row of a <see cref="QueryResultSet"/>. Cells can be edited in place: the row
+/// keeps the values it was read with until the edits are committed (<see cref="AcceptChanges"/>) or reverted.</summary>
+public sealed class ResultRow(IReadOnlyList<object?> values) : INotifyPropertyChanged
+{
+    private Dictionary<int, object?>? _originals;
+
+    /// <summary>The current values (edited ones included). Replaced, never mutated, so a background filter always sees
+    /// a consistent row.</summary>
+    public IReadOnlyList<object?> Values { get; private set; } = values;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public bool IsModified => _originals is { Count: > 0 };
+
+    public bool IsCellModified(int column) => _originals?.ContainsKey(column) == true;
+
+    public IReadOnlyCollection<int> ModifiedColumns => _originals is null ? [] : _originals.Keys;
+
+    /// <summary>The values as read from the database, before any uncommitted edit.</summary>
+    public IReadOnlyList<object?> OriginalValues
+    {
+        get
+        {
+            if (!IsModified) return Values;
+            var values = Values.ToArray();
+            foreach (var (column, value) in _originals!) values[column] = value;
+            return values;
+        }
+    }
+
+    public object? OriginalValue(int column) =>
+        _originals is not null && _originals.TryGetValue(column, out var value) ? value : column < Values.Count ? Values[column] : null;
+
+    /// <summary>Changes a cell; setting it back to the value it was read with clears the edit.</summary>
+    public void SetValue(int column, object? value)
+    {
+        if (column < 0 || column >= Values.Count) return;
+        var original = OriginalValue(column);
+        _originals ??= [];
+        if (SameValue(original, value)) _originals.Remove(column);
+        else _originals.TryAdd(column, original);
+        Replace(column, value);
+    }
+
+    public void RevertCell(int column)
+    {
+        if (_originals is null || !_originals.Remove(column, out var original)) return;
+        Replace(column, original);
+    }
+
+    public void Revert()
+    {
+        if (!IsModified) return;
+        Values = OriginalValues;
+        _originals!.Clear();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Values)));
+    }
+
+    /// <summary>The edits are now in the database: the current values become the original ones.</summary>
+    public void AcceptChanges()
+    {
+        if (!IsModified) return;
+        _originals!.Clear();
+        Values = Values.ToArray(); // a new instance, so bindings to Values see the change of state
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Values)));
+    }
+
+    private void Replace(int column, object? value)
+    {
+        var values = Values.ToArray();
+        values[column] = value;
+        Values = values;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Values)));
+    }
+
+    private static bool SameValue(object? a, object? b) =>
+        a is byte[] x && b is byte[] y ? x.AsSpan().SequenceEqual(y) : Equals(a is DBNull ? null : a, b is DBNull ? null : b);
+}
 
 public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, IReadOnlyList<ResultRow> Rows)
 {
@@ -42,6 +119,21 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
 
     /// <summary>False when reading stopped at the row limit on the server: the full size is unknown.</summary>
     public bool TotalRowCountIsExact { get; init; } = true;
+
+    /// <summary>The tables, keys and foreign keys behind the columns, when the statement and the catalog tell; enables
+    /// editing cells and following foreign key values. Null: read-only, no links.</summary>
+    public ResultSource? Source { get; init; }
+
+    /// <summary>Writes the edited rows to the database and returns a status line; throws when nothing was saved.
+    /// Null where results cannot be edited.</summary>
+    public Func<ResultSetView, IReadOnlyList<ResultRow>, Task<string>>? CommitEdits { get; init; }
+
+    /// <summary>Shows the row a foreign key value refers to. Null where navigation is not offered.</summary>
+    public Action<ResultSetView, ResultReference, ResultRow>? OpenReference { get; init; }
+
+    public bool CanEdit(int column) => CommitEdits is not null && Source?.CanEdit(column) == true;
+
+    public ResultReference? ReferenceOf(int column) => OpenReference is null ? null : Source?.ReferenceOf(column);
 
     /// <summary>"12,345" or, when reading stopped at the limit, "more than 10,000".</summary>
     public string TotalRowsText => TotalRowCountIsExact ? $"{TotalRowCount:N0}" : $"more than {Rows.Count:N0}";

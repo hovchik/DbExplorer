@@ -1,0 +1,122 @@
+{
+  "info": {
+    "_postman_id": "8b1c3c4e-0000-4000-8000-000000000001",
+    "name": "Pet Store",
+    "description": "Sample Postman collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.com" },
+    { "key": "token", "value": "collection-token" },
+    { "key": "unused", "value": "x", "disabled": true }
+  ],
+  "event": [
+    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.environment.set('a', 1);"] } }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "get", "url": "{{baseUrl}}/health" }
+    },
+    {
+      "name": "Pets",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          { "key": "key", "value": "X-Api-Key" },
+          { "key": "value", "value": "{{apiKey}}" },
+          { "key": "in", "value": "header" }
+        ]
+      },
+      "item": [
+        {
+          "name": "List pets",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Debug", "value": "1", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pets?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["pets"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "offset", "value": "0", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get pet",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/pets/:petId",
+              "host": ["{{baseUrl}}"],
+              "path": ["pets", ":petId"],
+              "variable": [{ "key": "petId", "value": "{{petId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Create pet",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('ok', () => {});"] } }],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"name\": \"{{petName}}\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/pets"
+          }
+        },
+        {
+          "name": "Upload photo",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "caption", "value": "cute", "type": "text" },
+                { "key": "photo", "type": "file", "src": "/tmp/cat.png" }
+              ]
+            },
+            "url": "{{baseUrl}}/pets/1/photo"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login",
+      "request": {
+        "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin" }, { "key": "password", "value": "{{password}}" }] },
+        "method": "POST",
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "grant_type", "value": "client_credentials" },
+            { "key": "scope", "value": "all", "disabled": true }
+          ]
+        },
+        "url": "{{baseUrl}}/oauth/token"
+      }
+    },
+    {
+      "name": "Query pets",
+      "request": {
+        "method": "POST",
+        "body": { "mode": "graphql", "graphql": { "query": "{ pets { id } }", "variables": "{\"first\": 5}" } },
+        "url": "{{baseUrl}}/graphql"
+      }
+    }
+  ]
+}

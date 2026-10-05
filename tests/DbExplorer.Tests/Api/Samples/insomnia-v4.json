@@ -1,0 +1,28 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    { "_id": "wrk_1", "_type": "workspace", "parentId": null, "name": "Orders API", "description": "" },
+    { "_id": "env_base", "_type": "environment", "parentId": "wrk_1", "name": "Base Environment",
+      "data": { "baseUrl": "https://orders.example.com", "auth": { "token": "base-token" } } },
+    { "_id": "env_prod", "_type": "environment", "parentId": "env_base", "name": "Production",
+      "data": { "baseUrl": "https://orders.prod.example.com" } },
+    { "_id": "fld_1", "_type": "request_group", "parentId": "wrk_1", "name": "Orders", "metaSortKey": 1,
+      "authentication": { "type": "bearer", "token": "{{ _.auth.token }}" } },
+    { "_id": "req_2", "_type": "request", "parentId": "fld_1", "name": "Create order", "metaSortKey": 20,
+      "method": "POST", "url": "{{ _.baseUrl }}/orders",
+      "body": { "mimeType": "application/json", "text": "{\"sku\": \"{{ sku }}\"}" },
+      "parameters": [], "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "authentication": {} },
+    { "_id": "req_1", "_type": "request", "parentId": "fld_1", "name": "List orders", "metaSortKey": 10,
+      "method": "GET", "url": "{{ _.baseUrl }}/orders",
+      "parameters": [{ "name": "status", "value": "open" }, { "name": "page", "value": "2", "disabled": true }],
+      "headers": [], "authentication": {} },
+    { "_id": "req_3", "_type": "request", "parentId": "wrk_1", "name": "Token", "metaSortKey": 5,
+      "method": "POST", "url": "{{ _.baseUrl }}/token",
+      "body": { "mimeType": "application/x-www-form-urlencoded", "params": [{ "name": "user", "value": "{% prompt 'User' %}" }] },
+      "authentication": { "type": "basic", "username": "svc", "password": "pw" } },
+    { "_id": "req_4", "_type": "grpc_request", "parentId": "wrk_1", "name": "Stream" }
+  ]
+}

@@ -1,3 +1,4 @@
+using DbExplorer.Application.Api;
 using DbExplorer.Application.Compare;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Copy;
@@ -36,6 +37,11 @@ public static class DependencyInjection
         services.AddSingleton<MultiDatabaseQueryService>();
         services.AddSingleton<ObjectComparisonService>();
         services.AddSingleton<ObjectCopyService>();
+        services.AddSingleton<ApiCollectionImporter>();
+        services.AddSingleton<ApiCollectionStore>();
+        services.AddSingleton(sp => new ApiRequestRunner(
+            new HttpClient { Timeout = TimeSpan.FromSeconds(100) },
+            sp.GetRequiredService<ApiCollectionStore>()));
         return services;
     }
 }

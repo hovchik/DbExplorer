@@ -42,6 +42,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<SchemaHistoryViewModel>();
         services.AddSingleton<RelationshipsViewModel>();
         services.AddSingleton<LabViewModel>();
+        services.AddSingleton<ApiViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         var provider = services.BuildServiceProvider();

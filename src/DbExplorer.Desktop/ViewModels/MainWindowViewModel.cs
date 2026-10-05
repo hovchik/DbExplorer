@@ -35,7 +35,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DiagramViewModel diagram,
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
-        LabViewModel lab)
+        LabViewModel lab,
+        ApiViewModel api)
     {
         _store = store;
         _sessions = sessions;
@@ -54,6 +55,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Lab = lab;
+        Api = api;
         _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, query, comparer, lab];
 
         objects.ShowInDiagramRequested += table =>
@@ -97,6 +99,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
     public LabViewModel Lab { get; }
+    public ApiViewModel Api { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -323,8 +326,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var tab in Enum.GetValues<AppTab>())
         {
-            if (!IsConnected && tab != AppTab.Comparer) continue;
+            if (!IsConnected && tab is not (AppTab.Comparer or AppTab.Api)) continue;
             var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
+            if (tab == AppTab.Api) title = "API";
             items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
         }
 
@@ -396,5 +400,6 @@ public enum AppTab
     Indexes,
     Locks,
     Activity,
-    Lab
+    Lab,
+    Api
 }

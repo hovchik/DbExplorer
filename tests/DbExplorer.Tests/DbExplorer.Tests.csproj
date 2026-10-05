@@ -16,6 +16,9 @@
     <ProjectReference Include="..\..\src\DbExplorer.Providers.Postgres\DbExplorer.Providers.Postgres.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Api\Samples\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

@@ -28,11 +28,25 @@
 	</Grid.RowDefinitions>
 	<WrapPanel Grid.Row="0" Classes="toolbar">
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
-				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to jump to a name.">
+				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to filter the list.">
 		<TextBlock Text="Database" VerticalAlignment="Center" />
-		<ComboBox ItemsSource="{Binding AvailableDatabases}" SelectedItem="{Binding CurrentDatabase}"
-				  IsEnabled="{Binding CanChangeDatabase}" IsTextSearchEnabled="True"
-				  PlaceholderText="(connection default)" MinWidth="180" MaxWidth="320" MaxDropDownHeight="420" />
+		<Button x:Name="DatabasePicker" IsEnabled="{Binding CanChangeDatabase}" MinWidth="180" MaxWidth="320"
+				HorizontalContentAlignment="Stretch">
+		  <Grid ColumnDefinitions="*,Auto">
+			<TextBlock Text="{Binding CurrentDatabaseLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+			<TextBlock Grid.Column="1" Text="▾" Margin="8,0,0,0" VerticalAlignment="Center" />
+		  </Grid>
+		  <Button.Flyout>
+			<Flyout Placement="BottomEdgeAlignedLeft" Opened="OnDatabasePickerOpened">
+			  <StackPanel Width="300" Spacing="6">
+				<TextBox x:Name="DatabasePickerFilterBox" Text="{Binding DatabasePickerFilter}" Watermark="Type to filter databases…"
+						 KeyDown="OnDatabasePickerFilterKeyDown" />
+				<ListBox x:Name="DatabasePickerList" ItemsSource="{Binding FilteredDatabases}" MaxHeight="380"
+						 Tapped="OnDatabasePickerListTapped" KeyDown="OnDatabasePickerListKeyDown" />
+			  </StackPanel>
+			</Flyout>
+		  </Button.Flyout>
+		</Button>
 	  </StackPanel>
 	  <Button Content="▶ Run" Classes="accent" Click="OnRun"
 			  ToolTip.Tip="Run the selection, or the whole script when nothing is selected (F5 / Ctrl+E)" />

@@ -70,16 +70,18 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         foreach (var d in Documents) d.Attach(session);
     }
 
-    public QueryViewModel NewTab() => AddTab($"Query {++_untitled}", "", filePath: null, dirty: false);
+    public QueryViewModel NewTab() => AddTab($"Query {++_untitled}", "", filePath: null, dirty: false, autoTitle: true);
 
     [RelayCommand]
     private void NewQuery() => NewTab();
 
     /// <param name="database">Database the tab starts in; by default the one of the tab it is opened from.</param>
-    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null)
+    /// <param name="autoTitle">Whether the tab is renamed after the queries it runs.</param>
+    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null, bool autoTitle = false)
     {
         var doc = _createDocument();
         doc.Title = title;
+        doc.AutoTitle = autoTitle && filePath is null;
         doc.FilePath = filePath;
         doc.SetText(sql, markClean: !dirty);
         doc.RestoredDatabase = database ?? SelectedDocument?.CurrentDatabase;
@@ -96,10 +98,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     }
 
     /// <summary>Opens <paramref name="sql"/> in a new tab (history, "script as", …).</summary>
-    public void OpenInNewTab(string sql, string? title = null, string? database = null) =>
-        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database));
+    public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false) =>
+        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null);
 
     private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
+
+    /// <summary>"Query 3": the name a new tab gets before it is named after its queries.</summary>
+    private static bool IsUntitledName(string title) =>
+        title.StartsWith("Query ", StringComparison.Ordinal) && int.TryParse(title.AsSpan(6), NumberStyles.None, CultureInfo.InvariantCulture, out _);
 
     [RelayCommand]
     private async Task CloseTabAsync(QueryViewModel? doc)
@@ -133,6 +139,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         if (SelectedDocument is { FilePath: null } current && string.IsNullOrWhiteSpace(current.Sql))
         {
             current.Title = name;
+            current.AutoTitle = false;
             current.FilePath = path;
             current.SetText(sql, markClean: true);
         }
@@ -144,6 +151,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         await File.WriteAllTextAsync(path, doc.Sql);
         doc.FilePath = path;
         doc.Title = name;
+        doc.AutoTitle = false;
         doc.IsDirty = false;
         await SaveTabsAsync();
     }
@@ -173,7 +181,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     [RelayCommand]
     private void OpenHistory(HistoryItem? item)
     {
-        if (item is not null) OpenInNewTab(item.Entry.Sql, "History " + item.Entry.RanAt.LocalDateTime.ToString("t", CultureInfo.CurrentCulture));
+        if (item is not null) OpenInNewTab(item.Entry.Sql, "History " + item.Entry.RanAt.LocalDateTime.ToString("t", CultureInfo.CurrentCulture), autoTitle: true);
     }
 
     /// <summary>Restores the tabs of the previous run (best-effort).</summary>
@@ -184,7 +192,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             var tabs = await _scripts.LoadTabsAsync();
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
-            foreach (var t in tabs) AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, t.Database);
+            foreach (var t in tabs) AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, t.Database, t.AutoTitle ?? IsUntitledName(t.Title));
             if (placeholder is not null)
             {
                 placeholder.Attach(null);
@@ -213,7 +221,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             await _scripts.SaveTabsAsync(Documents.Select(d => new QueryTabState
             {
                 Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty,
-                Database = d.CurrentDatabase ?? d.RestoredDatabase
+                Database = d.CurrentDatabase ?? d.RestoredDatabase, AutoTitle = d.AutoTitle
             }));
         }
         catch

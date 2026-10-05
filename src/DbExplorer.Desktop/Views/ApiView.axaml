@@ -109,7 +109,7 @@
               </StackPanel>
               <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="0,0,0,4"
                          Text="Raw and GraphQL bodies are edited here; form fields are kept as imported." />
-              <TextBox Text="{Binding SelectedRequest.Body.Raw}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+              <TextBox Text="{Binding SelectedRequest.Body.Raw}" AcceptsReturn="True" VerticalContentAlignment="Top" AcceptsTab="True" TextWrapping="NoWrap"
                        FontFamily="Cascadia Mono, Consolas, Menlo, monospace" TextChanged="OnEdited" />
             </DockPanel>
           </TabItem>
@@ -125,7 +125,7 @@
           </StackPanel>
           <TabControl Padding="0">
             <TabItem Header="Body">
-              <TextBox Text="{Binding ResponseBody}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+              <TextBox Text="{Binding ResponseBody}" IsReadOnly="True" AcceptsReturn="True" VerticalContentAlignment="Top" TextWrapping="NoWrap"
                        FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
             </TabItem>
             <TabItem Header="Headers">

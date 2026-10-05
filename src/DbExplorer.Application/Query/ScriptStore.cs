@@ -28,6 +28,9 @@ public sealed class QueryTabState
 
     /// <summary>The database the tab ran in (picked in its toolbar); null for the connection's default.</summary>
     public string? Database { get; set; }
+
+    /// <summary>Whether the tab takes its name from the queries it runs; null in files written before this existed.</summary>
+    public bool? AutoTitle { get; set; }
 }
 
 /// <summary>Persists saved scripts and run history to disk, similar to <c>ConnectionStore</c>.</summary>

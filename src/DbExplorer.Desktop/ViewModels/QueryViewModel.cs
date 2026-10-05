@@ -64,6 +64,9 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private string? _filePath;
     [ObservableProperty] private bool _isDirty;
 
+    /// <summary>The tab is renamed after the main table of each query it runs. Off for tabs of a file or with a given name.</summary>
+    public bool AutoTitle { get; set; }
+
     public string Header => (IsDirty && FilePath is not null ? "● " : "") + Title;
 
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(Header));
@@ -157,6 +160,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     partial void OnCurrentDatabaseChanged(string? oldValue, string? newValue)
     {
+        OnPropertyChanged(nameof(CurrentDatabaseLabel));
         if (_attaching) return;
         if (HasOpenTransaction && !string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase))
         {
@@ -168,9 +172,29 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         RebuildCompletion();
     }
 
+    /// <summary>What the database picker shows for <see cref="CurrentDatabase"/>.</summary>
+    public string CurrentDatabaseLabel => CurrentDatabase ?? "(connection default)";
+
+    /// <summary>Text typed in the database picker; the list keeps the names that contain it, ignoring case.</summary>
+    [ObservableProperty] private string _databasePickerFilter = "";
+
+    /// <summary><see cref="AvailableDatabases"/> narrowed by <see cref="DatabasePickerFilter"/>.</summary>
+    [ObservableProperty] private IReadOnlyList<string> _filteredDatabases = [];
+
+    partial void OnDatabasePickerFilterChanged(string value) => ApplyDatabasePickerFilter();
+
+    private void ApplyDatabasePickerFilter()
+    {
+        var f = DatabasePickerFilter.Trim();
+        FilteredDatabases = f.Length == 0
+            ? AvailableDatabases
+            : AvailableDatabases.Where(n => n.Contains(f, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
     /// <summary>The picker matches its selection exactly, so the current name takes the list's spelling ("sales" → "Sales").</summary>
     partial void OnAvailableDatabasesChanged(IReadOnlyList<string> value)
     {
+        ApplyDatabasePickerFilter();
         if (CurrentDatabase is { } current && !value.Contains(current, StringComparer.Ordinal) &&
             value.FirstOrDefault(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase)) is { } listed)
             CurrentDatabase = listed;
@@ -393,6 +417,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                 await RunInTransactionAsync(session, sql, ct);
             else
                 await RunOnceAsync(session, sql, ct);
+            if (AutoTitle && QueryTabNamer.Suggest(sql) is { } name) Title = name;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

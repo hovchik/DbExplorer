@@ -57,6 +57,12 @@ Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as
 
 ### Distributing to other people
 
+**Windows installer:** `installer/build-installer.ps1 -Version 1.2.0` builds **DbExplorer-Setup-1.2.0.exe**, one file
+that installs the app per user (no administrator needed) or for all users, with no .NET to install. GitHub Actions
+builds it too (*Windows installer* workflow, on pull requests and `v*` tags). See [installer/README.md](installer/README.md).
+
+Or publish a folder to zip:
+
 ```bash
 # Windows (the FolderProfile publish profile): self-contained, ReadyToRun, no .NET install needed on the target machine
 dotnet publish src/DbExplorer.Desktop -p:PublishProfile=FolderProfile

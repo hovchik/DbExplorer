@@ -57,6 +57,15 @@ Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as
 
 ### Distributing to other people
 
+**Windows installer** (Inno Setup): `DbExplorer-Setup-<version>.exe` installs a self-contained build into Program Files (or just for the current user), adds Start menu / desktop shortcuts and an uninstaller. Upgrades and uninstalls keep each user's connections and tabs.
+
+```powershell
+.\installer\build-installer.ps1 -Version 1.2.0
+# → installer\out\DbExplorer-Setup-1.2.0.exe  (installs Inno Setup with winget on first use if missing)
+```
+
+The *Windows installer* GitHub workflow builds it too: push a `v1.2.0` tag to get that version, and download the setup from the run's artifacts.
+
 ```bash
 # Windows (the FolderProfile publish profile): self-contained, ReadyToRun, no .NET install needed on the target machine
 dotnet publish src/DbExplorer.Desktop -p:PublishProfile=FolderProfile

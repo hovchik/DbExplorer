@@ -114,6 +114,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         ResultSets = [];
         Messages.Clear();
         Status = "";
+        AutoRefresh = false;
+        _lastRun = null;
         RunOnMultipleDatabases = false;
         SetDatabases([]);
         ExecuteCommand.NotifyCanExecuteChanged();
@@ -316,6 +318,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         CommitCommand.NotifyCanExecuteChanged();
         RollbackCommand.NotifyCanExecuteChanged();
         NotifyLabCommands();
+        OnPropertyChanged(nameof(AutoRefreshInfo));
     }
 
     partial void OnRunOnMultipleDatabasesChanged(bool value)
@@ -404,6 +407,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
         if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
 
+        _lastRun = new RepeatableRun(sql, startOffset, targets);
+        await RunAsync(session, sql, startOffset, targets);
+    }
+
+    /// <summary>Runs <paramref name="sql"/> with nothing left to ask; false when it failed or was cancelled.</summary>
+    private async Task<bool> RunAsync(DatabaseSession session, string sql, int startOffset, IReadOnlyList<string> targets)
+    {
         _runCts?.Dispose();
         _runCts = new CancellationTokenSource();
         var ct = _runCts.Token;
@@ -411,17 +421,20 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Messages.Clear();
         try
         {
-            if (RunOnMultipleDatabases)
-                await RunOnDatabasesAsync(session, sql, targets, ct);
+            var succeeded = true;
+            if (targets.Count > 0)
+                succeeded = await RunOnDatabasesAsync(session, sql, targets, ct);
             else if (!AutoCommit)
                 await RunInTransactionAsync(session, sql, ct);
             else
                 await RunOnceAsync(session, sql, ct);
             if (AutoTitle && QueryTabNamer.Suggest(sql) is { } name) Title = name;
+            return succeeded;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             Status = "Cancelled." + (HasOpenTransaction ? " The transaction is still open: Commit or Rollback." : "");
+            return false;
         }
         catch (Exception ex)
         {
@@ -429,6 +442,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             Messages.Add(ex.Message);
             if (ex is SqlExecutionException { Line: { } line } located) ErrorLocated?.Invoke(startOffset, line, located.Column);
             await SafeAppendHistoryAsync(sql, succeeded: false, error: ex.Message);
+            return false;
         }
         finally
         {
@@ -465,7 +479,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                       : $" · showing the first {RowLimit:N0} rows (raise the row limit to see more)");
     }
 
-    private async Task RunOnDatabasesAsync(DatabaseSession session, string sql, IReadOnlyList<string> databases, CancellationToken ct)
+    private async Task<bool> RunOnDatabasesAsync(DatabaseSession session, string sql, IReadOnlyList<string> databases, CancellationToken ct)
     {
         var started = DateTime.UtcNow;
         Status = $"Running on {databases.Count} database(s)…";
@@ -504,10 +518,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
         await SafeAppendHistoryAsync(sql, succeeded: failed.Count == 0,
             error: failed.Count == 0 ? null : string.Join("; ", failed.Select(f => $"{f.Database}: {f.Error}")));
+        return failed.Count == 0;
     }
 
     private async Task SafeAppendHistoryAsync(string sql, bool succeeded, string? error)
     {
+        if (_isRefreshRun) return; // a timer run repeats the entry already there
         try
         {
             await scripts.AppendHistoryAsync(new ScriptHistoryEntry

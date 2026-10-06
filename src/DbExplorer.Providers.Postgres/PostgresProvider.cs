@@ -21,7 +21,7 @@ public sealed class PostgresProvider : IDatabaseProvider
 
     private readonly SemaphoreSlim _catalogGate = new(MaxParallelDatabases, MaxParallelDatabases);
     private readonly object _databasesLock = new();
-    private (Task<IReadOnlyList<string>> Task, DateTime At)? _databases;
+    private Task<IReadOnlyList<string>>? _databases;
 
     private readonly ConnectionProfile _profile;
     private readonly NpgsqlDataSource _dataSource;
@@ -749,16 +749,14 @@ public sealed class PostgresProvider : IDatabaseProvider
         }
     }
 
-    /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each.</summary>
+    /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each:
+    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.</summary>
     private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
     {
         lock (_databasesLock)
         {
-            if (_databases is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromSeconds(30) && !cached.Task.IsFaulted && !cached.Task.IsCanceled)
-                return cached.Task;
-            var task = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
-            _databases = (task, DateTime.UtcNow);
-            return task;
+            if (_databases is { IsCompleted: false } inFlight) return inFlight;
+            return _databases = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
         }
     }
 

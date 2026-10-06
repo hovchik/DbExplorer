@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Diagram;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
@@ -39,6 +41,15 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     /// <summary>Whole schema only: draw the missing foreign keys <see cref="SchemaSuggester"/> proposes, with their script.</summary>
     [ObservableProperty] private bool _showSuggestions;
     [ObservableProperty] private string _suggestionScript = "";
+    [ObservableProperty] private SuggestionItem? _selectedSuggestion;
+    [ObservableProperty] private string _suggestionSummary = "";
+
+    /// <summary>One card per suggested foreign key; the script holds the ones left ticked.</summary>
+    public ObservableCollection<SuggestionItem> Suggestions { get; } = [];
+    public bool HasSuggestions => Suggestions.Count > 0;
+    private SqlDialect _suggestionDialect = SqlDialect.SqlServer;
+    private string? _suggestionDatabase;
+    private string? _suggestionSchema;
 
     public bool IsAroundTable => Scope == DiagramScope.AroundTable;
     public bool IsWholeSchema => Scope == DiagramScope.WholeSchema;
@@ -46,6 +57,9 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
 
     /// <summary>Raised when the user asks to open the selected table in the Objects tab.</summary>
     public event Action<DbObject>? OpenObjectRequested;
+
+    /// <summary>Raised to open SQL (the suggestions script) in a new query tab, against a database.</summary>
+    public event Action<string, string?>? OpenSqlRequested;
 
     public void Attach(DatabaseSession? session)
     {
@@ -142,7 +156,7 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     private void Rebuild()
     {
         if (_suspendRebuild) return;
-        SuggestionScript = "";
+        SetSuggestions(null);
         if (_session is null)
         {
             Diagram = ErDiagram.Empty;
@@ -165,14 +179,17 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
             var schema = SelectedSchema == AllSchemas ? null : SelectedSchema;
             var suggestions = SchemaSuggester.Suggest(snapshot, _session.Provider.ProviderKey, SelectedDatabase, schema, ColumnMode);
             Diagram = suggestions.Diagram;
-            SuggestionScript = suggestions.Script;
+            _suggestionDialect = SqlDialect.For(_session.Provider.ProviderKey);
+            _suggestionDatabase = SelectedDatabase;
+            _suggestionSchema = schema;
+            SetSuggestions(suggestions.ForeignKeys);
             SelectedTable = null;
             var drawn = Diagram.Edges.Count(e => e.IsSuggested);
             Status = suggestions.ForeignKeys.Count == 0
                 ? "No missing foreign keys found in this schema."
                 : $"{suggestions.ForeignKeys.Count:N0} suggested foreign key(s), drawn in orange" +
                   (drawn < suggestions.ForeignKeys.Count ? $" ({drawn:N0} on screen, table limit reached)" : "") +
-                  " · the script on the right adds them · nothing has been run";
+                  " · click one on the right to find it · nothing has been run";
             return;
         }
         else
@@ -186,6 +203,45 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                  (Diagram.OmittedTables > 0 ? $" · {Diagram.OmittedTables:N0} more not shown (limit reached)" : "") +
                  " · built from cached metadata · double-click a table to focus it · Ctrl+wheel to zoom";
     }
+
+    private void SetSuggestions(IReadOnlyList<SuggestedForeignKey>? foreignKeys)
+    {
+        SelectedSuggestion = null;
+        Suggestions.Clear();
+        foreach (var fk in foreignKeys ?? [])
+            Suggestions.Add(new SuggestionItem(fk, SchemaSuggester.Statement(_suggestionDialect, fk), UpdateSuggestionScript));
+        OnPropertyChanged(nameof(HasSuggestions));
+        UpdateSuggestionScript();
+    }
+
+    private void UpdateSuggestionScript()
+    {
+        var included = Suggestions.Where(s => s.Include).Select(s => s.ForeignKey).ToList();
+        SuggestionScript = ShowSuggestions ? SchemaSuggester.Script(_suggestionDialect, _suggestionDatabase, _suggestionSchema, included) : "";
+        SuggestionSummary = Suggestions.Count == 0
+            ? "No missing foreign keys found: every column that looks like a reference already has one."
+            : $"{included.Count} of {Suggestions.Count} in the script. Untick the ones you do not want.";
+        CopyScriptReady = included.Count > 0;
+        OpenScriptCommand.NotifyCanExecuteChanged();
+    }
+
+    [ObservableProperty] private bool _copyScriptReady;
+
+    /// <summary>Selecting a card selects its child table, so the orange line is highlighted on the canvas.</summary>
+    partial void OnSelectedSuggestionChanged(SuggestionItem? value)
+    {
+        if (value is null) return;
+        var fk = value.ForeignKey.ForeignKey;
+        SelectedTable = Diagram.Tables.FirstOrDefault(t =>
+            string.Equals(t.Object.Schema, fk.Schema, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(t.Object.Name, fk.Table, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [RelayCommand] private void IncludeAll() { foreach (var s in Suggestions) s.Include = true; }
+    [RelayCommand] private void IncludeNone() { foreach (var s in Suggestions) s.Include = false; }
+
+    [RelayCommand(CanExecute = nameof(CopyScriptReady))]
+    private void OpenScript() => OpenSqlRequested?.Invoke(SuggestionScript, _suggestionDatabase);
 
     public string ToMermaid() => ErDiagramBuilder.ToMermaid(Diagram);
 
@@ -202,4 +258,21 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     }
 
     private bool HasSelectedTable => SelectedTable is not null;
+}
+
+/// <summary>A suggested foreign key as the suggestions panel shows it.</summary>
+public partial class SuggestionItem(SuggestedForeignKey foreignKey, string statement, Action changed) : ObservableObject
+{
+    public SuggestedForeignKey ForeignKey { get; } = foreignKey;
+    public string Statement { get; } = statement;
+    public string Child => $"{ForeignKey.ForeignKey.Schema}.{ForeignKey.ForeignKey.Table}.{ForeignKey.ForeignKey.Columns}";
+    public string Parent => $"{ForeignKey.ForeignKey.ReferencedSchema}.{ForeignKey.ForeignKey.ReferencedTable}.{ForeignKey.ForeignKey.ReferencedColumns}";
+    public string Confidence => ForeignKey.Accepted ? "accepted" : ForeignKey.Confidence;
+    public string Reason => ForeignKey.Reason;
+    public string? Warning => ForeignKey.TypeWarning;
+    public bool HasWarning => Warning is not null;
+
+    [ObservableProperty] private bool _include = true;
+
+    partial void OnIncludeChanged(bool value) => changed();
 }

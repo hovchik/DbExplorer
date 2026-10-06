@@ -49,11 +49,11 @@ public class SchemaSuggesterTests
     {
         var s = SchemaSuggester.Suggest(MissingKeys(), SqlDialect.SqlServerKey, null, null, ErColumnMode.KeysOnly);
 
-        Assert.Contains("ALTER TABLE [sales].[Orders] ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customers] ([CustomerId]);", s.Script);
-        Assert.Contains("ALTER TABLE [dbo].[Invoices] ADD CONSTRAINT [FK_Invoices_Customers] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customers] ([CustomerId]);", s.Script);
+        Assert.Contains("ALTER TABLE [sales].[Orders]\n  ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerId])\n  REFERENCES [dbo].[Customers] ([CustomerId]);", s.Script);
+        Assert.Contains("ALTER TABLE [dbo].[Invoices]\n  ADD CONSTRAINT [FK_Invoices_Customers] FOREIGN KEY ([CustomerId])\n  REFERENCES [dbo].[Customers] ([CustomerId]);", s.Script);
         Assert.Contains("-- Types differ (CustomerId bigint, CustomerId int): align them first.", s.Script);
         Assert.Null(s.ForeignKeys.Single(f => f.ForeignKey.Table == "Orders").TypeWarning);
-        Assert.Contains("Nothing here has been run", s.Script);
+        Assert.Contains("-- Not run.", s.Script);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class SchemaSuggesterTests
         Assert.Contains("No missing foreign keys found", s.Script);
 
         var all = SchemaSuggester.Suggest(MissingKeys(), SqlDialect.PostgresKey, null, null, ErColumnMode.KeysOnly);
-        Assert.Contains("ALTER TABLE \"sales\".\"Orders\" ADD CONSTRAINT \"FK_Orders_Customers\" FOREIGN KEY (\"CustomerId\") REFERENCES \"dbo\".\"Customers\" (\"CustomerId\");", all.Script);
+        Assert.Contains("ALTER TABLE \"sales\".\"Orders\"\n  ADD CONSTRAINT \"FK_Orders_Customers\" FOREIGN KEY (\"CustomerId\")\n  REFERENCES \"dbo\".\"Customers\" (\"CustomerId\");", all.Script);
     }
 
     [Fact]

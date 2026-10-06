@@ -14,6 +14,41 @@ public partial class DiagramView : UserControl
         InitializeComponent();
         Canvas.TableActivated += table => (DataContext as DiagramViewModel)?.Refocus(table);
         TablePicker.GotFocus += (_, _) => TablePicker.IsDropDownOpen = true;
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is DiagramViewModel vm)
+                vm.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(DiagramViewModel.ShowSuggestions)) ShowPanel(vm.ShowSuggestions);
+                };
+        };
+    }
+
+    private GridLength _panelWidth = new(480);
+
+    /// <summary>The panel column is resizable with the splitter; hidden, it takes no room and keeps its last width.</summary>
+    private void ShowPanel(bool show)
+    {
+        var column = Body.ColumnDefinitions[2];
+        if (show)
+        {
+            column.Width = _panelWidth;
+            column.MinWidth = 300;
+        }
+        else
+        {
+            if (column.Width.Value > 0) _panelWidth = column.Width;
+            column.MinWidth = 0;
+            column.Width = new GridLength(0);
+        }
+    }
+
+    private void OnFit(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DiagramViewModel { Diagram.Tables.Count: > 0 } vm) return;
+        var view = Viewport.Bounds.Size;
+        var zoom = Math.Min((view.Width - 4) / vm.Diagram.Width, (view.Height - 4) / vm.Diagram.Height);
+        vm.Zoom = Math.Clamp(Math.Floor(zoom * 20) / 20, 0.3, 1.5);
     }
 
     private async void OnCopyMermaid(object? sender, RoutedEventArgs e)

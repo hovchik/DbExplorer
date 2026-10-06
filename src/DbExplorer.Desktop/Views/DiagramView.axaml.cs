@@ -23,6 +23,13 @@ public partial class DiagramView : UserControl
         vm.Status = "Mermaid diagram copied to the clipboard.";
     }
 
+    private async void OnCopyScript(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DiagramViewModel vm || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        await clipboard.SetTextAsync(vm.SuggestionScript);
+        vm.Status = "Script copied to the clipboard. Nothing has been run.";
+    }
+
     private async void OnSavePng(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not DiagramViewModel { Diagram.Tables.Count: > 0 } vm ||

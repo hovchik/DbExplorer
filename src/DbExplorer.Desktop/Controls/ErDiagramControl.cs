@@ -73,6 +73,7 @@ public sealed class ErDiagramControl : Control
         var accent = new SolidColorBrush(accentColor);
         var accentSoft = new SolidColorBrush(accentColor, 0.18);
         var edgeColor = new SolidColorBrush(((ISolidColorBrush)hint).Color, 0.6);
+        var suggestedColor = new SolidColorBrush(Color.FromRgb(0xE8, 0x7A, 0x00));
 
         using var _ = context.PushTransform(Matrix.CreateScale(Zoom, Zoom));
         context.FillRectangle(Brush("AppCodeBackgroundBrush", Brushes.WhiteSmoke), new Rect(0, 0, d.Width, d.Height));
@@ -80,7 +81,8 @@ public sealed class ErDiagramControl : Control
         foreach (var edge in d.Edges)
         {
             var highlighted = SelectedTable is { } s && (edge.Child.Title == s.Title || edge.Parent.Title == s.Title);
-            DrawEdge(context, edge, highlighted ? accent : edgeColor, highlighted ? 2 : 1.2);
+            if (edge.IsSuggested) DrawEdge(context, edge, suggestedColor, highlighted ? 2.6 : 1.8);
+            else DrawEdge(context, edge, highlighted ? accent : edgeColor, highlighted ? 2 : 1.2);
         }
 
         foreach (var t in d.Tables)
@@ -123,7 +125,8 @@ public sealed class ErDiagramControl : Control
         var y1 = RowY(child, fkColumns);
         var y2 = RowY(parent, refColumns);
         // Relationships the user accepted from inference are not constraints: dashed, so they never pass for one.
-        var pen = new Pen(brush, thickness) { DashStyle = edge.ForeignKey.IsVirtual ? DashStyle.Dash : null };
+        // Suggested ones (not in the database yet) are dashed and orange: see Render.
+        var pen = new Pen(brush, thickness) { DashStyle = edge.ForeignKey.IsVirtual || edge.IsSuggested ? DashStyle.Dash : null };
 
         Point start, end;
         double c1, c2;

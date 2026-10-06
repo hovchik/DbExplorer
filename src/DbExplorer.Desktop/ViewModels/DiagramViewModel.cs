@@ -36,6 +36,10 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private double _zoom = 1.0;
     [ObservableProperty] private string _status = "Pick a table, or switch to Whole schema.";
 
+    /// <summary>Whole schema only: draw the missing foreign keys <see cref="SchemaSuggester"/> proposes, with their script.</summary>
+    [ObservableProperty] private bool _showSuggestions;
+    [ObservableProperty] private string _suggestionScript = "";
+
     public bool IsAroundTable => Scope == DiagramScope.AroundTable;
     public bool IsWholeSchema => Scope == DiagramScope.WholeSchema;
     public bool HasMultipleDatabases => Databases.Count > 1;
@@ -122,6 +126,7 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
 
     partial void OnScopeChanged(DiagramScope value)
     {
+        if (value != DiagramScope.WholeSchema) ShowSuggestions = false;
         OnPropertyChanged(nameof(IsAroundTable));
         OnPropertyChanged(nameof(IsWholeSchema));
         Rebuild();
@@ -131,11 +136,13 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     partial void OnSelectedSchemaChanged(string value) => Rebuild();
     partial void OnDepthChanged(decimal value) => Rebuild();
     partial void OnColumnModeChanged(ErColumnMode value) => Rebuild();
+    partial void OnShowSuggestionsChanged(bool value) => Rebuild();
     partial void OnSelectedTableChanged(ErTable? value) => OpenSelectedCommand.NotifyCanExecuteChanged();
 
     private void Rebuild()
     {
         if (_suspendRebuild) return;
+        SuggestionScript = "";
         if (_session is null)
         {
             Diagram = ErDiagram.Empty;
@@ -152,6 +159,21 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                 return;
             }
             Diagram = ErDiagramBuilder.AroundTable(snapshot, FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
+        }
+        else if (ShowSuggestions)
+        {
+            var schema = SelectedSchema == AllSchemas ? null : SelectedSchema;
+            var suggestions = SchemaSuggester.Suggest(snapshot, _session.Provider.ProviderKey, SelectedDatabase, schema, ColumnMode);
+            Diagram = suggestions.Diagram;
+            SuggestionScript = suggestions.Script;
+            SelectedTable = null;
+            var drawn = Diagram.Edges.Count(e => e.IsSuggested);
+            Status = suggestions.ForeignKeys.Count == 0
+                ? "No missing foreign keys found in this schema."
+                : $"{suggestions.ForeignKeys.Count:N0} suggested foreign key(s), drawn in orange" +
+                  (drawn < suggestions.ForeignKeys.Count ? $" ({drawn:N0} on screen, table limit reached)" : "") +
+                  " · the script on the right adds them · nothing has been run";
+            return;
         }
         else
         {

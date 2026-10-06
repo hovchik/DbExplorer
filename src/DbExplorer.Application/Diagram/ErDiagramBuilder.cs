@@ -35,8 +35,9 @@ public sealed record ErTable
     public bool Contains(double x, double y) => x >= X && x <= X + Width && y >= Y && y <= Y + Height;
 }
 
-/// <summary>Child (referencing) table → parent (referenced) table.</summary>
-public sealed record ErEdge(ErTable Child, ErTable Parent, DbForeignKey ForeignKey);
+/// <summary>Child (referencing) table → parent (referenced) table. <paramref name="IsSuggested"/>: a missing foreign
+/// key proposed by <see cref="SchemaSuggester"/>, not one the database has.</summary>
+public sealed record ErEdge(ErTable Child, ErTable Parent, DbForeignKey ForeignKey, bool IsSuggested = false);
 
 public sealed record ErDiagram(IReadOnlyList<ErTable> Tables, IReadOnlyList<ErEdge> Edges, double Width, double Height, int OmittedTables)
 {

@@ -72,6 +72,8 @@ public partial class ResultGridView : UserControl
         public readonly List<ColumnSort> Sorts = [];
         public readonly HashSet<int> HiddenColumns = [];
         public int FrozenColumnCount;
+        public bool PivotOn;
+        public PivotSpec? Pivot;
     }
 
     private static readonly ConditionalWeakTable<ResultSetView, ViewState> States = new();
@@ -178,6 +180,7 @@ public partial class ResultGridView : UserControl
             menu.Items.Insert(menu.Items.IndexOf(view) + 1, _selectTextItem);
             menu.Opening += (_, _) => UpdateCellMenu();
         }
+        InitPivot();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -215,6 +218,7 @@ public partial class ResultGridView : UserControl
                 UpdateDetails();
                 UpdateEditBar();
                 UpdateEditInfo();
+                SyncPivotControls();
                 return;
             }
 
@@ -247,6 +251,7 @@ public partial class ResultGridView : UserControl
             FilterBox.Text = _state.QuickFilter;
             UpdateEditBar();
             UpdateEditInfo();
+            SyncPivotControls();
         }
         finally
         {
@@ -694,6 +699,7 @@ public partial class ResultGridView : UserControl
         UpdateChips();
         UpdateCountText();
         UpdateDetails();
+        UpdatePivot();
     }
 
     private void SetFilter(int column, ColumnFilter? filter)

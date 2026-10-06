@@ -61,6 +61,9 @@
 		<ToggleButton x:Name="DetailsToggle" Classes="compact" Content="Row details" Margin="0,0,6,2"
 					  MinHeight="26" Padding="10,2" FontSize="12" CornerRadius="6"
 					  ToolTip.Tip="Show the selected row as a list of column / value pairs — handy for wide results" />
+		<ToggleButton x:Name="PivotToggle" Classes="compact" Content="Pivot" Margin="0,0,6,2"
+					  MinHeight="26" Padding="10,2" FontSize="12" CornerRadius="6"
+					  ToolTip.Tip="Cross-tabulate the rows in view: group by row fields, spread a column's values across, and sum, count or average a value" />
 		<Button x:Name="ClearAllButton" Classes="compact" Content="Clear filters &amp; sort" Margin="0,0,10,2" IsVisible="False"
 				Click="OnClearAll" ToolTip.Tip="Remove every filter and sort and show all fetched rows" />
 		<TextBlock x:Name="EditInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" IsVisible="False" />
@@ -96,6 +99,32 @@
 	  </StackPanel>
 	</Grid>
 
+	<!-- Pivot fields: row groups, the column whose values spread across, and the summarised value -->
+	<Border x:Name="PivotBar" DockPanel.Dock="Top" IsVisible="False" Margin="0,2,0,4" Padding="8,4" CornerRadius="6"
+			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}">
+	  <DockPanel>
+		<StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
+		  <Button Classes="compact" Content="Copy pivot" Click="OnCopyPivot"
+				  ToolTip.Tip="Copy the pivot table as text (pastes into Excel as cells)" />
+		  <Button Classes="compact" Content="Show rows" Click="OnClosePivot" ToolTip.Tip="Back to the result rows" />
+		</StackPanel>
+		<WrapPanel Orientation="Horizontal">
+		  <TextBlock Classes="hint" Text="Rows" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <Button x:Name="PivotRowsButton" Classes="compact" Margin="0,0,10,2"
+				  ToolTip.Tip="Columns whose values group the pivot rows" />
+		  <TextBlock Classes="hint" Text="Columns" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <ComboBox x:Name="PivotColumnBox" MinWidth="120" MinHeight="26" FontSize="12" Margin="0,0,10,2"
+					ToolTip.Tip="Column whose values become the pivot's columns" />
+		  <TextBlock Classes="hint" Text="Values" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <ComboBox x:Name="PivotAggregateBox" MinWidth="70" MinHeight="26" FontSize="12" Margin="0,0,4,2"
+					ToolTip.Tip="How the values in each cell are summarised" />
+		  <ComboBox x:Name="PivotValueBox" MinWidth="120" MinHeight="26" FontSize="12" Margin="0,0,10,2"
+					ToolTip.Tip="Column that is summarised in each cell" />
+		  <TextBlock x:Name="PivotInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" TextTrimming="CharacterEllipsis" />
+		</WrapPanel>
+	  </DockPanel>
+	</Border>
+
 	<!-- Active column filters as removable chips -->
 	<WrapPanel x:Name="FilterChips" DockPanel.Dock="Top" Orientation="Horizontal" IsVisible="False" Margin="0,2,0,0" />
 
@@ -115,6 +144,16 @@
 	  </DockPanel>
 	</Border>
 
+	<Panel>
+	<DataGrid x:Name="PivotGrid" IsVisible="False" IsReadOnly="True" AutoGenerateColumns="False"
+			  CanUserResizeColumns="True" CanUserSortColumns="False" CanUserReorderColumns="False"
+			  SelectionMode="Extended" HeadersVisibility="Column" GridLinesVisibility="All" RowHeight="26">
+	  <DataGrid.ContextMenu>
+		<ContextMenu>
+		  <MenuItem Header="Copy pivot" Click="OnCopyPivot" />
+		</ContextMenu>
+	  </DataGrid.ContextMenu>
+	</DataGrid>
 	<Grid x:Name="BodyGrid" ColumnDefinitions="*,Auto,0">
 	  <DataGrid x:Name="Grid" Grid.Column="0" IsReadOnly="False" AutoGenerateColumns="False"
 				CanUserResizeColumns="True" CanUserSortColumns="True" CanUserReorderColumns="True"
@@ -169,5 +208,6 @@
 		</DockPanel>
 	  </Border>
 	</Grid>
+	</Panel>
   </DockPanel>
 </UserControl>

@@ -71,6 +71,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
         };
+        diagram.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
         dataSearch.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;

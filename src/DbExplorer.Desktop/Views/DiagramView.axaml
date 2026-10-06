@@ -3,6 +3,7 @@
              xmlns:controls="using:DbExplorer.Desktop.Controls"
              xmlns:models="using:DbExplorer.Core.Models"
              xmlns:conv="using:DbExplorer.Desktop.Converters"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
              x:Class="DbExplorer.Desktop.Views.DiagramView">
   <DockPanel Margin="4">
     <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
@@ -41,6 +42,7 @@
       <Button Classes="icon" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out" />
       <Button Content="{Binding Zoom, StringFormat='{}{0:P0}'}" Command="{Binding ResetZoomCommand}" ToolTip.Tip="Reset zoom" MinWidth="64" />
       <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
+      <Button Content="Fit" Click="OnFit" ToolTip.Tip="Zoom so the whole diagram fits the window" />
       <ToggleButton Content="Suggest Improvements" IsChecked="{Binding ShowSuggestions}" IsVisible="{Binding IsWholeSchema}"
                     ToolTip.Tip="Draw the foreign keys this schema seems to be missing (from column names and types) and the script that adds them" />
       <Button Content="Open in Objects" Command="{Binding OpenSelectedCommand}" ToolTip.Tip="Show the selected table's columns, indexes and profile" />
@@ -49,27 +51,71 @@
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
 
-    <Border DockPanel.Dock="Right" Width="440" Margin="4,0,0,0" IsVisible="{Binding ShowSuggestions}"
-            BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-      <DockPanel Margin="6">
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-          <Button DockPanel.Dock="Right" Content="Copy script" Click="OnCopyScript" />
-          <TextBlock Text="Script for the suggested foreign keys" FontWeight="SemiBold" VerticalAlignment="Center" />
-        </DockPanel>
-        <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
-                   Text="Not run. Copy it into a query tab once you have reviewed each constraint." />
-        <TextBox Text="{Binding SuggestionScript}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                 FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12"
-                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-      </DockPanel>
-    </Border>
+    <Grid x:Name="Body" ColumnDefinitions="*,Auto,0">
+      <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+        <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <controls:ErDiagramControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
+                                     SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </ScrollViewer>
+      </Border>
 
-    <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-        <controls:ErDiagramControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
-                                   SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
-                                   HorizontalAlignment="Left" VerticalAlignment="Top" />
-      </ScrollViewer>
-    </Border>
+      <GridSplitter Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns"
+                    IsVisible="{Binding ShowSuggestions}" />
+
+      <Border Grid.Column="2" IsVisible="{Binding ShowSuggestions}"
+              BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+        <DockPanel Margin="8">
+          <TextBlock DockPanel.Dock="Top" Text="Suggested foreign keys" FontWeight="SemiBold" FontSize="14" />
+          <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,2,0,6" Text="{Binding SuggestionSummary}" />
+
+          <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button Content="Copy script" Click="OnCopyScript" IsEnabled="{Binding CopyScriptReady}" Margin="0,0,6,4"
+                    ToolTip.Tip="Copy the ticked constraints as one script" />
+            <Button Content="Open in Query tab" Command="{Binding OpenScriptCommand}" Margin="0,0,6,4"
+                    ToolTip.Tip="Open the ticked constraints in a new query tab. Nothing runs until you run it there." />
+            <Button Content="All" Command="{Binding IncludeAllCommand}" IsVisible="{Binding HasSuggestions}" Margin="0,0,6,4" />
+            <Button Content="None" Command="{Binding IncludeNoneCommand}" IsVisible="{Binding HasSuggestions}" Margin="0,0,0,4" />
+          </WrapPanel>
+
+          <ListBox ItemsSource="{Binding Suggestions}" SelectedItem="{Binding SelectedSuggestion}"
+                   Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="0,0,0,6" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SuggestionItem">
+                <Border Padding="8" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}">
+                  <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                    <CheckBox Grid.RowSpan="2" IsChecked="{Binding Include}" VerticalAlignment="Top" MinWidth="0" Margin="0,-4,6,0"
+                              ToolTip.Tip="Include in the script" />
+                    <TextBlock Grid.Column="1" TextWrapping="Wrap" FontWeight="SemiBold">
+                      <Run Text="{Binding Child}" />
+                      <Run Text=" → " Foreground="#E87A00" />
+                      <Run Text="{Binding Parent}" />
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Grid.Row="1" Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0">
+                      <Run Text="{Binding Confidence}" FontWeight="SemiBold" />
+                      <Run Text=" · " />
+                      <Run Text="{Binding Reason}" />
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                               Foreground="#E87A00" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <Border Grid.Column="1" Grid.Row="3" Margin="0,6,0,0" Padding="6,4" CornerRadius="4"
+                            Background="{DynamicResource AppCodeBackgroundBrush}">
+                      <SelectableTextBlock Text="{Binding Statement}" TextWrapping="Wrap" FontSize="12"
+                                           FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
+                    </Border>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+    </Grid>
   </DockPanel>
 </UserControl>

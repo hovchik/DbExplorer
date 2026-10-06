@@ -76,24 +76,28 @@ public static class SchemaSuggester
             return sb.ToString();
         }
 
-        sb.Append("-- Nothing here has been run. Review each one first: adding a constraint fails while existing rows\n");
-        sb.Append("-- point at missing parents (the Lab's Verify checks a sample).\n\n");
+        sb.Append("-- Not run. Review each one first: adding a constraint fails\n");
+        sb.Append("-- while existing rows point at missing parents.\n\n");
         if (!string.IsNullOrEmpty(database))
             sb.Append(dialect.ProviderKey == SqlDialect.SqlServerKey ? $"USE {dialect.Quote(database)};\n\n" : $"-- Run in database {database}.\n\n");
 
         foreach (var s in suggestions)
         {
-            var fk = s.ForeignKey;
-            sb.Append("-- ").Append(s.Child).Append(" -> ").Append(s.Parent).Append(": ")
-              .Append(s.Accepted ? s.Reason : $"{s.Confidence} confidence, {s.Reason}").Append('\n');
+            sb.Append("-- ").Append(s.Child).Append(" -> ").Append(s.Parent).Append('\n');
+            sb.Append("-- ").Append(s.Accepted ? s.Reason : $"{s.Confidence} confidence: {s.Reason}").Append('\n');
             if (s.TypeWarning is not null) sb.Append("-- ").Append(s.TypeWarning).Append('\n');
-            sb.Append("ALTER TABLE ").Append(dialect.Table(fk.Schema, fk.Table))
-              .Append(" ADD CONSTRAINT ").Append(dialect.Quote(fk.Name))
-              .Append(" FOREIGN KEY (").Append(QuoteList(dialect, fk.Columns))
-              .Append(") REFERENCES ").Append(dialect.Table(fk.ReferencedSchema, fk.ReferencedTable))
-              .Append(" (").Append(QuoteList(dialect, fk.ReferencedColumns)).Append(");\n\n");
+            sb.Append(Statement(dialect, s)).Append("\n\n");
         }
         return sb.ToString().TrimEnd('\n') + "\n";
+    }
+
+    /// <summary>The ALTER TABLE statement for one suggestion, broken over three short lines so it reads in a narrow panel.</summary>
+    public static string Statement(SqlDialect dialect, SuggestedForeignKey suggestion)
+    {
+        var fk = suggestion.ForeignKey;
+        return $"ALTER TABLE {dialect.Table(fk.Schema, fk.Table)}\n" +
+               $"  ADD CONSTRAINT {dialect.Quote(fk.Name)} FOREIGN KEY ({QuoteList(dialect, fk.Columns)})\n" +
+               $"  REFERENCES {dialect.Table(fk.ReferencedSchema, fk.ReferencedTable)} ({QuoteList(dialect, fk.ReferencedColumns)});";
     }
 
     /// <summary>FK_Child_Parent, or FK_Child_Column when that is taken; within the engine's identifier length.</summary>

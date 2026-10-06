@@ -133,9 +133,14 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     partial void OnColumnModeChanged(ErColumnMode value) => Rebuild();
     partial void OnSelectedTableChanged(ErTable? value) => OpenSelectedCommand.NotifyCanExecuteChanged();
 
-    private void Rebuild()
+    private int _rebuildVersion;
+
+    /// <summary>Lays the diagram out on the thread pool (a whole schema can be thousands of tables); only the newest
+    /// request's result is shown.</summary>
+    private async void Rebuild()
     {
         if (_suspendRebuild) return;
+        var version = ++_rebuildVersion;
         if (_session is null)
         {
             Diagram = ErDiagram.Empty;
@@ -143,6 +148,7 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
         }
 
         var snapshot = _session.Snapshot;
+        Func<ErDiagram> build;
         if (Scope == DiagramScope.AroundTable)
         {
             if (FocusTable is null)
@@ -151,14 +157,29 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                 Status = "Pick a table to see its relationships, or switch to Whole schema.";
                 return;
             }
-            Diagram = ErDiagramBuilder.AroundTable(snapshot, FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
+            var (focus, depth, mode) = (FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
+            build = () => ErDiagramBuilder.AroundTable(snapshot, focus, depth, mode);
         }
         else
         {
-            var schema = SelectedSchema == AllSchemas ? null : SelectedSchema;
-            Diagram = ErDiagramBuilder.WholeSchema(snapshot, SelectedDatabase, schema, ColumnMode);
+            var (database, schema, mode) = (SelectedDatabase, SelectedSchema == AllSchemas ? null : SelectedSchema, ColumnMode);
+            build = () => ErDiagramBuilder.WholeSchema(snapshot, database, schema, mode);
         }
 
+        Status = "Laying out the diagram…";
+        ErDiagram diagram;
+        try
+        {
+            diagram = await Task.Run(build);
+        }
+        catch (Exception ex)
+        {
+            if (version == _rebuildVersion) Status = "Could not build the diagram: " + ex.Message;
+            return;
+        }
+        if (version != _rebuildVersion) return;
+
+        Diagram = diagram;
         SelectedTable = Diagram.Tables.FirstOrDefault(t => t.IsFocus);
         Status = $"{Diagram.Tables.Count:N0} table(s) · {Diagram.Edges.Count:N0} relationship(s)" +
                  (Diagram.OmittedTables > 0 ? $" · {Diagram.OmittedTables:N0} more not shown (limit reached)" : "") +

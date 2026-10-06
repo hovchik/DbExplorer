@@ -37,6 +37,8 @@
                     ToolTip.Tip="App theme" />
           <ProgressBar Width="100" VerticalAlignment="Center"
                        IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+          <Button Content="Cancel" IsVisible="{Binding IsBusy}" Command="{Binding CancelLoadCommand}"
+                  ToolTip.Tip="Stop connecting / reading the catalog" />
           <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
                   ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
           <Button Content="Disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}" />

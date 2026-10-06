@@ -19,6 +19,11 @@ public sealed class DatabaseSession(
     public string ServerVersion { get; } = serverVersion;
     public MetadataSnapshot Snapshot { get; private set; } = snapshot;
 
+    private readonly CancellationTokenSource _lifetime = new();
+
+    /// <summary>Cancelled when the session is disposed, so background work for it (a catalog refresh) stops.</summary>
+    public CancellationToken Lifetime => _lifetime.Token;
+
     public event EventHandler? SnapshotChanged;
 
     /// <summary>Per-database catalogs handed out by <see cref="SessionService.GetDatabaseSnapshotAsync"/>.</summary>
@@ -42,5 +47,10 @@ public sealed class DatabaseSession(
     public DatabaseSession WithSnapshot(MetadataSnapshot snapshot) =>
         new(Profile, Factory, Provider, ServerVersion, snapshot) { OwnsProvider = false };
 
-    public ValueTask DisposeAsync() => OwnsProvider ? Provider.DisposeAsync() : ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        if (!OwnsProvider) return ValueTask.CompletedTask;
+        _lifetime.Cancel();
+        return Provider.DisposeAsync();
+    }
 }

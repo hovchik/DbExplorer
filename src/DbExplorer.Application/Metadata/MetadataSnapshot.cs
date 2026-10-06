@@ -87,6 +87,18 @@ public sealed class MetadataSnapshot
         return lookup[(database, schema, table)];
     }
 
+    /// <summary>Builds the per-table lookups now (they are otherwise built on first use), so a large catalog's
+    /// indexing happens on the loading thread rather than on whichever UI handler asks first.</summary>
+    public MetadataSnapshot Warm()
+    {
+        const string none = "\0";
+        _ = ColumnsOf(none, none, none);
+        _ = ForeignKeysOf(none, none, none);
+        _ = ReferencesTo(none, none, none);
+        _ = IndexesOf(none, none, none);
+        return this;
+    }
+
     /// <summary>Database/schema/object names should match case-insensitively (e.g. SQL Server's default
     /// case-insensitive collation, or "dbo" vs "DBO"), otherwise lookups silently return no rows.</summary>
     private sealed class TableKeyComparer : IEqualityComparer<(string Database, string Schema, string Table)>

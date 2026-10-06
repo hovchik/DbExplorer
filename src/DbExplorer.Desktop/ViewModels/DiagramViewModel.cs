@@ -153,9 +153,14 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     partial void OnShowSuggestionsChanged(bool value) => Rebuild();
     partial void OnSelectedTableChanged(ErTable? value) => OpenSelectedCommand.NotifyCanExecuteChanged();
 
-    private void Rebuild()
+    private int _rebuildVersion;
+
+    /// <summary>Lays the diagram (and, with suggestions on, the missing-key analysis) out on the thread pool: a whole
+    /// schema can be thousands of tables. Only the newest request's result is shown.</summary>
+    private async void Rebuild()
     {
         if (_suspendRebuild) return;
+        var version = ++_rebuildVersion;
         SetSuggestions(null);
         if (_session is null)
         {
@@ -172,12 +177,15 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                 Status = "Pick a table to see its relationships, or switch to Whole schema.";
                 return;
             }
-            Diagram = ErDiagramBuilder.AroundTable(snapshot, FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
+            var (focus, depth, mode) = (FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
+            var diagram = await BuildAsync(version, () => ErDiagramBuilder.AroundTable(snapshot, focus, depth, mode));
+            if (diagram is not null) ShowDiagram(diagram);
         }
         else if (ShowSuggestions)
         {
-            var schema = SelectedSchema == AllSchemas ? null : SelectedSchema;
-            var suggestions = SchemaSuggester.Suggest(snapshot, _session.Provider.ProviderKey, SelectedDatabase, schema, ColumnMode);
+            var (provider, database, schema, mode) = (_session.Provider.ProviderKey, SelectedDatabase, SelectedSchema == AllSchemas ? null : SelectedSchema, ColumnMode);
+            var suggestions = await BuildAsync(version, () => SchemaSuggester.Suggest(snapshot, provider, database, schema, mode));
+            if (suggestions is null) return;
             Diagram = suggestions.Diagram;
             _suggestionDialect = SqlDialect.For(_session.Provider.ProviderKey);
             _suggestionDatabase = SelectedDatabase;
@@ -190,14 +198,34 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                 : $"{suggestions.ForeignKeys.Count:N0} suggested foreign key(s), drawn in orange" +
                   (drawn < suggestions.ForeignKeys.Count ? $" ({drawn:N0} on screen, table limit reached)" : "") +
                   " · click one on the right to find it · nothing has been run";
-            return;
         }
         else
         {
-            var schema = SelectedSchema == AllSchemas ? null : SelectedSchema;
-            Diagram = ErDiagramBuilder.WholeSchema(snapshot, SelectedDatabase, schema, ColumnMode);
+            var (database, schema, mode) = (SelectedDatabase, SelectedSchema == AllSchemas ? null : SelectedSchema, ColumnMode);
+            var diagram = await BuildAsync(version, () => ErDiagramBuilder.WholeSchema(snapshot, database, schema, mode));
+            if (diagram is not null) ShowDiagram(diagram);
         }
+    }
 
+    /// <summary>Runs <paramref name="build"/> on the thread pool; null when it failed or a newer rebuild started.</summary>
+    private async Task<T?> BuildAsync<T>(int version, Func<T> build) where T : class
+    {
+        Status = "Laying out the diagram…";
+        try
+        {
+            var result = await Task.Run(build);
+            return version == _rebuildVersion ? result : null;
+        }
+        catch (Exception ex)
+        {
+            if (version == _rebuildVersion) Status = "Could not build the diagram: " + ex.Message;
+            return null;
+        }
+    }
+
+    private void ShowDiagram(ErDiagram diagram)
+    {
+        Diagram = diagram;
         SelectedTable = Diagram.Tables.FirstOrDefault(t => t.IsFocus);
         Status = $"{Diagram.Tables.Count:N0} table(s) · {Diagram.Edges.Count:N0} relationship(s)" +
                  (Diagram.OmittedTables > 0 ? $" · {Diagram.OmittedTables:N0} more not shown (limit reached)" : "") +

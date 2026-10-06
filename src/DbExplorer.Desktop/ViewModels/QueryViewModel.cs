@@ -246,7 +246,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         var database = TargetDatabase;
         if (database is null)
         {
-            SetCompletion(session.Snapshot, session, session.Snapshot.Databases.Count > 1 ? "every database (pick one to narrow)" : null);
+            var whole = session.Snapshot;
+            await SetCompletionAsync(whole, session, () => whole.Databases.Count > 1 ? "every database (pick one to narrow)" : null, version);
             return;
         }
 
@@ -255,26 +256,34 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             var snapshot = await sessions.GetDatabaseSnapshotAsync(session, database);
             if (version != _completionVersion) return;
-            SetCompletion(snapshot, session, database);
+            await SetCompletionAsync(snapshot, session, () => database, version);
         }
         catch (Exception ex)
         {
             if (version != _completionVersion) return;
-            SetCompletion(session.Snapshot, session, null);
+            await SetCompletionAsync(session.Snapshot, session, () => null, version);
+            if (version != _completionVersion) return;
             CompletionInfo = $"Could not read the objects of {database}: {ex.Message}";
         }
     }
 
-    private void SetCompletion(MetadataSnapshot snapshot, DatabaseSession session, string? scope)
+    /// <summary>Indexes the catalog for suggestions on the thread pool (sorting every column name of a large server
+    /// is too slow for the UI thread), then swaps it in unless a newer rebuild started meanwhile.</summary>
+    private async Task SetCompletionAsync(MetadataSnapshot snapshot, DatabaseSession session, Func<string?> scope, int version)
     {
         var values = ValueCacheFor(session);
-        _completionSnapshot = snapshot;
-        _completion = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
+        var (engine, objects, scopeText) = await Task.Run(() =>
         {
-            ValueSource = values is null ? null : values.TryGet
-        };
-        var objects = snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger);
-        CompletionInfo = $"Suggestions: {objects:N0} objects" + (scope is null ? "" : $" in {scope}");
+            var built = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
+            {
+                ValueSource = values is null ? null : values.TryGet
+            };
+            return (built, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
+        });
+        if (version != _completionVersion) return;
+        _completionSnapshot = snapshot;
+        _completion = engine;
+        CompletionInfo = $"Suggestions: {objects:N0} objects" + (scopeText is null ? "" : $" in {scopeText}");
     }
 
     /// <summary>Completion for the caret position; see <see cref="SqlCompletionEngine"/>. The list is not capped

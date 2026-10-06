@@ -244,12 +244,23 @@ public partial class MainWindowViewModel : ViewModelBase
             await SaveProfilesAsync();
         }
 
-        IsBusy = true;
+        var ct = BeginLoad();
         StatusText = $"Connecting to {profile}…";
         try
         {
-            Session = await _sessions.ConnectAsync(profile);
+            var session = await _sessions.ConnectAsync(profile, ct, LoadProgress(ct));
+            if (ct.IsCancellationRequested)
+            {
+                await session.DisposeAsync();
+                StatusText = "Connect cancelled";
+                return;
+            }
+            Session = session;
             StatusText = BuildStatus(Session) + (Session.Snapshot.IsStale ? " · updating metadata in the background…" : "");
+        }
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            StatusText = "Connect cancelled";
         }
         catch (Exception ex)
         {
@@ -257,7 +268,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsBusy = false;
+            EndLoad();
         }
     }
 
@@ -275,12 +286,16 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (Session is not { } s) return;
 
-        IsBusy = true;
+        var ct = BeginLoad();
         StatusText = "Reading catalog…";
         try
         {
-            await _sessions.RefreshMetadataAsync(s);
+            await _sessions.RefreshMetadataAsync(s, ct, LoadProgress(ct));
             StatusText = BuildStatus(s);
+        }
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            StatusText = BuildStatus(s) + " · refresh cancelled, keeping the previous catalog";
         }
         catch (Exception ex)
         {
@@ -288,8 +303,45 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
-            IsBusy = false;
+            EndLoad();
         }
+    }
+
+    // ----- Connect / refresh run on the thread pool; the window stays live and the user can cancel -----
+
+    private CancellationTokenSource? _loadCts;
+
+    private CancellationToken BeginLoad()
+    {
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        IsBusy = true;
+        return _loadCts.Token;
+    }
+
+    private void EndLoad()
+    {
+        IsBusy = false;
+        CancelLoadCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Catalog progress lands on the UI thread (Progress captures it) until the load is cancelled or done.</summary>
+    private IProgress<string> LoadProgress(CancellationToken ct) =>
+        new Progress<string>(text =>
+        {
+            // Reports are posted, so one can arrive after its load ended or a newer one began: drop those.
+            if (IsBusy && _loadCts?.Token == ct && !ct.IsCancellationRequested) StatusText = text;
+        });
+
+    private bool CanCancelLoad => IsBusy && _loadCts is { IsCancellationRequested: false };
+
+    [RelayCommand(CanExecute = nameof(CanCancelLoad))]
+    private void CancelLoad()
+    {
+        if (_loadCts is not { IsCancellationRequested: false } cts) return;
+        cts.Cancel();
+        StatusText = "Cancelling…";
+        CancelLoadCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -387,6 +439,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
+        CancelLoadCommand.NotifyCanExecuteChanged();
     }
 }
 

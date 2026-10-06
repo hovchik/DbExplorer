@@ -15,7 +15,13 @@ public sealed class SqlServerProvider : IDatabaseProvider
     private const int MetadataLockTimeoutMs = 5000;
     private const int MetadataCommandTimeoutSeconds = 120;
     private const int MaxValueLength = 400;
-    private const int MaxParallelDatabases = 4;
+    /// <summary>Most catalog connections one provider opens at once, across all the parallel catalog reads
+    /// (objects, columns, routines, keys, indexes × databases), so a whole-server load does not swamp the server.</summary>
+    private const int MaxParallelDatabases = 8;
+
+    private readonly SemaphoreSlim _catalogGate = new(MaxParallelDatabases, MaxParallelDatabases);
+    private readonly object _databasesLock = new();
+    private (Task<IReadOnlyList<string>> Task, DateTime At)? _databases;
 
     private readonly ConnectionProfile _profile;
     private readonly string _metaConnectionString;
@@ -80,11 +86,11 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
         if (!_allDatabases)
         {
-            var rows = await QueryOneAsync(_profile.Database, ct);
+            var rows = await GatedAsync(() => QueryOneAsync(_profile.Database, ct), ct).ConfigureAwait(false);
             return rows.Select(i => i with { Database = _profile.Database }).ToList();
         }
 
-        var databases = await GetAccessibleDatabasesAsync(ct);
+        var databases = await GetDatabasesForCatalogAsync(ct).ConfigureAwait(false);
         var results = new System.Collections.Concurrent.ConcurrentBag<DbIndex>();
 
         await Parallel.ForEachAsync(databases, new ParallelOptions
@@ -95,14 +101,14 @@ public sealed class SqlServerProvider : IDatabaseProvider
         {
             try
             {
-                var rows = await QueryOneAsync(db, token);
+                var rows = await GatedAsync(() => QueryOneAsync(db, token), token).ConfigureAwait(false);
                 foreach (var row in rows) results.Add(row with { Database = db });
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible database: skip it and keep going.
             }
-        });
+        }).ConfigureAwait(false);
         return results.ToList();
     }
 
@@ -753,6 +759,33 @@ public sealed class SqlServerProvider : IDatabaseProvider
     private Task<IReadOnlyList<string>> GetAccessibleDatabasesAsync(CancellationToken ct) =>
         QueryAsync<string>(SqlServerQueries.Databases, null, ct);
 
+    /// <summary>Runs one catalog read once a slot in <see cref="_catalogGate"/> is free.</summary>
+    private async Task<T> GatedAsync<T>(Func<Task<T>> read, CancellationToken ct)
+    {
+        await _catalogGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        finally
+        {
+            _catalogGate.Release();
+        }
+    }
+
+    /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each.</summary>
+    private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
+    {
+        lock (_databasesLock)
+        {
+            if (_databases is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromSeconds(30) && !cached.Task.IsFaulted && !cached.Task.IsCanceled)
+                return cached.Task;
+            var task = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
+            _databases = (task, DateTime.UtcNow);
+            return task;
+        }
+    }
+
     /// <summary>
     /// Runs a catalog query against the selected database, or against every accessible database when
     /// none was selected, tagging each row with the database it came from.
@@ -762,11 +795,11 @@ public sealed class SqlServerProvider : IDatabaseProvider
     {
         if (!_allDatabases)
         {
-            var rows = await QueryAsync<T>(sql, null, ct);
+            var rows = await GatedAsync(() => QueryAsync<T>(sql, null, ct), ct).ConfigureAwait(false);
             return rows.Select(r => tag(r, _profile.Database)).ToList();
         }
 
-        var databases = await GetAccessibleDatabasesAsync(ct);
+        var databases = await GetDatabasesForCatalogAsync(ct).ConfigureAwait(false);
         var results = new System.Collections.Concurrent.ConcurrentBag<T>();
 
         await Parallel.ForEachAsync(databases, new ParallelOptions
@@ -778,14 +811,14 @@ public sealed class SqlServerProvider : IDatabaseProvider
             try
             {
                 var cs = SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, db);
-                var rows = await QueryWithConnectionStringAsync<T>(sql, null, cs, token);
+                var rows = await GatedAsync(() => QueryWithConnectionStringAsync<T>(sql, null, cs, token), token).ConfigureAwait(false);
                 foreach (var row in rows) results.Add(tag(row, db));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
             }
-        });
+        }).ConfigureAwait(false);
 
         return results.ToList();
     }

@@ -15,7 +15,13 @@ public sealed class PostgresProvider : IDatabaseProvider
     private const int MetadataStatementTimeoutMs = 120_000;
     private const int MetadataLockTimeoutMs = 5000;
     private const int MaxValueLength = 400;
-    private const int MaxParallelDatabases = 4;
+    /// <summary>Most catalog connections one provider opens at once, across all the parallel catalog reads
+    /// (objects, columns, routines, keys, indexes × databases), so a whole-server load does not swamp the server.</summary>
+    private const int MaxParallelDatabases = 8;
+
+    private readonly SemaphoreSlim _catalogGate = new(MaxParallelDatabases, MaxParallelDatabases);
+    private readonly object _databasesLock = new();
+    private (Task<IReadOnlyList<string>> Task, DateTime At)? _databases;
 
     private readonly ConnectionProfile _profile;
     private readonly NpgsqlDataSource _dataSource;
@@ -729,6 +735,33 @@ public sealed class PostgresProvider : IDatabaseProvider
         return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, db, ct);
     }
 
+    /// <summary>Runs one catalog read once a slot in <see cref="_catalogGate"/> is free.</summary>
+    private async Task<T> GatedAsync<T>(Func<Task<T>> read, CancellationToken ct)
+    {
+        await _catalogGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        finally
+        {
+            _catalogGate.Release();
+        }
+    }
+
+    /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each.</summary>
+    private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
+    {
+        lock (_databasesLock)
+        {
+            if (_databases is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromSeconds(30) && !cached.Task.IsFaulted && !cached.Task.IsCanceled)
+                return cached.Task;
+            var task = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
+            _databases = (task, DateTime.UtcNow);
+            return task;
+        }
+    }
+
     /// <summary>
     /// Runs a catalog query against the selected database, or against every accessible database when
     /// none was selected, tagging each row with the database it came from.
@@ -738,11 +771,11 @@ public sealed class PostgresProvider : IDatabaseProvider
     {
         if (!_allDatabases)
         {
-            var rows = await QueryAsync<T>(sql, null, ct);
+            var rows = await GatedAsync(() => QueryAsync<T>(sql, null, ct), ct).ConfigureAwait(false);
             return rows.Select(r => tag(r, _profile.Database)).ToList();
         }
 
-        var databases = await GetAccessibleDatabasesAsync(ct);
+        var databases = await GetDatabasesForCatalogAsync(ct).ConfigureAwait(false);
         var results = new System.Collections.Concurrent.ConcurrentBag<T>();
 
         await Parallel.ForEachAsync(databases, new ParallelOptions
@@ -753,14 +786,14 @@ public sealed class PostgresProvider : IDatabaseProvider
         {
             try
             {
-                var rows = await QueryInDatabaseAsync<T>(sql, null, db, token);
+                var rows = await GatedAsync(() => QueryInDatabaseAsync<T>(sql, null, db, token), token).ConfigureAwait(false);
                 foreach (var row in rows) results.Add(tag(row, db));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Inaccessible or unreadable database (permissions, offline, etc.): skip it.
             }
-        });
+        }).ConfigureAwait(false);
 
         return results.ToList();
     }

@@ -6,18 +6,28 @@ namespace DbExplorer.Application.Sessions;
 
 public sealed class SessionService(ProviderRegistry registry, MetadataService metadata)
 {
-    public async Task<DatabaseSession> ConnectAsync(ConnectionProfile profile, CancellationToken ct = default)
+    /// <summary>
+    /// Opens the connection and loads the catalog entirely on the thread pool: driver connects (SqlClient's login
+    /// and TLS handshake are partly synchronous), row materialization and lookup building never touch the caller's
+    /// (UI) thread. <paramref name="progress"/> reports on the context it was created on.
+    /// </summary>
+    public async Task<DatabaseSession> ConnectAsync(ConnectionProfile profile, CancellationToken ct = default, IProgress<string>? progress = null)
     {
+        var context = SynchronizationContext.Current;
         var factory = registry.Get(profile.ProviderKey);
         var provider = factory.Create(profile);
         try
         {
-            // The server round-trip (which also validates the credentials) and the local cache read overlap.
-            var versionTask = provider.GetServerVersionAsync(ct);
-            var snapshotTask = metadata.LoadAsync(profile, provider, forceRefresh: false, ct);
-            await Task.WhenAll(versionTask, snapshotTask);
-            var session = new DatabaseSession(profile, factory, provider, versionTask.Result, snapshotTask.Result);
-            if (snapshotTask.Result.IsStale) RefreshInBackground(session);
+            var (version, snapshot) = await Task.Run(async () =>
+            {
+                // The server round-trip (which also validates the credentials) and the local cache read overlap.
+                var versionTask = provider.GetServerVersionAsync(ct);
+                var snapshotTask = metadata.LoadAsync(profile, provider, forceRefresh: false, ct, progress);
+                await Task.WhenAll(versionTask, snapshotTask).ConfigureAwait(false);
+                return (versionTask.Result, snapshotTask.Result.Warm());
+            }, ct).WaitAsync(ct); // a cancel returns at once, even while a driver call is still unwinding
+            var session = new DatabaseSession(profile, factory, provider, version, snapshot);
+            if (snapshot.IsStale) RefreshInBackground(session, context);
             return session;
         }
         catch
@@ -30,23 +40,25 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
     /// <summary>
     /// Re-reads the catalog without holding up the caller, then swaps the snapshot in on the caller's
     /// synchronization context (the UI thread), where <see cref="DatabaseSession.SnapshotChanged"/> listeners run.
+    /// Disconnecting cancels it.
     /// </summary>
-    private void RefreshInBackground(DatabaseSession session)
+    private void RefreshInBackground(DatabaseSession session, SynchronizationContext? context)
     {
-        var context = SynchronizationContext.Current;
+        var ct = session.Lifetime;
         _ = Task.Run(async () =>
         {
             try
             {
-                var fresh = await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true);
+                var fresh = (await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct).ConfigureAwait(false)).Warm();
+                if (ct.IsCancellationRequested) return;
                 if (context is null) session.ReplaceSnapshot(fresh);
-                else context.Post(_ => session.ReplaceSnapshot(fresh), null);
+                else context.Post(_ => { if (!ct.IsCancellationRequested) session.ReplaceSnapshot(fresh); }, null);
             }
             catch
             {
                 // The stale snapshot keeps working; the user can still refresh by hand.
             }
-        });
+        }, ct);
     }
 
     /// <summary>
@@ -73,7 +85,7 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
         var profile = session.Profile.Clone();
         profile.Database = database;
         await using var provider = session.Factory.Create(profile);
-        return await metadata.LoadAsync(profile, provider, forceRefresh: false);
+        return await Task.Run(async () => (await metadata.LoadAsync(profile, provider, forceRefresh: false).ConfigureAwait(false)).Warm());
     }
 
     /// <summary>
@@ -94,7 +106,7 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
         var profile = session.Profile.Clone();
         profile.Database = database!;
         await using var provider = session.Factory.Create(profile);
-        var fresh = await metadata.LoadAsync(profile, provider, forceRefresh: true, ct);
+        var fresh = await Task.Run(async () => (await metadata.LoadAsync(profile, provider, forceRefresh: true, ct).ConfigureAwait(false)).Warm(), ct);
         session.DatabaseSnapshots[database!] = new Lazy<Task<MetadataSnapshot>>(() => Task.FromResult(fresh));
         return fresh;
     }
@@ -103,9 +115,12 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
     public void ReloadVirtualForeignKeys(DatabaseSession session) =>
         session.ReplaceSnapshot(metadata.WithVirtualKeys(session.Profile, session.Snapshot));
 
-    public async Task RefreshMetadataAsync(DatabaseSession session, CancellationToken ct = default)
+    /// <summary>Reads the catalog on the thread pool, then swaps it in on the caller's context.</summary>
+    public async Task RefreshMetadataAsync(DatabaseSession session, CancellationToken ct = default, IProgress<string>? progress = null)
     {
-        var snapshot = await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct);
+        var snapshot = await Task.Run(async () =>
+            (await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct, progress).ConfigureAwait(false)).Warm(), ct)
+            .WaitAsync(ct);
         session.ReplaceSnapshot(snapshot);
     }
 }

@@ -53,6 +53,12 @@
 	  <Button Content="▶ Statement" Classes="tool" Click="OnRunStatement"
 			  ToolTip.Tip="Run only the statement at the caret (Ctrl+Enter)" />
 	  <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
+	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
+				  ToolTip.Tip="Re-run the last query at this interval. Only queries that read data are repeated; a tick is skipped while a run is still going, and auto refresh stops when the query fails.">
+		<ToggleButton Content="⟳ Auto refresh" IsChecked="{Binding AutoRefresh}" MinHeight="28" Padding="10,2" />
+		<ComboBox ItemsSource="{Binding AutoRefreshIntervals}" SelectedItem="{Binding AutoRefreshInterval}" MinWidth="80" />
+		<TextBlock Classes="hint" Text="{Binding AutoRefreshInfo}" VerticalAlignment="Center" />
+	  </StackPanel>
 	  <Button Content="Explain ▾" Classes="tool" ToolTip.Tip="Execution plan of the selection / statement at the caret (Ctrl+L)">
 		<Button.Flyout>
 		  <MenuFlyout Placement="BottomEdgeAlignedLeft">

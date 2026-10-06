@@ -36,6 +36,10 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private double _zoom = 1.0;
     [ObservableProperty] private string _status = "Pick a table, or switch to Whole schema.";
 
+    /// <summary>Whole schema only: draw the missing foreign keys <see cref="SchemaSuggester"/> proposes, with their script.</summary>
+    [ObservableProperty] private bool _showSuggestions;
+    [ObservableProperty] private string _suggestionScript = "";
+
     public bool IsAroundTable => Scope == DiagramScope.AroundTable;
     public bool IsWholeSchema => Scope == DiagramScope.WholeSchema;
     public bool HasMultipleDatabases => Databases.Count > 1;
@@ -122,6 +126,7 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
 
     partial void OnScopeChanged(DiagramScope value)
     {
+        if (value != DiagramScope.WholeSchema) ShowSuggestions = false;
         OnPropertyChanged(nameof(IsAroundTable));
         OnPropertyChanged(nameof(IsWholeSchema));
         Rebuild();
@@ -131,16 +136,18 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
     partial void OnSelectedSchemaChanged(string value) => Rebuild();
     partial void OnDepthChanged(decimal value) => Rebuild();
     partial void OnColumnModeChanged(ErColumnMode value) => Rebuild();
+    partial void OnShowSuggestionsChanged(bool value) => Rebuild();
     partial void OnSelectedTableChanged(ErTable? value) => OpenSelectedCommand.NotifyCanExecuteChanged();
 
     private int _rebuildVersion;
 
-    /// <summary>Lays the diagram out on the thread pool (a whole schema can be thousands of tables); only the newest
-    /// request's result is shown.</summary>
+    /// <summary>Lays the diagram (and, with suggestions on, the missing-key analysis) out on the thread pool: a whole
+    /// schema can be thousands of tables. Only the newest request's result is shown.</summary>
     private async void Rebuild()
     {
         if (_suspendRebuild) return;
         var version = ++_rebuildVersion;
+        SuggestionScript = "";
         if (_session is null)
         {
             Diagram = ErDiagram.Empty;
@@ -148,7 +155,6 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
         }
 
         var snapshot = _session.Snapshot;
-        Func<ErDiagram> build;
         if (Scope == DiagramScope.AroundTable)
         {
             if (FocusTable is null)
@@ -158,27 +164,50 @@ public partial class DiagramViewModel : ViewModelBase, ISessionAware
                 return;
             }
             var (focus, depth, mode) = (FocusTable, (int)Math.Clamp(Depth, 0, 6), ColumnMode);
-            build = () => ErDiagramBuilder.AroundTable(snapshot, focus, depth, mode);
+            var diagram = await BuildAsync(version, () => ErDiagramBuilder.AroundTable(snapshot, focus, depth, mode));
+            if (diagram is not null) ShowDiagram(diagram);
+        }
+        else if (ShowSuggestions)
+        {
+            var (provider, database, schema, mode) = (_session.Provider.ProviderKey, SelectedDatabase, SelectedSchema == AllSchemas ? null : SelectedSchema, ColumnMode);
+            var suggestions = await BuildAsync(version, () => SchemaSuggester.Suggest(snapshot, provider, database, schema, mode));
+            if (suggestions is null) return;
+            Diagram = suggestions.Diagram;
+            SuggestionScript = suggestions.Script;
+            SelectedTable = null;
+            var drawn = Diagram.Edges.Count(e => e.IsSuggested);
+            Status = suggestions.ForeignKeys.Count == 0
+                ? "No missing foreign keys found in this schema."
+                : $"{suggestions.ForeignKeys.Count:N0} suggested foreign key(s), drawn in orange" +
+                  (drawn < suggestions.ForeignKeys.Count ? $" ({drawn:N0} on screen, table limit reached)" : "") +
+                  " · the script on the right adds them · nothing has been run";
         }
         else
         {
             var (database, schema, mode) = (SelectedDatabase, SelectedSchema == AllSchemas ? null : SelectedSchema, ColumnMode);
-            build = () => ErDiagramBuilder.WholeSchema(snapshot, database, schema, mode);
+            var diagram = await BuildAsync(version, () => ErDiagramBuilder.WholeSchema(snapshot, database, schema, mode));
+            if (diagram is not null) ShowDiagram(diagram);
         }
+    }
 
+    /// <summary>Runs <paramref name="build"/> on the thread pool; null when it failed or a newer rebuild started.</summary>
+    private async Task<T?> BuildAsync<T>(int version, Func<T> build) where T : class
+    {
         Status = "Laying out the diagram…";
-        ErDiagram diagram;
         try
         {
-            diagram = await Task.Run(build);
+            var result = await Task.Run(build);
+            return version == _rebuildVersion ? result : null;
         }
         catch (Exception ex)
         {
             if (version == _rebuildVersion) Status = "Could not build the diagram: " + ex.Message;
-            return;
+            return null;
         }
-        if (version != _rebuildVersion) return;
+    }
 
+    private void ShowDiagram(ErDiagram diagram)
+    {
         Diagram = diagram;
         SelectedTable = Diagram.Tables.FirstOrDefault(t => t.IsFocus);
         Status = $"{Diagram.Tables.Count:N0} table(s) · {Diagram.Edges.Count:N0} relationship(s)" +

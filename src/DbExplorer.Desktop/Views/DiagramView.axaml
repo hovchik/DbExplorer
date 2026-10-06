@@ -41,11 +41,28 @@
       <Button Classes="icon" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out" />
       <Button Content="{Binding Zoom, StringFormat='{}{0:P0}'}" Command="{Binding ResetZoomCommand}" ToolTip.Tip="Reset zoom" MinWidth="64" />
       <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
+      <ToggleButton Content="Suggest Improvements" IsChecked="{Binding ShowSuggestions}" IsVisible="{Binding IsWholeSchema}"
+                    ToolTip.Tip="Draw the foreign keys this schema seems to be missing (from column names and types) and the script that adds them" />
       <Button Content="Open in Objects" Command="{Binding OpenSelectedCommand}" ToolTip.Tip="Show the selected table's columns, indexes and profile" />
       <Button Content="Copy Mermaid" Click="OnCopyMermaid" ToolTip.Tip="Copy as a Mermaid erDiagram (renders in GitHub, GitLab, Notion, Confluence…)" />
       <Button Content="Save PNG…" Click="OnSavePng" />
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
+
+    <Border DockPanel.Dock="Right" Width="440" Margin="4,0,0,0" IsVisible="{Binding ShowSuggestions}"
+            BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+      <DockPanel Margin="6">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+          <Button DockPanel.Dock="Right" Content="Copy script" Click="OnCopyScript" />
+          <TextBlock Text="Script for the suggested foreign keys" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                   Text="Not run. Copy it into a query tab once you have reviewed each constraint." />
+        <TextBox Text="{Binding SuggestionScript}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+      </DockPanel>
+    </Border>
 
     <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
       <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">

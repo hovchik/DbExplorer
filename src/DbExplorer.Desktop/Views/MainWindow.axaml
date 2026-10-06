@@ -85,9 +85,6 @@
       <TabItem Header="Lab" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Experimental: change recorder, schema history, inferred relationships">
         <views:LabView DataContext="{Binding Lab}" />
       </TabItem>
-      <TabItem Header="API" ToolTip.Tip="Import Postman or Insomnia collections and send their requests">
-        <views:ApiView DataContext="{Binding Api}" />
-      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

@@ -71,6 +71,7 @@ public partial class QueryView : UserControl
 
     private readonly SearchPanel _search;
     private readonly EditorDecorations _decorations = new();
+    private readonly MultiCaretSession _carets;
     private readonly DispatcherTimer _analysisTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _foldingTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private FoldingManager? _folding;
@@ -95,6 +96,7 @@ public partial class QueryView : UserControl
         Editor.TextArea.SelectionForeground = null;
         Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.TextView.BackgroundRenderers.Add(_decorations);
+        _carets = new MultiCaretSession(Editor.TextArea);
 
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
@@ -139,6 +141,7 @@ public partial class QueryView : UserControl
         }
         HookSettings();
 
+        _carets.Clear();
         _decorations.Error = null;
         _decorations.Executed = null;
         if (_folding is not null) FoldingManager.Uninstall(_folding);
@@ -354,7 +357,16 @@ public partial class QueryView : UserControl
         // While the list is open, Enter/Tab/arrows/Escape belong to it.
         if (_completion is not null && e.Key is Key.Enter or Key.Tab or Key.Up or Key.Down or Key.Escape or Key.PageUp or Key.PageDown) return;
 
+        if (_carets.IsActive && (e.Key == Key.Escape || (ctrl && e.Key is Key.Z or Key.Y)))
+        {
+            // Undo and redo replay single edits, which extra carets would repeat: go back to one caret first.
+            _carets.Clear();
+            if (e.Key == Key.Escape) { e.Handled = true; return; }
+        }
+
         if (e.Key == Key.Escape && SignaturePopup.IsOpen) { SignaturePopup.IsOpen = false; e.Handled = true; }
+        else if (ctrl && alt && shift && e.Key == Key.J) { SelectAllOccurrences(); e.Handled = true; }
+        else if (alt && !ctrl && e.Key == Key.J) { AddNextOccurrence(); e.Handled = true; }
         else if (ctrl && e.Key == Key.Space) { ShowCompletion(explicitRequest: true); e.Handled = true; }
         else if (e.Key == Key.F5 || (ctrl && e.Key == Key.E)) { Run(currentStatement: false); e.Handled = true; }
         else if (ctrl && e.Key == Key.Enter) { Run(currentStatement: true); e.Handled = true; }
@@ -376,9 +388,75 @@ public partial class QueryView : UserControl
             else SetSplit(12, 1);
             e.Handled = true;
         }
-        else if (alt && e.Key is Key.Up or Key.Down) { MoveLines(e.Key == Key.Up ? -1 : 1); e.Handled = true; }
+        // Alt+Shift+arrows stay with the editor's box selection.
+        else if (alt && !shift && e.Key is Key.Up or Key.Down) { MoveLines(e.Key == Key.Up ? -1 : 1); e.Handled = true; }
         else if (e.Key == Key.F12) { e.Handled = true; await GoToDefinitionAsync(Editor.CaretOffset); }
         else if (e.Key == Key.Back && !ctrl && DeleteEmptyPair()) e.Handled = true;
+    }
+
+    // ----- Several carets -----
+
+    /// <summary>The selection, or a plain caret, becomes the first of several carets.</summary>
+    private void StartCarets()
+    {
+        if (_carets.IsActive) return;
+        _carets.Clear();
+        _carets.Add(Editor.SelectionStart, Editor.SelectionLength);
+    }
+
+    /// <summary>Ctrl+Alt+Click: one more caret where the mouse is; the real caret stays where it was.</summary>
+    private void AddCaret(int offset)
+    {
+        StartCarets();
+        _carets.Add(offset, 0);
+        UpdateCaretCount();
+    }
+
+    /// <summary>
+    /// Alt+J: the first press selects the word at the caret; each next press adds the next occurrence of it (or of the
+    /// selection) and moves the selection there, so typing replaces them all.
+    /// </summary>
+    private void AddNextOccurrence()
+    {
+        var text = Editor.Document.Text;
+        if (!_carets.IsActive && Editor.SelectionLength == 0)
+        {
+            if (MultiCaret.WordAt(text, Editor.CaretOffset) is { } word) Editor.Select(word.Start, word.Length);
+            return;
+        }
+        var needle = Editor.SelectedText;
+        if (needle.Length == 0 || needle.Contains('\n')) return;
+        StartCarets();
+        var wholeWord = MultiCaret.WordAt(text, Editor.SelectionStart) is { } w && w.Start == Editor.SelectionStart && w.Length == needle.Length;
+        var taken = _carets.Ranges.Select(r => r.Start).ToList();
+        if (MultiCaret.FindNext(text, needle, wholeWord, Editor.SelectionStart + needle.Length, taken) is not { } next)
+        {
+            if (_vm is not null) _vm.Status = "No more occurrences.";
+            return;
+        }
+        _carets.Add(next, needle.Length);
+        Editor.Select(next, needle.Length);
+        Editor.TextArea.Caret.BringCaretToView();
+        UpdateCaretCount();
+    }
+
+    /// <summary>Ctrl+Alt+Shift+J: a caret on every occurrence of the selection or the word at the caret.</summary>
+    private void SelectAllOccurrences()
+    {
+        var text = Editor.Document.Text;
+        if (Editor.SelectionLength == 0 && MultiCaret.WordAt(text, Editor.CaretOffset) is { } word) Editor.Select(word.Start, word.Length);
+        var needle = Editor.SelectedText;
+        if (needle.Length == 0 || needle.Contains('\n')) return;
+        var wholeWord = MultiCaret.WordAt(text, Editor.SelectionStart) is { } w && w.Start == Editor.SelectionStart && w.Length == needle.Length;
+        _carets.Clear();
+        StartCarets();
+        foreach (var at in MultiCaret.FindAll(text, needle, wholeWord)) _carets.Add(at, needle.Length);
+        UpdateCaretCount();
+    }
+
+    private void UpdateCaretCount()
+    {
+        if (_carets.IsActive && _vm is not null) _vm.Status = $"{_carets.Count} carets: type to edit them all. Esc goes back to one.";
     }
 
     /// <summary>Backspace between an auto-inserted "()" / "''" pair removes both halves.</summary>
@@ -416,6 +494,8 @@ public partial class QueryView : UserControl
     private void OnUpperCase(object? sender, RoutedEventArgs e) => ChangeCase(upper: true);
     private void OnLowerCase(object? sender, RoutedEventArgs e) => ChangeCase(upper: false);
     private void OnDuplicate(object? sender, RoutedEventArgs e) => Duplicate();
+    private void OnAddNextOccurrence(object? sender, RoutedEventArgs e) => AddNextOccurrence();
+    private void OnSelectAllOccurrences(object? sender, RoutedEventArgs e) => SelectAllOccurrences();
     private void OnGoToLine(object? sender, RoutedEventArgs e) => OpenGoToLine();
     private async void OnGoToDefinition(object? sender, RoutedEventArgs e) => await GoToDefinitionAsync(Editor.CaretOffset);
 
@@ -583,7 +663,17 @@ public partial class QueryView : UserControl
     private async void OnEditorPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
-        if (!ctrl || !e.GetCurrentPoint(Editor).Properties.IsLeftButtonPressed) return;
+        var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+        if (!e.GetCurrentPoint(Editor).Properties.IsLeftButtonPressed) return;
+        if (ctrl && alt)
+        {
+            if (Editor.GetPositionFromPoint(e.GetPosition(Editor)) is { } clicked)
+                AddCaret(Editor.Document.GetOffset(clicked.Location));
+            e.Handled = true;
+            return;
+        }
+        _carets.Clear();
+        if (!ctrl) return;
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         e.Handled = true;

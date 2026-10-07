@@ -1,12 +1,19 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:ae="using:AvaloniaEdit"
              x:Class="DbExplorer.Desktop.Views.ObjectsView">
   <Grid Margin="4" ColumnDefinitions="2*,6,3*">
     <DockPanel Grid.Column="0">
       <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
         <TextBox Width="220" Text="{Binding FilterText}" Watermark="Filter by schema.name…" />
-        <ComboBox Width="130" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" ToolTip.Tip="Object type" />
+        <ComboBox Width="170" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" ToolTip.Tip="Object type">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <controls:ObjectTypeBadge Type="{Binding}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
         <controls:DatabasePicker Width="160" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" ToolTip.Tip="Database. Type to filter the list." />
         <TextBlock Classes="hint" Text="{Binding Summary}" />
       </WrapPanel>
@@ -26,8 +33,23 @@
         <DataGrid.Columns>
           <DataGridTextColumn Header="Database" Binding="{Binding Database}" Width="Auto" />
           <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
-          <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-          <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
+          <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="7" Margin="8,0" VerticalAlignment="Center">
+                  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" />
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="Type" Width="Auto" SortMemberPath="Type">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <controls:ObjectTypeBadge Type="{Binding Type}" Margin="6,0" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
           <DataGridTextColumn Header="Rows (est.)" Binding="{Binding RowCount, StringFormat='{}{0:N0}'}" Width="Auto" />
           <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="Auto" />
         </DataGrid.Columns>
@@ -38,9 +60,12 @@
 
     <Grid Grid.Column="2" RowDefinitions="3*,6,2*">
       <!-- The selected object's name sits on the empty right side of the tab strip -->
-      <TextBlock Grid.Row="0" Margin="380,0,4,0" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1"
-                 FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding SelectedObject.FullName}"
-                 ToolTip.Tip="{Binding SelectedObject.FullName}" Padding="0,8,0,0" />
+      <DockPanel Grid.Row="0" Margin="380,0,4,0" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1">
+        <controls:ObjectTypeBadge DockPanel.Dock="Right" Margin="8,0,0,0" Type="{Binding SelectedObject.Type}"
+                                  IsVisible="{Binding SelectedObject, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding SelectedObject.FullName}"
+                   ToolTip.Tip="{Binding SelectedObject.FullName}" VerticalAlignment="Center" />
+      </DockPanel>
       <TabControl Grid.Row="0">
         <TabItem Header="Columns">
           <DataGrid ItemsSource="{Binding Columns}"
@@ -138,11 +163,27 @@
         </TabItem>
       </TabControl>
       <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
-      <TextBox Grid.Row="2" Classes="code"
-               Text="{Binding Definition}"
-               IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-               ScrollViewer.HorizontalScrollBarVisibility="Auto"
-               ScrollViewer.VerticalScrollBarVisibility="Auto" />
+      <DockPanel Grid.Row="2">
+        <!-- Formatting is for reading only: the object on the server is never changed -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+            <ToggleButton Content="Original" IsChecked="{Binding ShowOriginal}"
+                          ToolTip.Tip="Show the definition exactly as the server returned it" />
+            <Button Content="Copy" Click="OnCopyDefinitionClick"
+                    ToolTip.Tip="Copy the definition as shown (turn on Original to copy the server's text)" />
+          </StackPanel>
+          <TextBlock Classes="section" Text="Definition" VerticalAlignment="Center" Margin="0" />
+          <TextBlock Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     Text="Formatted for reading; the object on the server is not changed" />
+        </DockPanel>
+        <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+          <ae:TextEditor x:Name="DefinitionEditor" IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
+                         FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                         Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                         LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
+                         HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0" />
+        </Border>
+      </DockPanel>
     </Grid>
   </Grid>
 </UserControl>

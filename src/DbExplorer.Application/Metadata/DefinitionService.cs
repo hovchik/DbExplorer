@@ -34,8 +34,11 @@ public sealed class DefinitionService
 
         sb.Append("CREATE TABLE ").Append(q(table.Schema)).Append('.').Append(q(table.Name)).AppendLine(" (");
 
+        // Names and types padded so the columns line up.
+        var nameWidth = cols.Select(c => q(c.Name).Length).DefaultIfEmpty(0).Max();
+        var typeWidth = cols.Select(c => c.DataType.Length).DefaultIfEmpty(0).Max();
         var lines = cols.Select(c =>
-            $"    {q(c.Name)} {c.DataType}{(c.IsNullable ? " NULL" : " NOT NULL")}{(c.IsComputed ? " /* computed */" : "")}")
+            $"    {q(c.Name).PadRight(nameWidth)} {c.DataType.PadRight(typeWidth)}{(c.IsNullable ? " NULL" : " NOT NULL")}{(c.IsComputed ? " /* computed */" : "")}")
             .ToList();
 
         var keys = cols.Where(c => c.IsPrimaryKey).Select(c => q(c.Name)).ToList();

@@ -25,7 +25,8 @@ public sealed class SqlCompletionData(CompletionItem item) : ICompletionData
         [CompletionKind.Alias] = new SolidColorBrush(Color.Parse("#7A8B99")),
         [CompletionKind.Variable] = new SolidColorBrush(Color.Parse("#7A5BC4")),
         [CompletionKind.Schema] = new SolidColorBrush(Color.Parse("#7A8B99")),
-        [CompletionKind.Value] = new SolidColorBrush(Color.Parse("#B5523B"))
+        [CompletionKind.Value] = new SolidColorBrush(Color.Parse("#B5523B")),
+        [CompletionKind.Ddl] = new SolidColorBrush(Color.Parse("#D9822B"))
     };
 
     public CompletionItem Item { get; } = item;
@@ -69,7 +70,14 @@ public sealed class SqlCompletionData(CompletionItem item) : ICompletionData
             textArea.Document.GetCharAt(end) == '\'' && textArea.Document.GetText(start, length).Count(c => c == '\'') % 2 == 1)
             length++;
         textArea.Document.Replace(start, length, Item.InsertText);
-        textArea.Caret.Offset = Math.Min(start + (Item.CaretOffset ?? Item.InsertText.Length), textArea.Document.TextLength);
+        var caret = Math.Min(start + (Item.CaretOffset ?? Item.InsertText.Length), textArea.Document.TextLength);
+        if (Item.SelectionLength > 0 && caret + Item.SelectionLength <= textArea.Document.TextLength)
+        {
+            // A template's placeholder (table_name, …) is selected so typing replaces it.
+            textArea.Selection = Selection.Create(textArea, caret, caret + Item.SelectionLength);
+            caret += Item.SelectionLength;
+        }
+        textArea.Caret.Offset = caret;
     }
 
     private static Control Place(Control control, int column)

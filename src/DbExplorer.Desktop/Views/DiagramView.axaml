@@ -7,8 +7,8 @@
              x:Class="DbExplorer.Desktop.Views.DiagramView">
   <DockPanel Margin="4">
     <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
-      <ComboBox Width="150" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
-                IsVisible="{Binding HasMultipleDatabases}" ToolTip.Tip="Database" />
+      <controls:DatabasePicker Width="150" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                IsVisible="{Binding HasMultipleDatabases}" ToolTip.Tip="Database. Type to filter the list." />
       <ComboBox Width="150" ItemsSource="{Binding Scopes}" SelectedItem="{Binding Scope}">
         <ComboBox.ItemTemplate>
           <DataTemplate>

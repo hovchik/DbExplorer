@@ -162,7 +162,6 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     partial void OnCurrentDatabaseChanged(string? oldValue, string? newValue)
     {
-        OnPropertyChanged(nameof(CurrentDatabaseLabel));
         if (_attaching) return;
         if (HasOpenTransaction && !string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase))
         {
@@ -174,29 +173,9 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         RebuildCompletion();
     }
 
-    /// <summary>What the database picker shows for <see cref="CurrentDatabase"/>.</summary>
-    public string CurrentDatabaseLabel => CurrentDatabase ?? "(connection default)";
-
-    /// <summary>Text typed in the database picker; the list keeps the names that contain it, ignoring case.</summary>
-    [ObservableProperty] private string _databasePickerFilter = "";
-
-    /// <summary><see cref="AvailableDatabases"/> narrowed by <see cref="DatabasePickerFilter"/>.</summary>
-    [ObservableProperty] private IReadOnlyList<string> _filteredDatabases = [];
-
-    partial void OnDatabasePickerFilterChanged(string value) => ApplyDatabasePickerFilter();
-
-    private void ApplyDatabasePickerFilter()
-    {
-        var f = DatabasePickerFilter.Trim();
-        FilteredDatabases = f.Length == 0
-            ? AvailableDatabases
-            : AvailableDatabases.Where(n => n.Contains(f, StringComparison.OrdinalIgnoreCase)).ToList();
-    }
-
     /// <summary>The picker matches its selection exactly, so the current name takes the list's spelling ("sales" → "Sales").</summary>
     partial void OnAvailableDatabasesChanged(IReadOnlyList<string> value)
     {
-        ApplyDatabasePickerFilter();
         if (CurrentDatabase is { } current && !value.Contains(current, StringComparer.Ordinal) &&
             value.FirstOrDefault(n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase)) is { } listed)
             CurrentDatabase = listed;

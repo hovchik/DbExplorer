@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
         xmlns:conv="using:DbExplorer.Desktop.Converters"
         x:Class="DbExplorer.Desktop.Views.ConnectionDialog"
         Title="Connection"
@@ -98,8 +99,8 @@
                 <Button.Flyout>
                   <Flyout Placement="BottomEdgeAlignedRight">
                     <Panel Width="280">
-                      <ListBox x:Name="DatabaseList" MaxHeight="280"
-                               ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}" />
+                      <controls:NameFilterList x:Name="DatabaseList" MaxListHeight="280"
+                                               ItemsSource="{Binding Databases}" IsVisible="{Binding !!Databases.Count}" />
                       <TextBlock Classes="hint" Margin="8" Text="{Binding Message}" TextWrapping="Wrap"
                                  IsVisible="{Binding !Databases.Count}" />
                     </Panel>

@@ -824,7 +824,8 @@ public sealed class DesignSuggestionItem(DesignSuggestion suggestion)
     public DesignSuggestion Suggestion { get; } = suggestion;
     public string Title => Suggestion.Title;
     public string Detail => Suggestion.Detail;
-    public string? FixLabel => Suggestion.FixLabel;
+    /// <summary>The button text, with underscores doubled so "Keep legacy_code" is not read as an access key.</summary>
+    public string? FixLabel => Suggestion.FixLabel?.Replace("_", "__");
     public bool CanFix => Suggestion.CanFix;
     public bool CanDismiss => Suggestion.Severity != DesignSeverity.Error;
     public string SeverityText => Suggestion.Severity switch { DesignSeverity.Error => "Fix", DesignSeverity.Warning => "Check", _ => "Tip" };

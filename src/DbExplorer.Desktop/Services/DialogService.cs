@@ -32,7 +32,8 @@ public interface IDialogService
         QueryExecutionService queryService, DatabaseSession session, string term, IReadOnlyList<DataMatch> matches,
         Action<string, string?> openSql, Action<DbObject> openObject);
 
-    Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null);
+    /// <param name="details">Shown below the message in a scrollable monospace box, e.g. the exact script that will run.</param>
+    Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null);
 
     void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
 
@@ -97,9 +98,9 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
         return Task.CompletedTask;
     }
 
-    public async Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null)
+    public async Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null)
     {
-        var window = new ConfirmWindow(message, confirmText, requiredText, banner);
+        var window = new ConfirmWindow(message, confirmText, requiredText, banner, details);
         if (Owner is null) return false;
         return await window.ShowDialog<bool>(Owner);
     }

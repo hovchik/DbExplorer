@@ -14,9 +14,16 @@ public partial class ConfirmWindow : Window
 
     /// <param name="requiredText">When set, the confirm button stays disabled until this exact text is typed.</param>
     /// <param name="banner">Optional red warning strip above the message (e.g. "PRODUCTION · Shop").</param>
-    public ConfirmWindow(string message, string confirmText = "Run", string? requiredText = null, string? banner = null) : this()
+    /// <param name="details">Optional text shown under the message as code, e.g. the script about to run.</param>
+    public ConfirmWindow(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null) : this()
     {
         MessageText.Text = message;
+        if (!string.IsNullOrEmpty(details))
+        {
+            DetailsBox.IsVisible = true;
+            DetailsText.Text = details;
+            Width = 680;
+        }
         ConfirmButton.Content = confirmText;
         _requiredText = requiredText;
 

@@ -8,6 +8,8 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+
     public bool CanSavePasswords => protector.IsSupported;
 
     public async Task<IReadOnlyList<ConnectionProfile>> LoadAsync(CancellationToken ct = default)
@@ -49,12 +51,16 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
             ProtectedSshPassphrase = p.Ssh.Enabled ? Protect(p, p.Ssh.Passphrase) : null
         }).ToList();
 
-        var tmp = paths.ConnectionsFile + ".tmp";
-        await using (var fs = File.Create(tmp))
+        // One save at a time: two quick edits must not interleave their writes.
+        await _saveGate.WaitAsync(ct);
+        try
         {
-            await JsonSerializer.SerializeAsync(fs, stored, Json, ct);
+            await AtomicFile.WriteJsonAsync(paths.ConnectionsFile, stored, Json, ct);
         }
-        File.Move(tmp, paths.ConnectionsFile, overwrite: true);
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     /// <summary>"Save password" covers the SSH password and key passphrase too.</summary>

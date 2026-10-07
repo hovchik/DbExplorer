@@ -29,6 +29,19 @@ public class ConnectionStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Saves_at_the_same_time_leave_a_valid_file()
+    {
+        var paths = new AppPaths(_root);
+        var store = new ConnectionStore(paths, new NoSecretProtector());
+
+        await Task.WhenAll(Enumerable.Range(1, 20).Select(n => Task.Run(() =>
+            store.SaveAsync(Enumerable.Range(0, n).Select(i => new ConnectionProfile { Name = $"p{i}", Host = "h" }).ToList()))));
+
+        Assert.InRange((await store.LoadAsync()).Count, 1, 20);
+        Assert.Equal([paths.ConnectionsFile], Directory.GetFiles(_root));
+    }
+
+    [Fact]
     public async Task A_damaged_file_is_kept_aside_instead_of_being_overwritten()
     {
         var paths = new AppPaths(_root);

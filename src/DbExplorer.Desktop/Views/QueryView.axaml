@@ -70,6 +70,8 @@
 	  <Button Content="↶ Rollback" Classes="tool" Command="{Binding RollbackCommand}" IsVisible="{Binding HasOpenTransaction}"
 			  ToolTip.Tip="Undo everything done since the transaction started" />
 	  <TextBlock Text="{Binding TransactionInfo}" IsVisible="{Binding HasOpenTransaction}" Foreground="#E08A00" FontWeight="SemiBold" />
+	  <Button x:Name="SnippetsButton" Content="Snippets ▾" Classes="tool" Click="OnSnippets"
+			  ToolTip.Tip="Insert one of your saved snippets, or save the selection as a new one. Saved snippets are also offered by Ctrl+Space at the start of a statement." />
 	  <Button Content="Tools ▾" Classes="tool">
 		<Button.Flyout>
 		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
@@ -83,6 +85,11 @@
 			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />
 			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
 			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
+			<Separator />
+			<MenuItem x:Name="WordWrapItem" Header="Word wrap" InputGesture="Alt+Z" ToggleType="CheckBox" Click="OnToggleWordWrap" />
+			<MenuItem Header="Zoom in (Ctrl+= or Ctrl+wheel)" Click="OnZoomIn" />
+			<MenuItem Header="Zoom out (Ctrl+-)" Click="OnZoomOut" />
+			<MenuItem Header="Reset zoom (Ctrl+0)" Click="OnZoomReset" />
 		  </MenuFlyout>
 		</Button.Flyout>
 	  </Button>
@@ -121,6 +128,8 @@
 		</Button.Flyout>
 	  </Button>
 	  <ProgressBar Width="100" MinWidth="100" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+	  <TextBlock Text="{Binding RunningElapsed}" IsVisible="{Binding IsRunning}" VerticalAlignment="Center" Margin="0,0,8,4"
+				 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" ToolTip.Tip="Time since the run started" />
 	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
 	</WrapPanel>
 
@@ -143,10 +152,11 @@
 	<DockPanel Grid.Row="1">
 	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
 	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis"
-				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line" />
+				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
 		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" VerticalAlignment="Center" />
 		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" VerticalAlignment="Center" />
+		<Button x:Name="ZoomInfo" Classes="layout" IsVisible="False" Click="OnZoomReset" ToolTip.Tip="Editor zoom · click to reset (Ctrl+0)" />
 		<StackPanel Orientation="Horizontal" Spacing="2">
 		  <Button Classes="layout" Content="⬆" Click="OnMaximizeResults" ToolTip.Tip="Give the results most of the space (Ctrl+Shift+↑)" />
 		  <Button Classes="layout" Content="⇕" Click="OnResetLayout" ToolTip.Tip="Reset the editor / results split (or double-click the divider)" />

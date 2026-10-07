@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -14,6 +15,7 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using AvaloniaEdit.Search;
+using DbExplorer.Application;
 using DbExplorer.Application.Query;
 using DbExplorer.Desktop.Editor;
 using DbExplorer.Desktop.ViewModels;
@@ -101,6 +103,7 @@ public partial class QueryView : UserControl
         Editor.PointerHover += OnPointerHover;
         Editor.PointerHoverStopped += (_, _) => HideHover();
         Editor.TextArea.AddHandler(PointerPressedEvent, OnEditorPointerPressed, RoutingStrategies.Tunnel);
+        Editor.AddHandler(PointerWheelChangedEvent, OnEditorWheel, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
@@ -133,6 +136,7 @@ public partial class QueryView : UserControl
             _vm.CompletionValuesArrived += OnCompletionValuesArrived;
             Editor.Document.Changed += OnDocumentChanged;
         }
+        HookSettings();
 
         _decorations.Error = null;
         _decorations.Executed = null;
@@ -355,6 +359,10 @@ public partial class QueryView : UserControl
         else if (ctrl && shift && e.Key == Key.F) { Format(); e.Handled = true; }
         else if (ctrl && e.Key is Key.Oem2 or Key.Divide) { ToggleComment(); e.Handled = true; }
         else if (ctrl && e.Key == Key.H) { _search.IsReplaceMode = true; _search.Open(); e.Handled = true; }
+        else if (ctrl && e.Key is Key.OemPlus or Key.Add) { Zoom(+1); e.Handled = true; }
+        else if (ctrl && e.Key is Key.OemMinus or Key.Subtract) { Zoom(-1); e.Handled = true; }
+        else if (ctrl && e.Key is Key.D0 or Key.NumPad0) { ResetZoom(); e.Handled = true; }
+        else if (alt && e.Key == Key.Z) { ToggleWordWrap(); e.Handled = true; }
         else if (ctrl && e.Key == Key.D) { Duplicate(); e.Handled = true; }
         else if (ctrl && e.Key == Key.G) { OpenGoToLine(); e.Handled = true; }
         else if (ctrl && shift && e.Key == Key.U) { ChangeCase(upper: true); e.Handled = true; }
@@ -686,5 +694,122 @@ public partial class QueryView : UserControl
         var selected = Editor.SelectionLength;
         var dialect = _vm?.ProviderKey switch { "SqlServer" => " · SQL Server", "Postgres" => " · PostgreSQL", _ => "" };
         CaretInfo.Text = $"Ln {caret.Line}, Col {caret.Column}" + (selected > 0 ? $" · {selected:N0} selected" : "") + dialect;
+    }
+
+    // ----- Zoom and word wrap (shared by every query tab, remembered between runs) -----
+
+    private AppSettingsService? _settings;
+
+    /// <summary>Follows the app-wide editor settings while this view is on screen; the settings outlive the view.</summary>
+    private void HookSettings()
+    {
+        var wanted = this.IsAttachedToVisualTree() ? _vm?.Settings : null;
+        if (ReferenceEquals(wanted, _settings)) { ApplyEditorSettings(); return; }
+        if (_settings is not null) _settings.EditorChanged -= ApplyEditorSettings;
+        _settings = wanted;
+        if (_settings is not null) _settings.EditorChanged += ApplyEditorSettings;
+        ApplyEditorSettings();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        HookSettings();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        HookSettings();
+    }
+
+    private void ApplyEditorSettings()
+    {
+        if (_vm?.Settings is not { } settings) return;
+        Editor.FontSize = settings.EditorFontSize;
+        Editor.WordWrap = settings.EditorWordWrap;
+        WordWrapItem.IsChecked = settings.EditorWordWrap;
+        var percent = (int)Math.Round(settings.EditorFontSize / AppSettingsService.DefaultEditorFontSize * 100);
+        ZoomInfo.Content = $"{percent}%";
+        ZoomInfo.IsVisible = percent != 100;
+    }
+
+    private void Zoom(int step)
+    {
+        if (_vm?.Settings is { } settings) settings.SetEditorFontSize(settings.EditorFontSize + step);
+    }
+
+    private void ResetZoom() => _vm?.Settings.SetEditorFontSize(AppSettingsService.DefaultEditorFontSize);
+
+    private void ToggleWordWrap()
+    {
+        if (_vm?.Settings is { } settings) settings.SetEditorWordWrap(!settings.EditorWordWrap);
+    }
+
+    private void OnEditorWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (!(e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)) || e.Delta.Y == 0) return;
+        Zoom(e.Delta.Y > 0 ? +1 : -1);
+        e.Handled = true;
+    }
+
+    private void OnZoomIn(object? sender, RoutedEventArgs e) => Zoom(+1);
+    private void OnZoomOut(object? sender, RoutedEventArgs e) => Zoom(-1);
+    private void OnZoomReset(object? sender, RoutedEventArgs e) => ResetZoom();
+    private void OnToggleWordWrap(object? sender, RoutedEventArgs e) => ToggleWordWrap();
+
+    // ----- My snippets -----
+
+    /// <summary>Lists the saved snippets (click inserts at the caret), plus saving the selection and deleting one.</summary>
+    private void OnSnippets(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is not { } vm) return;
+        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
+        var snippets = vm.Snippets.Items;
+
+        var save = new MenuItem { Header = "Save selection as snippet…", IsEnabled = Editor.SelectionLength > 0 };
+        save.Click += async (_, _) => await vm.SaveSnippetAsync(Editor.SelectedText);
+        menu.Items.Add(save);
+        menu.Items.Add(new Separator());
+
+        if (snippets.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "No snippets yet: select some SQL and save it", IsEnabled = false });
+        foreach (var snippet in snippets)
+        {
+            var item = new MenuItem { Header = snippet.Name };
+            ToolTip.SetTip(item, new TextBlock
+            {
+                Text = snippet.Sql.Length > 1500 ? snippet.Sql[..1500] + "…" : snippet.Sql,
+                FontFamily = Editor.FontFamily,
+                FontSize = 12
+            });
+            item.Click += (_, _) => InsertSnippet(snippet.Sql);
+            menu.Items.Add(item);
+        }
+
+        if (snippets.Count > 0)
+        {
+            var delete = new MenuItem { Header = "Delete" };
+            foreach (var snippet in snippets)
+            {
+                var item = new MenuItem { Header = snippet.Name };
+                item.Click += async (_, _) => await vm.DeleteSnippetAsync(snippet);
+                delete.Items.Add(item);
+            }
+            menu.Items.Add(new Separator());
+            menu.Items.Add(delete);
+        }
+
+        menu.ShowAt(SnippetsButton);
+    }
+
+    /// <summary>Replaces the selection (or inserts at the caret) as one undoable edit.</summary>
+    private void InsertSnippet(string sql)
+    {
+        var (start, length) = Editor.SelectionLength > 0 ? (Editor.SelectionStart, Editor.SelectionLength) : (Editor.CaretOffset, 0);
+        Editor.Document.Replace(start, length, sql);
+        Editor.Select(start + sql.Length, 0);
+        Editor.CaretOffset = start + sql.Length;
+        Editor.TextArea.Focus();
     }
 }

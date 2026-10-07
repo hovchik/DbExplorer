@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddSingleton<DataSearchService>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
+        services.AddSingleton<SnippetLibrary>();
         services.AddSingleton<QueryExecutionService>();
         services.AddSingleton<MultiDatabaseQueryService>();
         services.AddSingleton<ObjectComparisonService>();

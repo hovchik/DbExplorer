@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
@@ -39,8 +40,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     public QueryViewModel(
         QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs,
-        DefinitionService definitions, SessionService sessions)
+        DefinitionService definitions, SessionService sessions, AppSettingsService settings, SnippetLibrary snippets)
     {
+        Settings = settings;
+        Snippets = snippets;
         this.definitions = definitions;
         this.sessions = sessions;
         this.queryService = queryService;
@@ -255,7 +258,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             var built = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
             {
-                ValueSource = values is null ? null : values.TryGet
+                ValueSource = values is null ? null : values.TryGet,
+                UserSnippets = () => Snippets.Items
             };
             return (built, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
         });
@@ -406,6 +410,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         _runCts = new CancellationTokenSource();
         var ct = _runCts.Token;
         IsRunning = true;
+        StartElapsedClock();
         Messages.Clear();
         try
         {
@@ -435,6 +440,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         finally
         {
             IsRunning = false;
+            StopElapsedClock();
         }
     }
 

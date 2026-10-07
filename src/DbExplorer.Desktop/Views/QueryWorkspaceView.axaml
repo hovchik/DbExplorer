@@ -30,7 +30,18 @@
 	<TabControl Classes="docs" Padding="0" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:QueryViewModel">
-		  <StackPanel Orientation="Horizontal" ToolTip.Tip="{Binding FilePath}">
+		  <StackPanel Orientation="Horizontal" ToolTip.Tip="{Binding FilePath}" Background="Transparent">
+			<StackPanel.ContextMenu>
+			  <ContextMenu>
+				<MenuItem Header="Rename…" Command="{Binding $parent[TabControl].DataContext.RenameTabCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Duplicate" Command="{Binding $parent[TabControl].DataContext.DuplicateTabCommand}" CommandParameter="{Binding}" />
+				<Separator />
+				<MenuItem Header="Close" InputGesture="Ctrl+W" Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close others" Command="{Binding $parent[TabControl].DataContext.CloseOtherTabsCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close tabs to the right" Command="{Binding $parent[TabControl].DataContext.CloseTabsToRightCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close all" Command="{Binding $parent[TabControl].DataContext.CloseAllTabsCommand}" />
+			  </ContextMenu>
+			</StackPanel.ContextMenu>
 			<TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
 			<Button Classes="close" Content="✕" ToolTip.Tip="Close (Ctrl+W)"
 					Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />

@@ -108,20 +108,65 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         title.StartsWith("Query ", StringComparison.Ordinal) && int.TryParse(title.AsSpan(6), NumberStyles.None, CultureInfo.InvariantCulture, out _);
 
     [RelayCommand]
-    private async Task CloseTabAsync(QueryViewModel? doc)
+    private Task CloseTabAsync(QueryViewModel? doc) => TryCloseAsync(doc ?? SelectedDocument);
+
+    /// <summary>Closes the other tabs, left to right; stops at the first one whose close the user cancels.</summary>
+    [RelayCommand]
+    private Task CloseOtherTabsAsync(QueryViewModel? doc) =>
+        CloseManyAsync(Documents.Where(d => !ReferenceEquals(d, doc ?? SelectedDocument)).ToList());
+
+    [RelayCommand]
+    private Task CloseTabsToRightAsync(QueryViewModel? doc)
+    {
+        var index = Documents.IndexOf(doc ?? SelectedDocument!);
+        return index < 0 ? Task.CompletedTask : CloseManyAsync(Documents.Skip(index + 1).ToList());
+    }
+
+    [RelayCommand]
+    private Task CloseAllTabsAsync() => CloseManyAsync(Documents.ToList());
+
+    private async Task CloseManyAsync(IReadOnlyList<QueryViewModel> docs)
+    {
+        foreach (var d in docs)
+            if (!await TryCloseAsync(d)) return;
+    }
+
+    /// <summary>A copy of the tab's text in a new tab, in the same database.</summary>
+    [RelayCommand]
+    private void DuplicateTab(QueryViewModel? doc)
     {
         doc ??= SelectedDocument;
         if (doc is null) return;
+        AddTab(doc.Title + " (copy)", doc.Sql, filePath: null, dirty: false, NullIfEmpty(doc.CurrentDatabase));
+    }
+
+    /// <summary>Gives the tab a name of the user's choice; it is then no longer renamed after the queries it runs.</summary>
+    [RelayCommand]
+    private async Task RenameTabAsync(QueryViewModel? doc)
+    {
+        doc ??= SelectedDocument;
+        if (doc is null) return;
+        var name = await _dialogs.PromptTextAsync("Rename tab", "The tab keeps this name until you rename it again.", "Name", doc.Title);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        doc.Title = name.Trim();
+        doc.AutoTitle = false;
+        await SaveTabsAsync();
+    }
+
+    /// <summary>Closes <paramref name="doc"/> after the usual unsaved-text and open-transaction checks; false when the user kept it.</summary>
+    private async Task<bool> TryCloseAsync(QueryViewModel? doc)
+    {
+        if (doc is null || !Documents.Contains(doc)) return true;
         var unsaved = doc.FilePath is not null ? doc.IsDirty : !string.IsNullOrWhiteSpace(doc.Sql);
         if (unsaved && !await _dialogs.ConfirmAsync(
                 doc.FilePath is null
                     ? $"{doc.Title} is not saved to a file. Close it and discard its text?"
                     : $"{doc.Title} has unsaved changes. Close it anyway?",
                 "Close without saving"))
-            return;
+            return false;
         if (doc.HasOpenTransaction &&
             !await _dialogs.ConfirmAsync($"{doc.Title} has an open transaction. Closing rolls it back. Continue?", "Roll back and close"))
-            return;
+            return false;
 
         var index = Documents.IndexOf(doc);
         await doc.EndTransactionAsync(commit: false, reason: "tab closed");
@@ -130,6 +175,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         if (Documents.Count == 0) NewTab();
         else if (SelectedDocument == doc || SelectedDocument is null) SelectedDocument = Documents[Math.Clamp(index, 0, Documents.Count - 1)];
         await SaveTabsAsync();
+        return true;
     }
 
     /// <summary>Opens a file in a new tab, or reuses the current tab when it is an empty, untouched scratch tab.</summary>

@@ -121,7 +121,8 @@ public partial class ComparerViewModel(
             : null;
 
     public bool HasMissingRightDatabase => MissingRightDatabase is not null;
-    public string CreateRightDatabaseLabel => $"Create database {MissingRightDatabase} on the right";
+    /// <summary>Button text: "_" is an access-key marker in a Button, so it is doubled to show as itself.</summary>
+    public string CreateRightDatabaseLabel => $"Create database {MissingRightDatabase?.Replace("_", "__")} on the right";
     public string MissingRightDatabaseHint =>
         MissingRightDatabase is { } name ? $"{name} does not exist on {RightSession?.Profile.DisplayName}." : "";
 

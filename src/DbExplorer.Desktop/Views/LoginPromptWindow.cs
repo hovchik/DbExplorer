@@ -27,7 +27,8 @@ public sealed class LoginPromptWindow : Window
         var nameBox = new TextBox { Watermark = "Name", Text = name ?? "", IsVisible = name is null };
         var password = new TextBox { PasswordChar = '•', Watermark = "Password" };
         var confirm = new TextBox { PasswordChar = '•', Watermark = "Type the password again" };
-        var createUser = new CheckBox { Content = createUserLabel, IsChecked = true, IsVisible = createUserLabel is not null };
+        // A TextBlock, not a string: "_" in the database name would otherwise be read as an access key and vanish.
+        var createUser = new CheckBox { Content = new TextBlock { Text = createUserLabel }, IsChecked = true, IsVisible = createUserLabel is not null };
         var error = new TextBlock { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
         var ok = new Button { Content = "Add to changes", IsDefault = true, Classes = { "accent" } };
         var cancel = new Button { Content = "Cancel", IsCancel = true };

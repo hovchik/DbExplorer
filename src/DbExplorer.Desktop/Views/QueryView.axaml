@@ -131,7 +131,9 @@
 	  </StackPanel>
 	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
 				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
-	  <Button Content="{Binding TargetSummary, StringFormat='{}{0} ▾'}" IsVisible="{Binding RunOnMultipleDatabases}">
+	  <Button IsVisible="{Binding RunOnMultipleDatabases}">
+		<!-- A TextBlock, not a string: "_" in database names would otherwise be read as an access key -->
+		<TextBlock Text="{Binding TargetSummary, StringFormat='{}{0} ▾'}" />
 		<Button.Flyout>
 		  <Flyout Placement="BottomEdgeAlignedLeft">
 			<StackPanel Width="340" Spacing="6">
@@ -145,7 +147,9 @@
 				<ItemsControl ItemsSource="{Binding VisibleDatabases}">
 				  <ItemsControl.ItemTemplate>
 					<DataTemplate x:DataType="vm:DatabaseChoice">
-					  <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,1" />
+					  <CheckBox IsChecked="{Binding IsSelected}" Margin="0,1">
+						<TextBlock Text="{Binding Name}" />
+					  </CheckBox>
 					</DataTemplate>
 				  </ItemsControl.ItemTemplate>
 				</ItemsControl>

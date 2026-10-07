@@ -9,10 +9,13 @@ using MySqlConnector;
 
 namespace DbExplorer.Tests;
 
+// Both classes create the same schema, so they never run at once: the two variables may name the same server.
 /// <summary>Against MySQL 8. Skipped unless DBEXPLORER_TEST_MYSQL is set to "host;port;user;password".</summary>
+[Collection("MySqlProviderDatabase")]
 public sealed class MySqlProviderIntegrationTests() : MySqlProviderIntegrationTestsBase("DBEXPLORER_TEST_MYSQL");
 
 /// <summary>Against MariaDB 10.6+. Skipped unless DBEXPLORER_TEST_MARIADB is set to "host;port;user;password".</summary>
+[Collection("MySqlProviderDatabase")]
 public sealed class MariaDbProviderIntegrationTests() : MySqlProviderIntegrationTestsBase("DBEXPLORER_TEST_MARIADB");
 
 /// <summary>

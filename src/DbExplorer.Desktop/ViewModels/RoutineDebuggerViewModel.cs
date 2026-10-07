@@ -162,6 +162,15 @@ public partial class RoutineDebuggerViewModel : ViewModelBase, IAsyncDisposable
                "(select a statement and press F5); add SELECT or PRINT lines to see intermediate values.\n" +
                "• Wrap that in BEGIN TRAN … ROLLBACK to keep the data unchanged.\n" +
                "PostgreSQL PL/pgSQL functions and procedures can be stepped through here.")
+            : providerKey.Contains("MySql", StringComparison.OrdinalIgnoreCase)
+            ? ("MySQL and MariaDB have no supported debugger for stored routines.",
+               "Neither server has an API for pausing a procedure or function and stepping through it, so DbExplorer " +
+               "does not pretend to. What works instead:\n" +
+               "• Execute… runs the routine with parameters and shows every result set and output value.\n" +
+               "• Copy the body into a Query tab, replace the parameters with user variables (SET @p = …), and run it " +
+               "statement by statement (select a statement and press F5); add SELECT lines to see intermediate values.\n" +
+               "• Wrap that in START TRANSACTION … ROLLBACK to keep InnoDB data unchanged (DDL commits on its own).\n" +
+               "PostgreSQL PL/pgSQL functions and procedures can be stepped through here.")
             : ($"Debugging is not available for {providerKey} connections.", "PostgreSQL PL/pgSQL functions and procedures can be stepped through.");
 
     partial void OnSelectedTargetChanged(DebugTarget? value)

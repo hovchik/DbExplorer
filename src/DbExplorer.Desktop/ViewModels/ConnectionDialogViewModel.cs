@@ -30,6 +30,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _encrypt = draft.Encrypt;
         _trustServerCertificate = draft.TrustServerCertificate;
         _readOnlyIntent = draft.ReadOnlyIntent;
+        _readOnly = draft.ReadOnly;
         _environment = draft.Environment;
     }
 
@@ -56,6 +57,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private bool _encrypt;
     [ObservableProperty] private bool _trustServerCertificate;
     [ObservableProperty] private bool _readOnlyIntent;
+    [ObservableProperty] private bool _readOnly;
     [ObservableProperty] private string? _selectedDatabase;
     [ObservableProperty] private string? _message;
     [ObservableProperty] private bool _isBusy;
@@ -149,6 +151,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         Encrypt = Encrypt,
         TrustServerCertificate = TrustServerCertificate,
         ReadOnlyIntent = ReadOnlyIntent && CanUseReadOnlyIntent,
+        ReadOnly = ReadOnly,
         Environment = Environment
     };
 }

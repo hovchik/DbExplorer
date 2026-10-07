@@ -27,6 +27,12 @@ public sealed class ConnectionProfile
     /// <summary>SQL Server: ApplicationIntent=ReadOnly (routes to a readable secondary when available).</summary>
     public bool ReadOnlyIntent { get; set; } = true;
 
+    /// <summary>
+    /// Nothing that writes may run on this connection: scripts that change data or schema, result edits, table creation,
+    /// copies and procedures are refused. PostgreSQL also opens its sessions read-only on the server.
+    /// </summary>
+    public bool ReadOnly { get; set; }
+
     [JsonConverter(typeof(JsonStringEnumConverter<ConnectionEnvironment>))]
     public ConnectionEnvironment Environment { get; set; }
 
@@ -43,5 +49,5 @@ public sealed class ConnectionProfile
     public string QualifiedName => string.IsNullOrWhiteSpace(Folder) ? DisplayName : $"{Folder.Trim()} / {DisplayName}";
 
     public override string ToString() =>
-        Environment.ShortTag() is { } tag ? $"{QualifiedName}  [{tag}]" : QualifiedName;
+        (Environment.ShortTag() is { } tag ? $"{QualifiedName}  [{tag}]" : QualifiedName) + (ReadOnly ? "  (read-only)" : "");
 }

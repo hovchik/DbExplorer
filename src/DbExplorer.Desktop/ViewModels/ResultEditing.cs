@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
@@ -31,6 +32,7 @@ public static class ResultEditing
     {
         var edited = rows.Where(r => r.IsModified).ToList();
         if (edited.Count == 0) return "Nothing to commit.";
+        if (session.Profile.ReadOnly) return ReadOnlyGuard.Refusal(session.Profile, "Commit") + " Your edits are kept.";
         var updates = BuildUpdates(session, source, edited);
 
         if (session.Profile.IsProduction)

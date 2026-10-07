@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -103,6 +104,11 @@ public partial class ComparerViewModel
     private async Task RunBatchAsync()
     {
         if (LeftTarget is not { } left || RightTarget is not { } right) return;
+        if (right.Profile.ReadOnly)
+        {
+            CopyStatus = ReadOnlyGuard.Refusal(right.Profile, "The batch");
+            return;
+        }
         var items = BatchItems.Where(i => i.Include && i.SelectedAction is not null).ToList();
         if (items.Count == 0)
         {

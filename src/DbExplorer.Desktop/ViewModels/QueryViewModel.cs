@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -433,6 +434,11 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
         if (sql is null) { Status = "Not run (parameters were not given)."; return; }
 
+        if (session.Profile.ReadOnly && ReadOnlyGuard.MayWrite(sql))
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "The script");
+            return;
+        }
         if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
 
         _lastRun = new RepeatableRun(sql, startOffset, targets);

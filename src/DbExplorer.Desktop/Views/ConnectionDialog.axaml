@@ -151,6 +151,8 @@
         <CheckBox Content="Read-only intent" IsChecked="{Binding ReadOnlyIntent}" IsEnabled="{Binding CanUseReadOnlyIntent}"
                   Margin="0,0,14,4"
                   ToolTip.Tip="ApplicationIntent=ReadOnly: Availability Group listeners route the app to a readable secondary" />
+        <CheckBox Content="Read-only (block writes)" IsChecked="{Binding ReadOnly}" Margin="0,0,14,4"
+                  ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only." />
       </WrapPanel>
     </StackPanel>
   </DockPanel>

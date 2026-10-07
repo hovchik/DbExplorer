@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -401,6 +402,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var schema = TableScriptBuilder.SchemaOf(design, ProviderKey);
         var name = design.Name.Trim();
         var script = Script;
+        if (session.Profile.ReadOnly)
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "CREATE TABLE") + " Open in Query tab still hands the script over.";
+            return;
+        }
         var production = session.Profile.IsProduction;
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
         var ok = await dialogs.ConfirmAsync(

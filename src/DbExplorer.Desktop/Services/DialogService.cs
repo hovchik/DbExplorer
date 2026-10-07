@@ -98,7 +98,18 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         var vm = new RoutineExecutionViewModel();
         var window = new RoutineExecutionWindow { DataContext = vm };
-        if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
+        if (session.Profile.ReadOnly && routine.Type == DbObjectType.Procedure)
+        {
+            vm.ConfirmBeforeRun = async () =>
+            {
+                var dialog = new ConfirmWindow(
+                    ReadOnlyGuard.Refusal(session.Profile, routine.FullName) + "\n\nStored procedures can modify data, so they do not run on read-only connections.",
+                    "OK");
+                await dialog.ShowDialog<bool>(window);
+                return false;
+            };
+        }
+        else if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
         {
             vm.ConfirmBeforeRun = async () =>
             {

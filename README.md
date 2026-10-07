@@ -42,6 +42,7 @@ Everywhere:
 - **Long queries** — when a query that ran 10 seconds or more ends while another app or another tab is in front, a notification says how it went and how long it took (click it to open the tab); on Windows the taskbar button flashes until the window is back.
 - **Connection folders** — give a connection a folder (`Shop`, `Clients/Acme`) in its dialog; the list is grouped by folder, then by name, with each connection's environment colour, and the folder travels with exported connections.
 - **Environment tags** — mark a connection as Development, Test, Staging or Production. The window shows a colored banner and title tag; on Production, write scripts and stored procedures require typing `PRODUCTION` to confirm.
+- **Read-only connections** — tick *Read-only (block writes)* in a connection's settings and nothing that changes data or schema runs on it: write scripts (INSERT, UPDATE, DELETE, DDL, EXEC, SELECT INTO…; words inside comments and strings don't count), result-grid commits, table creation, Comparer copies and stored procedures are refused with a message saying why. PostgreSQL connections are also opened read-only on the server (`default_transaction_read_only`); SQL Server has no such session setting, so there the check is the app's. Dry runs and measured plans still work on SQL Server, since they always roll back.
 
 ## Build and run
 

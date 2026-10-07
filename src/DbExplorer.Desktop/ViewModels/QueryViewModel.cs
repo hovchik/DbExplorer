@@ -258,6 +258,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             _completion = null;
             _completionSnapshot = null;
+            SetInspector(null);
             CompletionInfo = "";
             return;
         }
@@ -291,18 +292,20 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private async Task SetCompletionAsync(MetadataSnapshot snapshot, DatabaseSession session, Func<string?> scope, int version)
     {
         var values = ValueCacheFor(session);
-        var (engine, objects, scopeText) = await Task.Run(() =>
+        var (engine, inspector, objects, scopeText) = await Task.Run(() =>
         {
             var built = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
             {
                 ValueSource = values is null ? null : values.TryGet,
                 UserSnippets = () => Snippets.Items
             };
-            return (built, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
+            var checks = new SqlInspector(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
+            return (built, checks, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
         });
         if (version != _completionVersion) return;
         _completionSnapshot = snapshot;
         _completion = engine;
+        SetInspector(inspector);
         CompletionInfo = $"Suggestions: {objects:N0} objects" + (scopeText is null ? "" : $" in {scopeText}");
     }
 
@@ -310,6 +313,21 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     /// tightly: it filters itself as typing continues, so anything left out here could never be found.</summary>
     public CompletionResult GetCompletions(string text, int caret, bool explicitRequest) =>
         _completion?.Complete(text, caret, explicitRequest, max: 5000) ?? CompletionResult.Empty;
+
+    private SqlInspector? _inspector;
+
+    /// <summary>Checks the editor's SQL against the current catalog; null until a catalog is loaded.</summary>
+    public SqlInspector? Inspector => _inspector;
+
+    /// <summary>Raised when the catalog behind <see cref="Inspector"/> changed, so the warnings are recomputed.</summary>
+    public event Action? InspectorChanged;
+
+    private void SetInspector(SqlInspector? inspector)
+    {
+        if (ReferenceEquals(_inspector, inspector)) return;
+        _inspector = inspector;
+        InspectorChanged?.Invoke();
+    }
 
     /// <summary>Hover text for the identifier at <paramref name="offset"/>.</summary>
     public string? Describe(string text, int offset) => _completion?.Describe(text, offset);

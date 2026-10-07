@@ -25,8 +25,8 @@ namespace DbExplorer.Desktop.Views;
 /// <summary>
 /// The SQL editor of one query tab. Besides highlighting and context-aware completion it offers what paid SQL IDEs
 /// do: signature hints, go to definition (F12 / Ctrl+Click), matching brackets, highlighted occurrences, folding,
-/// auto-closed brackets and quotes, line editing shortcuts, error markers, execution plans and running the selection,
-/// the statement at the caret or the whole script.
+/// auto-closed brackets and quotes, line editing shortcuts, error markers, live SQL warnings with quick fixes
+/// (Alt+Enter), execution plans and running the selection, the statement at the caret or the whole script.
 /// </summary>
 public partial class QueryView : UserControl
 {
@@ -100,7 +100,7 @@ public partial class QueryView : UserControl
 
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
-        Editor.TextArea.Caret.PositionChanged += (_, _) => { UpdateCaretInfo(); _analysisTimer.Stop(); _analysisTimer.Start(); RestartCostLens(); };
+        Editor.TextArea.Caret.PositionChanged += (_, _) => { UpdateCaretInfo(); _analysisTimer.Stop(); _analysisTimer.Start(); RestartCostLens(); OnCaretMovedForInspections(); };
         Editor.TextArea.SelectionChanged += (_, _) => UpdateCaretInfo();
         Editor.PointerHover += OnPointerHover;
         Editor.PointerHoverStopped += (_, _) => HideHover();
@@ -114,6 +114,7 @@ public partial class QueryView : UserControl
         _analysisTimer.Tick += (_, _) => { _analysisTimer.Stop(); UpdateCaretMarks(); UpdateSignatureHelp(); };
         _foldingTimer.Tick += (_, _) => { _foldingTimer.Stop(); UpdateFoldings(); };
         _costLensTimer.Tick += OnCostLensTick;
+        _inspectionTimer.Tick += OnInspectionTick;
         ApplyHighlighting();
     }
 
@@ -127,6 +128,7 @@ public partial class QueryView : UserControl
             _vm.ErrorLocated -= OnErrorLocated;
             _vm.ErrorCleared -= OnErrorCleared;
             _vm.CompletionValuesArrived -= OnCompletionValuesArrived;
+            _vm.InspectorChanged -= RestartInspections;
             Editor.Document.Changed -= OnDocumentChanged;
         }
 
@@ -137,6 +139,7 @@ public partial class QueryView : UserControl
             _vm.ErrorLocated += OnErrorLocated;
             _vm.ErrorCleared += OnErrorCleared;
             _vm.CompletionValuesArrived += OnCompletionValuesArrived;
+            _vm.InspectorChanged += RestartInspections;
             Editor.Document.Changed += OnDocumentChanged;
         }
         HookSettings();
@@ -150,10 +153,13 @@ public partial class QueryView : UserControl
         UpdateCaretMarks();
         UpdateCaretInfo();
         RestartCostLens();
+        ShowInspections([]);
+        RestartInspections();
     }
 
     private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
     {
+        OnDocumentChangedForInspections(e);
         // Marks of a previous run no longer match the text once it is edited.
         if (_decorations.Error is not null || _decorations.Executed is not null)
         {
@@ -365,6 +371,8 @@ public partial class QueryView : UserControl
         }
 
         if (e.Key == Key.Escape && SignaturePopup.IsOpen) { SignaturePopup.IsOpen = false; e.Handled = true; }
+        else if (alt && !ctrl && e.Key == Key.Enter) { ShowFixes(); e.Handled = true; }
+        else if (e.Key == Key.F8) { GoToProblem(shift ? -1 : 1); e.Handled = true; }
         else if (ctrl && alt && shift && e.Key == Key.J) { SelectAllOccurrences(); e.Handled = true; }
         else if (alt && !ctrl && e.Key == Key.J) { AddNextOccurrence(); e.Handled = true; }
         else if (ctrl && e.Key == Key.Space) { ShowCompletion(explicitRequest: true); e.Handled = true; }
@@ -762,12 +770,17 @@ public partial class QueryView : UserControl
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
-        var text = _vm.Describe(Editor.Document.Text, offset);
-        if (text is null) return;
+        var problem = _inspections.Where(i => offset >= i.Start && offset < Math.Max(i.End, i.Start + 1))
+            .OrderByDescending(i => i.Severity).FirstOrDefault();
+        var described = _vm.Describe(Editor.Document.Text, offset);
+        if (described is null && problem is null) return;
 
+        var parts = new List<string>();
+        if (problem is not null) parts.Add(DescribeProblem(problem));
+        if (described is not null) parts.Add(described + "\n\nF12 / Ctrl+Click: open definition");
         ToolTip.SetTip(Editor, new TextBlock
         {
-            Text = text + "\n\nF12 / Ctrl+Click: open definition",
+            Text = string.Join("\n\n", parts),
             FontFamily = new FontFamily("Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace"),
             FontSize = 12
         });
@@ -830,6 +843,8 @@ public partial class QueryView : UserControl
         Editor.FontSize = settings.EditorFontSize;
         Editor.WordWrap = settings.EditorWordWrap;
         WordWrapItem.IsChecked = settings.EditorWordWrap;
+        SqlWarningsItem.IsChecked = settings.SqlInspections;
+        RestartInspections();
         ResultDiffItem.IsChecked = settings.IsEnabled(ExperimentalFeature.ResultDiff);
         ExpectationsItem.IsChecked = settings.IsEnabled(ExperimentalFeature.Expectations);
         CostLensItem.IsChecked = settings.IsEnabled(ExperimentalFeature.CostLens);
@@ -960,5 +975,223 @@ public partial class QueryView : UserControl
         Editor.Select(start + sql.Length, 0);
         Editor.CaretOffset = start + sql.Length;
         Editor.TextArea.Focus();
+    }
+
+    // ----- Live SQL warnings (unknown names, ambiguous columns, GROUP BY) with quick fixes -----
+
+    /// <summary>Warnings are recomputed once typing or caret moves pause, on a background thread.</summary>
+    private readonly DispatcherTimer _inspectionTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
+    private IReadOnlyList<SqlInspection> _inspections = [];
+    private int _inspectionRun;
+    private int _documentEdits;
+
+    /// <summary>Where the last edit left the caret: a name ending there is still being typed, so it is not underlined yet.</summary>
+    private int _typingAt = -1;
+
+    private void RestartInspections()
+    {
+        _inspectionTimer.Stop();
+        _inspectionTimer.Start();
+    }
+
+    private void OnCaretMovedForInspections()
+    {
+        if (Editor.CaretOffset != _typingAt)
+        {
+            if (_typingAt >= 0) RestartInspections(); // the name just typed is finished: check it now
+            _typingAt = -1;
+        }
+        UpdateProblemInfo();
+    }
+
+    /// <summary>Keeps the underlines in place while the text changes; the ones the edit touches go until the next check.</summary>
+    private void OnDocumentChangedForInspections(DocumentChangeEventArgs e)
+    {
+        _documentEdits++;
+        _typingAt = e.Offset + e.InsertionLength;
+        if (_inspections.Count > 0)
+        {
+            var delta = e.InsertionLength - e.RemovalLength;
+            var removedEnd = e.Offset + e.RemovalLength;
+            var kept = new List<SqlInspection>(_inspections.Count);
+            foreach (var i in _inspections)
+            {
+                if (i.End < e.Offset) kept.Add(i);
+                else if (i.Start > removedEnd) kept.Add(i with { Start = i.Start + delta });
+            }
+            ShowInspections(kept);
+        }
+        RestartInspections();
+    }
+
+    private async void OnInspectionTick(object? sender, EventArgs e)
+    {
+        _inspectionTimer.Stop();
+        var run = ++_inspectionRun;
+        if (_vm is not { Inspector: { } inspector } vm || !vm.Settings.SqlInspections || !this.IsAttachedToVisualTree() ||
+            Editor.Document.TextLength > MaxLengthForLiveAnalysis)
+        {
+            ShowInspections([]);
+            return;
+        }
+
+        var text = Editor.Document.Text;
+        var edits = _documentEdits;
+        IReadOnlyList<SqlInspection> found;
+        try
+        {
+            found = await Task.Run(() => inspector.Inspect(text));
+        }
+        catch
+        {
+            return; // a check that fails must never get in the way of typing
+        }
+        if (run != _inspectionRun || edits != _documentEdits || !ReferenceEquals(_vm, vm)) return;
+        ShowInspections(found);
+    }
+
+    private void ShowInspections(IReadOnlyList<SqlInspection> inspections)
+    {
+        _inspections = inspections;
+        _decorations.Problems = inspections
+            .Where(i => !(i.End == _typingAt && i.Start < _typingAt))
+            .Select(i => (i.Start, i.Length, i.Severity == InspectionSeverity.Error))
+            .ToList();
+        Redraw();
+        UpdateProblemInfo();
+    }
+
+    private IEnumerable<SqlInspection> Visible => _inspections.Where(i => !(i.End == _typingAt && i.Start < _typingAt));
+
+    /// <summary>The status bar shows a lightbulb with the warning at the caret, otherwise how many warnings there are.</summary>
+    private void UpdateProblemInfo()
+    {
+        var visible = Visible.ToList();
+        if (visible.Count == 0)
+        {
+            ProblemsInfo.IsVisible = false;
+            return;
+        }
+
+        var here = SqlInspector.At(visible, Editor.CaretOffset);
+        if (here is not null)
+        {
+            var message = here.Message.Length > 70 ? here.Message[..70] + "…" : here.Message;
+            ProblemsInfo.Content = (here.Fixes.Count > 0 ? "💡 " : "⚠ ") + message + (here.Fixes.Count > 0 ? " · Alt+Enter" : "");
+        }
+        else
+        {
+            var errors = visible.Count(i => i.Severity == InspectionSeverity.Error);
+            var warnings = visible.Count - errors;
+            var counts = new List<string>();
+            if (errors > 0) counts.Add(errors == 1 ? "1 error" : $"{errors} errors");
+            if (warnings > 0) counts.Add(warnings == 1 ? "1 warning" : $"{warnings} warnings");
+            ProblemsInfo.Content = "⚠ " + string.Join(", ", counts) + " · F8";
+        }
+        ProblemsInfo.Foreground = new SolidColorBrush(visible.Any(i => i.Severity == InspectionSeverity.Error)
+            ? Color.FromRgb(0xE5, 0x39, 0x35)
+            : Color.FromRgb(0xE0, 0xA0, 0x00));
+        ProblemsInfo.IsVisible = true;
+    }
+
+    private static string DescribeProblem(SqlInspection problem) =>
+        problem.Message + problem.Fixes.Count switch
+        {
+            0 => "",
+            1 => $"\nAlt+Enter: {problem.Fixes[0].Title}",
+            _ => $"\nAlt+Enter: {problem.Fixes[0].Title} (+{problem.Fixes.Count - 1} more)"
+        };
+
+    /// <summary>Alt+Enter: the fixes for the warning at the caret (or the first one on its line), in a menu at the caret.</summary>
+    private void ShowFixes()
+    {
+        if (_vm is not { } vm) return;
+        if (vm.Inspector is not { } inspector || !vm.Settings.SqlInspections)
+        {
+            vm.Status = vm.Settings.SqlInspections ? "SQL warnings need the connection's objects; they are still loading." : "SQL warnings are off (Tools ▾).";
+            return;
+        }
+
+        // Checked again on the current text, so the fix's offsets are exact.
+        _typingAt = -1;
+        var caret = Editor.CaretOffset;
+        var fresh = Editor.Document.TextLength > MaxLengthForLiveAnalysis ? [] : inspector.Inspect(Editor.Document.Text);
+        ShowInspections(fresh);
+        var line = Editor.Document.GetLineByOffset(caret);
+        var problem = SqlInspector.At(fresh, caret) ??
+                      fresh.FirstOrDefault(i => i.Start >= line.Offset && i.Start <= line.EndOffset);
+        if (problem is null)
+        {
+            vm.Status = fresh.Count == 0 ? "No SQL warnings." : "No SQL warning at the caret. F8 goes to the next one.";
+            return;
+        }
+        if (problem.Fixes.Count == 0)
+        {
+            vm.Status = problem.Message;
+            return;
+        }
+
+        var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem { Header = problem.Message, IsEnabled = false });
+        menu.Items.Add(new Separator());
+        foreach (var fix in problem.Fixes)
+        {
+            var item = new MenuItem { Header = fix.Title };
+            item.Click += (_, _) => ApplyFix(fix);
+            menu.Items.Add(item);
+        }
+
+        var textView = Editor.TextArea.TextView;
+        var location = Editor.Document.GetLocation(problem.Start);
+        var point = textView.GetVisualPosition(new TextViewPosition(location), VisualYPosition.LineBottom) - textView.ScrollOffset;
+        menu.Placement = PlacementMode.AnchorAndGravity;
+        menu.PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft;
+        menu.PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight;
+        menu.PlacementRect = new Rect(Math.Max(0, point.X), Math.Max(0, point.Y), 1, 1);
+        menu.Closed += (_, _) => Editor.Focus();
+        menu.Open(textView);
+    }
+
+    private void ApplyFix(SqlQuickFix fix)
+    {
+        var document = Editor.Document;
+        if (fix.Start < 0 || fix.Start + fix.Length > document.TextLength) return;
+        document.Replace(fix.Start, fix.Length, fix.Replacement);
+        Editor.CaretOffset = Math.Min(document.TextLength, fix.Start + fix.Replacement.Length);
+        Editor.Focus();
+        if (_vm is not null) _vm.Status = fix.Title + ".";
+    }
+
+    /// <summary>F8 / Shift+F8: the next or previous warning, wrapping around.</summary>
+    private void GoToProblem(int direction)
+    {
+        var visible = Visible.OrderBy(i => i.Start).ToList();
+        if (visible.Count == 0)
+        {
+            if (_vm is not null) _vm.Status = "No SQL warnings.";
+            return;
+        }
+        var caret = Editor.CaretOffset;
+        var target = direction > 0
+            ? visible.FirstOrDefault(i => i.Start > caret) ?? visible[0]
+            : visible.LastOrDefault(i => i.End < caret) ?? visible[^1];
+        Editor.CaretOffset = target.Start;
+        Editor.TextArea.Caret.BringCaretToView();
+        Editor.Focus();
+        if (_vm is not null) _vm.Status = target.Message;
+    }
+
+    private void OnProblemsInfo(object? sender, RoutedEventArgs e)
+    {
+        if (SqlInspector.At(Visible.ToList(), Editor.CaretOffset) is not null) ShowFixes();
+        else GoToProblem(1);
+    }
+
+    private void OnShowFixes(object? sender, RoutedEventArgs e) => ShowFixes();
+    private void OnNextProblem(object? sender, RoutedEventArgs e) => GoToProblem(1);
+
+    private void OnToggleSqlWarnings(object? sender, RoutedEventArgs e)
+    {
+        if (_vm?.Settings is { } settings) settings.SetSqlInspections(!settings.SqlInspections);
     }
 }

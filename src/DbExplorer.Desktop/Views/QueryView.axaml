@@ -99,6 +99,10 @@
 			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
 			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
 			<Separator />
+			<MenuItem x:Name="SqlWarningsItem" Header="SQL warnings while typing (unknown names, ambiguous columns, GROUP BY)" ToggleType="CheckBox" Click="OnToggleSqlWarnings" />
+			<MenuItem Header="Fix the warning at the caret" InputGesture="Alt+Enter" Click="OnShowFixes" />
+			<MenuItem Header="Next warning" InputGesture="F8" Click="OnNextProblem" />
+			<Separator />
 			<MenuItem x:Name="WordWrapItem" Header="Word wrap" InputGesture="Alt+Z" ToggleType="CheckBox" Click="OnToggleWordWrap" />
 			<MenuItem Header="Zoom in (Ctrl+= or Ctrl+wheel)" Click="OnZoomIn" />
 			<MenuItem Header="Zoom out (Ctrl+-)" Click="OnZoomOut" />
@@ -165,7 +169,7 @@
 	<DockPanel Grid.Row="1">
 	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
 	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis"
-				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
+				 Text="Ctrl+Space suggest · Alt+Enter fix · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
 		<TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding CostLensText}" Foreground="{Binding CostLensBrush}" VerticalAlignment="Center"
 				   ToolTip.Tip="{Binding CostLensDetail}" MaxWidth="460" TextTrimming="CharacterEllipsis"
@@ -173,6 +177,8 @@
 		<TextBlock Classes="hint" FontSize="11" Text="{Binding BaselineInfo}" VerticalAlignment="Center"
 				   ToolTip.Tip="Runs of the same query are compared with these pinned results (Lab ▾ › Clear the baseline)"
 				   IsVisible="{Binding BaselineInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+		<Button x:Name="ProblemsInfo" Classes="layout" IsVisible="False" Click="OnProblemsInfo" FontSize="11" MaxWidth="520"
+				ToolTip.Tip="SQL warnings, checked against the loaded objects (nothing is sent to the server). Click or Alt+Enter on a warning for its fixes, F8 for the next one. Turn them off in Tools ▾." />
 		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" VerticalAlignment="Center" />
 		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" VerticalAlignment="Center" />
 		<Button x:Name="ZoomInfo" Classes="layout" IsVisible="False" Click="OnZoomReset" ToolTip.Tip="Editor zoom · click to reset (Ctrl+0)" />

@@ -37,7 +37,8 @@ public partial class MainWindowViewModel : ViewModelBase
         QueryBuilderViewModel queryBuilder,
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
-        LabViewModel lab)
+        LabViewModel lab,
+        SecurityViewModel security)
     {
         _store = store;
         _sessions = sessions;
@@ -59,7 +60,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, queryBuilder, query, comparer, lab];
+        Security = security;
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, queryBuilder, query, comparer, lab, security];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -101,6 +103,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
         };
+        security.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
         dataSearch.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;
@@ -129,6 +136,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
     public LabViewModel Lab { get; }
+    public SecurityViewModel Security { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -582,5 +590,6 @@ public enum AppTab
     Indexes,
     Locks,
     Activity,
-    Lab
+    Lab,
+    Security
 }

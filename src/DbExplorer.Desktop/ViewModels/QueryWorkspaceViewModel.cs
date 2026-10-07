@@ -59,6 +59,9 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
 
     public ObservableCollection<QueryViewModel> Documents { get; } = [];
 
+    /// <summary>A run of any tab ended; the window turns long ones the user did not watch into a notification.</summary>
+    public event Action<QueryViewModel, TimeSpan, RunOutcome>? RunFinished;
+
     [ObservableProperty] private QueryViewModel? _selectedDocument;
     [ObservableProperty] private IReadOnlyList<HistoryItem> _history = [];
     [ObservableProperty] private string _historyFilter = "";
@@ -96,6 +99,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             var opened = AddTab(docTitle, text, null, dirty: false, NullIfEmpty(db));
             if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
         };
+        doc.RunFinished += (finished, elapsed, outcome) => RunFinished?.Invoke(finished, elapsed, outcome);
         Documents.Add(doc);
         SelectedDocument = doc;
         return doc;

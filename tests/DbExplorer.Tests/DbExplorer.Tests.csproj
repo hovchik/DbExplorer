@@ -17,6 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Api\Samples\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Plans\Samples\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

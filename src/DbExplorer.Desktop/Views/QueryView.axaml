@@ -206,7 +206,16 @@
 	  </TabControl.ItemTemplate>
 	  <TabControl.ContentTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
-		  <views:ResultGridView ResultSet="{Binding}" />
+		  <Panel>
+			<views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" />
+			<ContentControl Content="{Binding Plan}" IsVisible="{Binding !IsGrid}">
+			  <ContentControl.ContentTemplate>
+				<DataTemplate x:DataType="vm:PlanViewModel">
+				  <views:PlanView />
+				</DataTemplate>
+			  </ContentControl.ContentTemplate>
+			</ContentControl>
+		  </Panel>
 		</DataTemplate>
 	  </TabControl.ContentTemplate>
 	</TabControl>

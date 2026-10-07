@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.1000.6">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT o.Id, o.Total, c.Name FROM dbo.Orders o JOIN dbo.Customers c ON c.Id = o.CustomerId WHERE o.Status = N'open' ORDER BY o.Total" StatementId="1" StatementCompId="1" StatementType="SELECT" StatementSubTreeCost="3.84212" StatementEstRows="120">
+          <QueryPlan DegreeOfParallelism="1" CompileTime="4" CompileCPU="4" CompileMemory="312">
+            <MissingIndexes>
+              <MissingIndexGroup Impact="81.3">
+                <MissingIndex Database="[Shop]" Schema="[dbo]" Table="[Orders]">
+                  <ColumnGroup Usage="EQUALITY">
+                    <Column Name="[Status]" ColumnId="4" />
+                  </ColumnGroup>
+                  <ColumnGroup Usage="INCLUDE">
+                    <Column Name="[CustomerId]" ColumnId="2" />
+                    <Column Name="[Total]" ColumnId="3" />
+                  </ColumnGroup>
+                </MissingIndex>
+              </MissingIndexGroup>
+            </MissingIndexes>
+            <QueryTimeStats CpuTime="61" ElapsedTime="74" />
+            <RelOp NodeId="0" PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="120" EstimateIO="0.0112613" EstimateCPU="0.00213" AvgRowSize="40" EstimatedTotalSubtreeCost="3.84212" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="Id" />
+                <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="Total" />
+                <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Name" />
+              </OutputList>
+              <Warnings>
+                <SpillToTempDb SpillLevel="1" SpilledThreadCount="1" />
+              </Warnings>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="4000" ActualExecutions="1" ActualElapsedms="70" />
+              </RunTimeInformation>
+              <Sort Distinct="0">
+                <OrderBy>
+                  <OrderByColumn Ascending="1">
+                    <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="Total" />
+                  </OrderByColumn>
+                </OrderBy>
+                <RelOp NodeId="1" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="120" EstimateIO="0" EstimateCPU="0.0005016" AvgRowSize="40" EstimatedTotalSubtreeCost="3.82865" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList />
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="4000" ActualExecutions="1" ActualElapsedms="58" />
+                  </RunTimeInformation>
+                  <NestedLoops Optimized="0">
+                    <OuterReferences>
+                      <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="CustomerId" />
+                    </OuterReferences>
+                    <RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="120" EstimatedRowsRead="200000" EstimateIO="2.9" EstimateCPU="0.22" AvgRowSize="30" EstimatedTotalSubtreeCost="3.12" TableCardinality="200000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList />
+                      <Warnings>
+                        <PlanAffectingConvert ConvertIssue="Seek Plan" Expression="CONVERT_IMPLICIT(nvarchar(20),[o].[Status],0)=N'open'" />
+                        <ColumnsWithNoStatistics>
+                          <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="Status" />
+                        </ColumnsWithNoStatistics>
+                      </Warnings>
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="4000" ActualRowsRead="200000" ActualExecutions="1" ActualElapsedms="41" />
+                      </RunTimeInformation>
+                      <IndexScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                        <DefinedValues />
+                        <Object Database="[Shop]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" Alias="[o]" IndexKind="Clustered" Storage="RowStore" />
+                        <Predicate>
+                          <ScalarOperator ScalarString="CONVERT_IMPLICIT(nvarchar(20),[Shop].[dbo].[Orders].[Status] as [o].[Status],0)=N'open'" />
+                        </Predicate>
+                      </IndexScan>
+                    </RelOp>
+                    <RelOp NodeId="3" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="20" EstimatedTotalSubtreeCost="0.6982" TableCardinality="5000" Parallel="0" EstimateRebinds="119" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList />
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="4000" ActualExecutions="4000" ActualElapsedms="9" />
+                      </RunTimeInformation>
+                      <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                        <DefinedValues />
+                        <Object Database="[Shop]" Schema="[dbo]" Table="[Customers]" Index="[PK_Customers]" Alias="[c]" IndexKind="Clustered" Storage="RowStore" />
+                        <SeekPredicates>
+                          <SeekPredicateNew>
+                            <SeekKeys>
+                              <Prefix ScanType="EQ">
+                                <RangeColumns>
+                                  <ColumnReference Database="[Shop]" Schema="[dbo]" Table="[Customers]" Alias="[c]" Column="Id" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="[Shop].[dbo].[Orders].[CustomerId] as [o].[CustomerId]" />
+                                </RangeExpressions>
+                              </Prefix>
+                            </SeekKeys>
+                          </SeekPredicateNew>
+                        </SeekPredicates>
+                      </IndexScan>
+                    </RelOp>
+                  </NestedLoops>
+                </RelOp>
+              </Sort>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

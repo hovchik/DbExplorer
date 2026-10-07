@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Connections;
 using DbExplorer.Application.Lab;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
@@ -74,6 +75,12 @@ public partial class QueryViewModel
     private async Task DryRunAsync(QueryRun? run)
     {
         if (_session is not { } session || RunText(run) is not { } sql) return;
+        // Rolled back, but it still runs the statements: triggers fire and identities advance (SQL Server has no read-only session).
+        if (session.Profile.ReadOnly)
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "The dry run");
+            return;
+        }
         var production = session.Profile.IsProduction;
         if (!await dialogs.ConfirmAsync(
                 "Dry run executes the script inside a transaction and rolls it back, showing the rows it would change. " +

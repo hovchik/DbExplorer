@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Connections;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Query.Plans;
@@ -130,6 +131,12 @@ public partial class QueryViewModel
 
         sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
         if (sql is null) return;
+        // Analyze runs the statements (rolled back, but triggers fire and identities advance).
+        if (analyze && session.Profile.ReadOnly && ReadOnlyGuard.MayWrite(sql))
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "Explain Analyze");
+            return;
+        }
         if (analyze && queryService.IsPotentiallyDestructive(sql) &&
             !await dialogs.ConfirmAsync("Explain Analyze runs the statements to measure them, inside a transaction that is rolled back afterwards. Continue?",
                 "Analyze", requiredText: session.Profile.IsProduction ? "PRODUCTION" : null,

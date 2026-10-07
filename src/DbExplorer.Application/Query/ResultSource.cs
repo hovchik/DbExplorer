@@ -67,6 +67,22 @@ public sealed record ResultSource
 
     public bool HasEditableColumns => Enumerable.Range(0, Columns.Count).Any(CanEdit);
 
+    /// <summary>The table whole rows can be added to and deleted from: the only table the result's columns come from, with
+    /// its key in the result. Null when rows cannot be added or deleted (<see cref="RowEditReason"/> says why).</summary>
+    public ResultTable? RowTable => AllowsEdits && Tables.Count == 1 && Tables[0].IsEditable ? Tables[0] : null;
+
+    /// <summary>Why rows cannot be added or deleted, shown to the user; null when they can.</summary>
+    public string? RowEditReason =>
+        RowTable is not null ? null
+        : !AllowsEdits || Tables.Count == 0 ? ReadOnlyReason ?? "Rows cannot be added or deleted in this result."
+        : Tables.Count > 1 ? $"Adding and deleting rows works on results from one table; this one reads {string.Join(", ", Tables.Select(t => t.Table.FullName))}."
+        : Tables[0].Table.Type != DbObjectType.Table ? "Rows cannot be added or deleted: they come from a view."
+        : $"Adding and deleting rows needs the primary key (or a unique key) of {Tables[0].Table.FullName} in the result.";
+
+    /// <summary>A value can be typed into this column of a new row: a writable column of <see cref="RowTable"/>.</summary>
+    public bool CanSetInNewRow(int column) =>
+        RowTable is not null && ColumnSource(column) is { } s && IsWritable(s.Column, ProviderKey);
+
     public bool HasReferences => References.Any(r => r is not null);
 }
 

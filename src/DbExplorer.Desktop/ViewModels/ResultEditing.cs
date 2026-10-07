@@ -7,60 +7,111 @@ using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
-/// <summary>Writes cell edits made in a result grid back to the database.</summary>
+/// <summary>Writes the changes made in a result grid back to the database: edited values, new rows and deleted rows.</summary>
 public static class ResultEditing
 {
     private const int TimeoutSeconds = 60;
 
-    /// <summary>The edits of <paramref name="rows"/> as UPDATE statements.</summary>
-    public static IReadOnlyList<ResultUpdate> BuildUpdates(DatabaseSession session, ResultSource source, IReadOnlyList<ResultRow> rows) =>
-        ResultEditSql.BuildUpdates(
+    /// <summary>The changes of <paramref name="rows"/> as statements: DELETEs, then UPDATEs, then INSERTs.</summary>
+    public static IReadOnlyList<ResultUpdate> BuildChanges(DatabaseSession session, ResultSource source, IReadOnlyList<ResultRow> rows) =>
+        ResultEditSql.BuildChanges(
             source,
-            rows.Where(r => r.IsModified).Select(r => new ResultRowEdit(r.OriginalValues, r.ModifiedColumns.ToDictionary(c => c, c => r.Values[c]))),
+            rows.Where(r => r.IsDeleted).Select(r => r.OriginalValues),
+            rows.Where(r => r.State == ResultRowState.Unchanged && r.IsModified)
+                .Select(r => new ResultRowEdit(r.OriginalValues, r.ModifiedColumns.ToDictionary(c => c, c => r.Values[c]))),
+            rows.Where(r => r.IsNew).Select(r => (IReadOnlyDictionary<int, object?>)r.ModifiedColumns.ToDictionary(c => c, c => r.Values[c])),
             ResultExporter.DialectFor(session.Provider.ProviderKey),
             session.Provider.QuoteIdentifier);
 
     /// <summary>
-    /// Runs the UPDATEs for the edited rows — inside <paramref name="openTransaction"/> when the caller has one (they stay
+    /// Runs the statements for the changed rows — inside <paramref name="openTransaction"/> when the caller has one (they stay
     /// uncommitted with it), otherwise in a transaction of their own that is committed only when every row was found.
-    /// On production connections the statements are shown and must be confirmed. The rows keep their edits on failure.
+    /// New or deleted rows show the exact SQL for review first; on production connections every change does, and must be
+    /// confirmed by typing PRODUCTION. The rows keep their changes on failure. Deleted rows are
+    /// <see cref="ResultRowState.Removed"/> afterwards, for the caller to take out of the result.
     /// </summary>
     /// <returns>A status line, or null when the user cancelled.</returns>
     /// <exception cref="InvalidOperationException">A row was not found (changed or deleted since it was read).</exception>
     public static async Task<string?> CommitAsync(
         DatabaseSession session, ResultSource source, IReadOnlyList<ResultRow> rows, IScriptSession? openTransaction, IDialogService? dialogs)
     {
-        var edited = rows.Where(r => r.IsModified).ToList();
-        if (edited.Count == 0) return "Nothing to commit.";
-        if (session.Profile.ReadOnly) return ReadOnlyGuard.Refusal(session.Profile, "Commit") + " Your edits are kept.";
-        var updates = BuildUpdates(session, source, edited);
+        var changed = rows.Where(r => r.HasChanges).ToList();
+        if (changed.Count == 0) return "Nothing to commit.";
+        if (session.Profile.ReadOnly) return ReadOnlyGuard.Refusal(session.Profile, "Commit") + " Your changes are kept.";
+        var statements = BuildChanges(session, source, changed);
+        var summary = Summary(statements);
 
-        if (session.Profile.IsProduction)
+        var production = session.Profile.IsProduction;
+        if (production || statements.Any(s => s.Kind != ResultChangeKind.Update))
         {
-            var preview = string.Join("\n", updates.Take(10).Select(u => u.Sql)) + (updates.Count > 10 ? $"\n… and {updates.Count - 10} more" : "");
             if (dialogs is null || !await dialogs.ConfirmAsync(
-                    $"Save {edited.Count} edited row(s) on a PRODUCTION environment?\n\n{preview}",
-                    "Commit", requiredText: "PRODUCTION", banner: $"PRODUCTION · {session.Profile.DisplayName}"))
+                    $"{(production ? "On a PRODUCTION environment: save" : "Save")} {summary}?\n" +
+                    (openTransaction is null
+                        ? "These statements run in one transaction: if any of them fails, nothing is saved."
+                        : "These statements run in the open transaction: Commit or Rollback it afterwards."),
+                    "Save", requiredText: production ? "PRODUCTION" : null,
+                    banner: production ? $"PRODUCTION · {session.Profile.DisplayName}" : null,
+                    details: ResultEditSql.Script(statements)))
                 return null;
+        }
+
+        var stored = new Dictionary<ResultRow, IReadOnlyList<object?>>(ReferenceEqualityComparer.Instance);
+        var newRows = changed.Where(r => r.IsNew).ToList();
+        async Task RunAllAsync(IScriptSession tx, bool inOpenTransaction)
+        {
+            var inserted = 0;
+            foreach (var statement in statements)
+            {
+                if (statement.Kind == ResultChangeKind.Insert)
+                {
+                    var row = newRows[inserted++];
+                    if (await InsertAsync(tx, statement, row) is { } values) stored[row] = values;
+                }
+                else await RunAsync(tx, statement, inOpenTransaction);
+            }
         }
 
         if (openTransaction is not null)
         {
             // Each statement is checked; a row that is gone stops the rest, and the open transaction can still be rolled back.
-            foreach (var update in updates) await RunAsync(openTransaction, update, inOpenTransaction: true);
+            await RunAllAsync(openTransaction, inOpenTransaction: true);
         }
         else
         {
             await using var tx = await session.Provider.BeginScriptSessionAsync(source.Database, transactional: true);
-            foreach (var update in updates) await RunAsync(tx, update, inOpenTransaction: false); // disposing without commit rolls back
+            await RunAllAsync(tx, inOpenTransaction: false); // disposing without commit rolls back
             await tx.CommitAsync();
         }
 
-        foreach (var row in edited) row.AcceptChanges();
-        var what = $"{updates.Count} UPDATE statement(s) for {edited.Count} row(s)";
+        foreach (var row in changed) row.AcceptChanges(stored.GetValueOrDefault(row));
         return openTransaction is null
-            ? $"Saved {what}."
-            : $"Ran {what} in the open transaction — Commit or Rollback the transaction to finish.";
+            ? $"Saved {summary}."
+            : $"Ran {summary} in the open transaction — Commit or Rollback the transaction to finish.";
+    }
+
+    /// <summary>"2 UPDATE, 1 INSERT and 3 DELETE statement(s)".</summary>
+    private static string Summary(IReadOnlyList<ResultUpdate> statements)
+    {
+        var parts = new[] { ResultChangeKind.Update, ResultChangeKind.Insert, ResultChangeKind.Delete }
+            .Select(k => (Kind: k, Count: statements.Count(s => s.Kind == k)))
+            .Where(p => p.Count > 0)
+            .Select(p => $"{p.Count} {p.Kind.ToString().ToUpperInvariant()}")
+            .ToList();
+        var list = parts.Count == 1 ? parts[0] : string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1];
+        return list + " statement(s)";
+    }
+
+    /// <summary>Inserts a new row and returns its values as stored (defaults and generated keys filled in), or null when the
+    /// statement does not read the row back.</summary>
+    private static async Task<IReadOnlyList<object?>?> InsertAsync(IScriptSession session, ResultUpdate insert, ResultRow row)
+    {
+        var result = await session.QueryAsync(insert.Sql, TimeoutSeconds);
+        if (insert.ReturnedColumns.Count == 0 || result.ResultSets.LastOrDefault() is not { Rows: [var stored, ..] }) return null;
+        var values = row.Values.ToArray();
+        for (var i = 0; i < insert.ReturnedColumns.Count && i < stored.Count; i++)
+            foreach (var column in insert.ReturnedColumns[i])
+                if (column < values.Length) values[column] = stored[i];
+        return values;
     }
 
     private static async Task RunAsync(IScriptSession session, ResultUpdate update, bool inOpenTransaction)
@@ -73,11 +124,12 @@ public static class ResultEditing
                 $"\n{update.Sql}");
     }
 
-    /// <summary>Discards the uncommitted edits of every row.</summary>
-    public static int Revert(IEnumerable<ResultRow> rows)
+    /// <summary>Discards every uncommitted change: edits are reverted, deletions undone and new rows removed.</summary>
+    /// <returns>How many rows had changes.</returns>
+    public static int Revert(ResultSetView results)
     {
-        var count = 0;
-        foreach (var row in rows.Where(r => r.IsModified))
+        var count = results.RemoveRows(r => r.IsNew);
+        foreach (var row in results.Rows.Where(r => r.HasChanges))
         {
             row.Revert();
             count++;
@@ -85,5 +137,5 @@ public static class ResultEditing
         return count;
     }
 
-    public static bool HasEdits(IEnumerable<ResultSetView> results) => results.Any(rs => rs.Rows.Any(r => r.IsModified));
+    public static bool HasEdits(IEnumerable<ResultSetView> results) => results.Any(rs => rs.Rows.Any(r => r.HasChanges));
 }

@@ -60,6 +60,8 @@ public sealed class PostgresResultEditingIntegrationTests : IAsyncLifetime
                     placed_at timestamptz,
                     token uuid,
                     note text);
+                CREATE TABLE notes (id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL, created date NOT NULL DEFAULT DATE '2020-01-01');
+                INSERT INTO notes (body) VALUES ('first'), ('second');
                 INSERT INTO customers VALUES (1, 'Acme', false), (2, 'Globex', true);
                 INSERT INTO "Orders" VALUES
                     (10, 1, 100.50, '2024-01-02 03:04:05+00', '7f1c0e5a-1111-4c3b-9a55-0123456789ab', NULL),
@@ -180,5 +182,38 @@ public sealed class PostgresResultEditingIntegrationTests : IAsyncLifetime
         var referenced = await _session.Provider.ExecuteScriptAsync(sql, null, 30);
         var customer = Assert.Single(Assert.Single(referenced.ResultSets).Rows);
         Assert.Equal("Globex", customer[1]);
+    }
+
+    [SkippableFact]
+    public async Task New_rows_are_inserted_with_defaults_read_back_and_deleted_rows_go_by_key()
+    {
+        Skip.If(Settings is null);
+        var (result, source) = await QueryAsync("SELECT * FROM notes ORDER BY id");
+        Assert.Equal("notes", source.RowTable?.Table.Name);
+        int Col(string name) => result.Columns.ToList().IndexOf(name);
+        Assert.False(source.CanSetInNewRow(Col("id"))); // identity: the database sets it
+        Assert.True(source.CanSetInNewRow(Col("body")));
+
+        var changes = ResultEditSql.BuildChanges(source,
+            deleted: [result.Rows[0]],
+            edited: [],
+            added: [new Dictionary<int, object?> { [Col("body")] = "it's new" }],
+            SqlDialect.Postgres, _session!.Provider.QuoteIdentifier);
+
+        IReadOnlyList<object?>? stored = null;
+        await using (var tx = await _session.Provider.BeginScriptSessionAsync(null, transactional: true))
+        {
+            Assert.Equal(1, await tx.ExecuteAsync(changes[0].Sql, 30));
+            var inserted = await tx.QueryAsync(changes[1].Sql, 30);
+            stored = Assert.Single(Assert.Single(inserted.ResultSets).Rows);
+            await tx.CommitAsync();
+        }
+
+        // RETURNING gives the generated key and the default, in the columns the result shows them in.
+        Assert.Equal([[Col("id")], [Col("body")], [Col("created")]], changes[1].ReturnedColumns.Select(c => c.ToArray()));
+        Assert.Equal(3, stored[0]);
+        Assert.Equal("it's new", stored[1]);
+        Assert.Equal(1L, await Scalar("SELECT count(*) FROM notes WHERE id = 3 AND created = DATE '2020-01-01'"));
+        Assert.Equal(0L, await Scalar("SELECT count(*) FROM notes WHERE id = 1"));
     }
 }

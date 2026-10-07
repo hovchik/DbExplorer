@@ -66,6 +66,6 @@ public partial class QueryViewModel
     {
         if (!ResultEditing.HasEdits(ResultSets)) return true;
         return await dialogs.ConfirmAsync(
-            "The results have edited values that are not committed yet. Run anyway and discard the edits?", "Discard and run");
+            "The results have changes that are not committed yet (edited, new or deleted rows). Run anyway and discard them?", "Discard and run");
     }
 }

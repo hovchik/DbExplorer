@@ -33,6 +33,13 @@ public partial class ObjectsViewModel(
     [ObservableProperty] private IReadOnlyList<DbForeignKey> _outgoingForeignKeys = [];
     [ObservableProperty] private IReadOnlyList<DbForeignKey> _incomingForeignKeys = [];
     [ObservableProperty] private string _definition = "";
+
+    /// <summary>The definition exactly as the server returned it; <see cref="Definition"/> shows the formatted copy
+    /// unless <see cref="ShowOriginal"/> is on. Formatting is display only: nothing is sent to the server.</summary>
+    [ObservableProperty] private string _originalDefinition = "";
+    private string _formattedDefinition = "";
+
+    [ObservableProperty] private bool _showOriginal;
     [ObservableProperty] private string _summary = "";
 
     [ObservableProperty] private decimal _profileSampleRows = 10_000;
@@ -186,6 +193,32 @@ public partial class ObjectsViewModel(
         await dialogs.ShowGetDataAsync(queryService, _session, SelectedObject);
     }
 
+    partial void OnShowOriginalChanged(bool value) => ShowDefinition();
+
+    private void ShowDefinition() => Definition = ShowOriginal ? OriginalDefinition : _formattedDefinition;
+
+    /// <summary>A status line ("loading…", an error) shown as is, with nothing to format or copy.</summary>
+    private void SetDefinitionMessage(string message)
+    {
+        OriginalDefinition = "";
+        _formattedDefinition = message;
+        Definition = message;
+    }
+
+    private void SetDefinition(string text, DbObjectType type)
+    {
+        OriginalDefinition = text;
+        try
+        {
+            _formattedDefinition = DefinitionFormatter.Format(text, type);
+        }
+        catch (Exception)
+        {
+            _formattedDefinition = text; // formatting is a nicety; never lose the definition over it
+        }
+        ShowDefinition();
+    }
+
     private void ApplyFilter()
     {
         if (_session is null)
@@ -241,7 +274,7 @@ public partial class ObjectsViewModel(
             Indexes = [];
             OutgoingForeignKeys = [];
             IncomingForeignKeys = [];
-            Definition = "";
+            SetDefinitionMessage("");
             return;
         }
 
@@ -257,20 +290,21 @@ public partial class ObjectsViewModel(
         Indexes = obj.IsTableLike
             ? _session.Snapshot.IndexesOf(obj.Database, obj.Schema, obj.Name).OrderBy(i => i.Name).ToList()
             : [];
-        Definition = "-- loading…";
+        SetDefinitionMessage("-- loading…");
 
         try
         {
             var text = await definitions.GetDefinitionAsync(_session, obj, ct);
-            if (!ct.IsCancellationRequested)
-                Definition = text ?? "-- Definition is not available (encrypted object or insufficient permissions).";
+            if (ct.IsCancellationRequested) return;
+            if (text is null) SetDefinitionMessage("-- Definition is not available (encrypted object or insufficient permissions).");
+            else SetDefinition(text, obj.Type);
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception ex)
         {
-            if (!ct.IsCancellationRequested) Definition = "-- Error: " + ex.Message;
+            if (!ct.IsCancellationRequested) SetDefinitionMessage("-- Error: " + ex.Message);
         }
     }
 }

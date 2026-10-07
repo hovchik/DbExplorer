@@ -25,6 +25,17 @@
           <SolidColorBrush x:Key="AppGridHeaderBrush">#0D000000</SolidColorBrush>
           <!-- An edited, not yet committed value in a result grid -->
           <SolidColorBrush x:Key="AppCellEditedBrush">#40F5A623</SolidColorBrush>
+          <!-- Objects tab: one colour per object type (ObjectTypeColors) -->
+          <SolidColorBrush x:Key="AppObjectTableBrush">#FFC25100</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectViewBrush">#FF2E7D32</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectMaterializedViewBrush">#FF00838F</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectForeignTableBrush">#FF8D6E63</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectProcedureBrush">#FF1565C0</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectFunctionBrush">#FF7B1FA2</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectTriggerBrush">#FFC62828</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSequenceBrush">#FF8A6800</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSynonymBrush">#FFAD1457</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectOtherBrush">#FF757575</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -44,6 +55,16 @@
           <SolidColorBrush x:Key="AppGridAltRowBrush">#08FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#12FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellEditedBrush">#4DB8860B</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectTableBrush">#FFF5A55A</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectViewBrush">#FF7BC67E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectMaterializedViewBrush">#FF4DD0E1</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectForeignTableBrush">#FFC4A99C</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectProcedureBrush">#FF6EB0F7</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectFunctionBrush">#FFC792EA</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectTriggerBrush">#FFF27878</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSequenceBrush">#FFE2C35C</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSynonymBrush">#FFF48FB1</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectOtherBrush">#FFA0A0A0</SolidColorBrush>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

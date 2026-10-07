@@ -33,7 +33,7 @@ public partial class QueryView : UserControl
 {
     private const int MaxLengthForLiveAnalysis = 400_000;
 
-    private static readonly Regex KeywordBeforeSpace = new(@"\b(FROM|JOIN|ON|INTO|UPDATE|EXEC|EXECUTE|CALL|APPLY|TABLE|WHERE|AND|OR|BY|SELECT|SET)\s$",
+    private static readonly Regex KeywordBeforeSpace = new(@"\b(FROM|JOIN|ON|INTO|UPDATE|EXEC|EXECUTE|CALL|APPLY|TABLE|WHERE|AND|OR|BY|SELECT|SET|CREATE|ALTER|DROP|REPLACE|UNIQUE|MATERIALIZED)\s$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>Right after "col = ", "col <> '", "col LIKE ", "col IN (" or a comma inside such a list: values of the column fit here.</summary>

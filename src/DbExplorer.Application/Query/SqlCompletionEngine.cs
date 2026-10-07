@@ -22,12 +22,18 @@ public enum CompletionKind
 
     /// <summary>A literal value seen in the column's data (after <c>column =</c>).</summary>
     Value,
+
+    /// <summary>A DDL statement template (CREATE DATABASE, ALTER TABLE ADD COLUMN, …), see <see cref="DdlTemplates"/>.</summary>
+    Ddl,
     Other
 }
 
 /// <param name="CaretOffset">Where the caret goes inside <paramref name="InsertText"/> after inserting (e.g. between
 /// the parentheses of a function); null puts it at the end.</param>
-public sealed record CompletionItem(string Label, string InsertText, CompletionKind Kind, string? Detail = null, int? CaretOffset = null)
+/// <param name="SelectionLength">How many characters from <paramref name="CaretOffset"/> to select after inserting, so typing
+/// replaces a placeholder such as <c>table_name</c>.</param>
+public sealed record CompletionItem(string Label, string InsertText, CompletionKind Kind, string? Detail = null, int? CaretOffset = null,
+    int SelectionLength = 0)
 {
     public string KindLabel => Kind.ToString().ToLowerInvariant();
 }
@@ -262,6 +268,7 @@ public sealed class SqlCompletionEngine
         else
         {
             if (prefix.Length == 0 && !explicitRequest) return CompletionResult.Empty;
+            if (TryCompleteDdlPhrase(statement, statementStart, start, caret, prefix, out var ddl)) return ddl;
             var context = DetectContext(statement, Math.Max(0, start - statementStart), out var clause, out var insertTable);
             if (context == SqlContext.AliasName && !explicitRequest) return CompletionResult.Empty;
             items = ContextItems(context, clause, insertTable, references, ctes, prefix, text);
@@ -375,6 +382,29 @@ public sealed class SqlCompletionEngine
     {
         var quoted = "'" + value.Replace("'", "''") + "'";
         return IsSqlServer && !IsPostgres && value.Any(c => c > 127) ? "N" + quoted : quoted;
+    }
+
+    /// <summary>
+    /// While the statement so far is only part of a DDL phrase ("CREATE ", "CREATE D", "DROP MAT", "CREATE OR "), the
+    /// templates continuing it, replacing the whole phrase. Once the phrase names an object ("ALTER TABLE ") the normal
+    /// context takes over, so the table list still follows ALTER TABLE and DROP TABLE.
+    /// </summary>
+    private bool TryCompleteDdlPhrase(string statement, int statementStart, int wordStart, int caret, string prefix, out CompletionResult result)
+    {
+        result = CompletionResult.Empty;
+        var before = SqlLexer.Tokenize(statement[..Math.Clamp(wordStart - statementStart, 0, statement.Length)])
+            .Where(t => !t.IsTrivia).ToList();
+        if (before.Count == 0 || before.Any(t => t.Kind != SqlTokenKind.Word)) return false;
+
+        var lead = string.Join(' ', before.Select(t => t.Text.ToUpperInvariant()));
+        if (DdlTemplates.Labels.Contains(lead)) return false;
+        var phrase = lead + " " + prefix;
+        var items = DdlTemplates.For(_providerKey)
+            .Where(i => i.Label.StartsWith(phrase, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (items.Count == 0) return false;
+        result = new CompletionResult(statementStart + before[0].Start, items);
+        return true;
     }
 
     /// <summary>What kind of thing belongs at <paramref name="position"/> of the statement.</summary>
@@ -512,9 +542,11 @@ public sealed class SqlCompletionEngine
             case SqlContext.StatementStart:
                 Add(Snippets(), 0);
                 Add(KeywordItems(["SELECT", "INSERT INTO", "UPDATE", "DELETE FROM", "WITH", "EXEC", "DECLARE", "SET", "IF", "BEGIN",
-                                  "BEGIN TRANSACTION", "COMMIT", "ROLLBACK", "CREATE TABLE", "CREATE VIEW", "CREATE PROCEDURE",
-                                  "CREATE FUNCTION", "CREATE INDEX", "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "MERGE", "PRINT"]), 1);
-                Add(AllKeywords(), 3);
+                                  "BEGIN TRANSACTION", "COMMIT", "ROLLBACK"]), 1);
+                Add(DdlTemplates.For(_providerKey), 1);
+                Add(KeywordItems(IsSqlServer ? ["MERGE", "PRINT"] : []), 1);
+                // CREATE TABLE, DROP TABLE, … come as templates above, not again as bare keywords.
+                Add(AllKeywords().Where(k => !DdlTemplates.Labels.Contains(k.Label)), 3);
                 break;
 
             case SqlContext.TableName:

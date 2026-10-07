@@ -99,7 +99,10 @@ public sealed partial class ChangeRecorderViewModel(ChangeRecorder recorder, IDi
         await BusyAsync(async ct =>
         {
             var progress = new Progress<string>(s => Status = s);
-            _start = await recorder.StartAsync(session, Database, Options, progress, ct);
+            var start = await recorder.StartAsync(session, Database, Options, progress, ct);
+            // Reconnected meanwhile: the recording belongs to the old session, not to the new one.
+            if (!ReferenceEquals(session, _session)) return;
+            _start = start;
             IsRecording = true;
             Tables = [];
             _allRows = [];
@@ -129,6 +132,7 @@ public sealed partial class ChangeRecorderViewModel(ChangeRecorder recorder, IDi
         {
             var progress = new Progress<string>(s => Status = s);
             var result = await recorder.StopAsync(session, start, Options, progress, ct);
+            if (!ReferenceEquals(session, _session)) return;
             IsRecording = false;
             Tables = result.Tables;
             _allRows = result.Rows.Select(r => new RecordedRow($"{r.Schema}.{r.Table}", r.Kind.ToString(), r.Key,

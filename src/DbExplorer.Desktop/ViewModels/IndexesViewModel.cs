@@ -24,6 +24,8 @@ public partial class IndexesViewModel : ViewModelBase, ISessionAware
         _session = session;
         _all = [];
         Indexes = [];
+        // A load of the previous session may still be running; its result is dropped and must not block this one.
+        IsLoading = false;
         LoadCommand.NotifyCanExecuteChanged();
     }
 
@@ -31,24 +33,26 @@ public partial class IndexesViewModel : ViewModelBase, ISessionAware
 
     private bool CanLoad => _session is not null && !IsLoading;
 
-    [RelayCommand(CanExecute = nameof(CanLoad))]
+    [RelayCommand(CanExecute = nameof(CanLoad), AllowConcurrentExecutions = true)]
     private async Task LoadAsync()
     {
-        if (_session is null) return;
+        if (_session is not { } session) return;
         IsLoading = true;
         Status = "Loading…";
         try
         {
-            _all = await _session.Provider.GetIndexesAsync(IncludeFragmentation);
+            var all = await session.Provider.GetIndexesAsync(IncludeFragmentation);
+            if (!ReferenceEquals(session, _session)) return;
+            _all = all;
             ApplyFilter();
         }
         catch (Exception ex)
         {
-            Status = "Error: " + ex.Message;
+            if (ReferenceEquals(session, _session)) Status = "Error: " + ex.Message;
         }
         finally
         {
-            IsLoading = false;
+            if (ReferenceEquals(session, _session)) IsLoading = false;
         }
     }
 

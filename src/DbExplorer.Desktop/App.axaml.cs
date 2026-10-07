@@ -46,6 +46,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<RelationshipsViewModel>();
         services.AddSingleton<LabViewModel>();
         services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<TeamViewModel>();
 
         var provider = services.BuildServiceProvider();
 
@@ -56,6 +57,7 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var vm = provider.GetRequiredService<MainWindowViewModel>();
+            vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
             var window = new MainWindow { DataContext = vm };
             provider.GetRequiredService<DialogService>().Owner = window;
             desktop.MainWindow = window;

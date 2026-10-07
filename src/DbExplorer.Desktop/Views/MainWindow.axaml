@@ -47,6 +47,7 @@
               </MenuFlyout>
             </Button.Flyout>
           </Button>
+          <Button Content="{Binding Team.ButtonText}" ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}" />
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

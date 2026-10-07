@@ -477,6 +477,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
         Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
         Command("Import connections…", ImportConnectionsCommand);
+        Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
 
         if (!IsConnected && !IsBusy)
         {

@@ -16,10 +16,34 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
-            if (_vm is not null) _vm.Query.RunFinished -= OnRunFinished;
+            if (_vm is not null)
+            {
+                _vm.Query.RunFinished -= OnRunFinished;
+                _vm.ShowTeamRequested -= OnShowTeam;
+            }
             _vm = DataContext as MainWindowViewModel;
-            if (_vm is not null) _vm.Query.RunFinished += OnRunFinished;
+            if (_vm is not null)
+            {
+                _vm.Query.RunFinished += OnRunFinished;
+                _vm.ShowTeamRequested += OnShowTeam;
+            }
         };
+    }
+
+    private TeamWindow? _team;
+
+    /// <summary>One Team window, left open beside the main one while the user works.</summary>
+    private void OnShowTeam(TeamViewModel team)
+    {
+        if (_team is { } open)
+        {
+            open.Activate();
+            return;
+        }
+        _team = new TeamWindow { DataContext = team };
+        _team.Closed += (_, _) => _team = null;
+        _team.Show(this);
+        _ = team.RefreshAsync();
     }
 
     /// <summary>

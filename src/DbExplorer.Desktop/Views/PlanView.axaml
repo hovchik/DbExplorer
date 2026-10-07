@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:controls="using:DbExplorer.Desktop.Controls"
+			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+			 xmlns:plans="using:DbExplorer.Application.Query.Plans"
+			 x:Class="DbExplorer.Desktop.Views.PlanView"
+			 x:DataType="vm:PlanViewModel">
+  <UserControl.Styles>
+	<Style Selector="Button.warning">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0" />
+	  <Setter Property="Padding" Value="4,1" />
+	  <Setter Property="HorizontalAlignment" Value="Stretch" />
+	  <Setter Property="HorizontalContentAlignment" Value="Left" />
+	</Style>
+	<Style Selector="TextBlock.factName">
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="FontSize" Value="11.5" />
+	</Style>
+  </UserControl.Styles>
+  <DockPanel>
+	<!-- What was planned and how it went, with zoom and the raw plan -->
+	<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+	  <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="1">
+		<TextBlock Text="{Binding Summary}" FontWeight="SemiBold" FontSize="12.5" TextTrimming="CharacterEllipsis" />
+		<TextBlock Text="{Binding Statement}" IsVisible="{Binding Statement, Converter={x:Static ObjectConverters.IsNotNull}}"
+				   Foreground="{DynamicResource AppHintForegroundBrush}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+				   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace"
+				   ToolTip.Tip="{Binding Statement}" />
+	  </StackPanel>
+	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+		<Button Classes="compact" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (Ctrl+wheel)" />
+		<Button Classes="compact" Content="{Binding ZoomText}" Command="{Binding ResetZoomCommand}" MinWidth="52" ToolTip.Tip="Reset zoom" />
+		<Button Classes="compact" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (Ctrl+wheel)" />
+		<Button Classes="compact" Content="Fit" Click="OnFit" ToolTip.Tip="Zoom so the whole plan fits" />
+		<Button Classes="compact" Content="Copy plan" Click="OnCopyRaw" ToolTip.Tip="Copy the plan as the database returned it (JSON / showplan XML)" />
+		<Button Classes="compact" Content="Save…" Click="OnSave" ToolTip.Tip="Save the plan (.sqlplan opens in SQL Server Management Studio; .json in explain.dalibo.com and other visualizers)" />
+	  </StackPanel>
+	</Grid>
+
+	<!-- Warnings: click one to select its operator -->
+	<Expander DockPanel.Dock="Top" IsExpanded="True" IsVisible="{Binding HasWarnings}" Padding="4,2" Margin="0,0,0,4" MinHeight="0"
+			  HorizontalAlignment="Stretch" Header="{Binding WarningsHeader}">
+	  <ScrollViewer MaxHeight="84">
+		<ItemsControl ItemsSource="{Binding Warnings}">
+		  <ItemsControl.ItemTemplate>
+			<DataTemplate x:DataType="plans:PlanWarning">
+			  <Button Classes="warning" Command="{Binding $parent[UserControl].DataContext.ShowWarningCommand}" CommandParameter="{Binding}"
+					  ToolTip.Tip="Show this operator">
+				<StackPanel Orientation="Horizontal" Spacing="6">
+				  <TextBlock Text="{Binding Icon}" Foreground="{DynamicResource AppPlanWarningBrush}" FontWeight="Bold" Width="14" TextAlignment="Center" />
+				  <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12" />
+				</StackPanel>
+			  </Button>
+			</DataTemplate>
+		  </ItemsControl.ItemTemplate>
+		</ItemsControl>
+	  </ScrollViewer>
+	</Expander>
+
+	<Grid ColumnDefinitions="*,4,300">
+	  <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+		<ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+		  <controls:PlanDiagramControl x:Name="Diagram" Layout="{Binding Layout}" Zoom="{Binding Zoom}"
+									   SelectedNode="{Binding SelectedNode}" HorizontalAlignment="Left" VerticalAlignment="Top" />
+		</ScrollViewer>
+	  </Border>
+	  <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+	  <!-- The selected operator -->
+	  <Border Grid.Column="2" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" Padding="10,8">
+		<ScrollViewer HorizontalScrollBarVisibility="Disabled">
+		  <StackPanel Spacing="6">
+			<TextBlock Text="{Binding SelectedTitle}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
+			<SelectableTextBlock Text="{Binding SelectedObject}" IsVisible="{Binding SelectedObject, Converter={x:Static ObjectConverters.IsNotNull}}"
+								 Foreground="{DynamicResource AppHintForegroundBrush}" TextWrapping="Wrap" />
+			<ItemsControl ItemsSource="{Binding SelectedWarnings}" IsVisible="{Binding SelectedHasWarnings}">
+			  <ItemsControl.ItemTemplate>
+				<DataTemplate x:DataType="plans:PlanWarning">
+				  <Border Background="{DynamicResource AppSubtleBackgroundBrush}" BorderBrush="{DynamicResource AppPlanWarningBrush}"
+						  BorderThickness="2,0,0,0" Padding="6,4" Margin="0,0,0,4">
+					<SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12" />
+				  </Border>
+				</DataTemplate>
+			  </ItemsControl.ItemTemplate>
+			</ItemsControl>
+			<ItemsControl ItemsSource="{Binding SelectedFacts}">
+			  <ItemsControl.ItemTemplate>
+				<DataTemplate x:DataType="vm:PlanFact">
+				  <Grid ColumnDefinitions="120,*" Margin="0,1">
+					<TextBlock Classes="factName" Text="{Binding Name}" TextWrapping="Wrap" />
+					<SelectableTextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
+				  </Grid>
+				</DataTemplate>
+			  </ItemsControl.ItemTemplate>
+			</ItemsControl>
+			<Expander Header="All properties" Padding="0,4" HorizontalAlignment="Stretch" IsVisible="{Binding HasSelection}">
+			  <ItemsControl ItemsSource="{Binding SelectedProperties}">
+				<ItemsControl.ItemTemplate>
+				  <DataTemplate x:DataType="vm:PlanFact">
+					<Grid ColumnDefinitions="120,*" Margin="0,1">
+					  <TextBlock Classes="factName" Text="{Binding Name}" TextWrapping="Wrap" />
+					  <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" FontSize="11.5" />
+					</Grid>
+				  </DataTemplate>
+				</ItemsControl.ItemTemplate>
+			  </ItemsControl>
+			</Expander>
+		  </StackPanel>
+		</ScrollViewer>
+	  </Border>
+	</Grid>
+  </DockPanel>
+</UserControl>

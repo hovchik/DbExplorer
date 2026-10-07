@@ -2,6 +2,7 @@ using DbExplorer.Application;
 using DbExplorer.Application.Lab;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
@@ -110,6 +111,36 @@ public sealed class PostgresLabIntegrationTests : IAsyncLifetime
         Assert.NotNull(estimate);
         Assert.True(estimate!.Rows >= 1);
         Assert.NotNull(estimate.Cost);
+    }
+
+    [SkippableFact]
+    public async Task Graphical_plan_reads_the_estimated_plan_of_each_statement()
+    {
+        Skip.If(Settings is null);
+        const string sql = "SELECT o.* FROM orders o JOIN customers c ON c.id = o.customer_id;\nSELECT count(*) FROM settings";
+        var result = await _session!.Provider.ExecuteScriptAsync(PlanReader.BuildScript(sql, "PostgreSQL", analyze: false), null, 30, CancellationToken.None);
+
+        var plans = PlanReader.Read(result.ResultSets, "PostgreSQL", sql);
+
+        Assert.Equal(2, plans.Count);
+        Assert.All(plans, p => Assert.False(p.IsActual));
+        Assert.Contains(plans[0].Nodes, n => n.Object?.StartsWith("public.orders", StringComparison.Ordinal) == true);
+        Assert.Equal("SELECT count(*) FROM settings", plans[1].Statement);
+    }
+
+    [SkippableFact]
+    public async Task Graphical_plan_measures_a_write_and_rolls_it_back()
+    {
+        Skip.If(Settings is null);
+        const string sql = "DELETE FROM orders WHERE state = 'open'";
+        var result = await _session!.Provider.ExecuteScriptAsync(PlanReader.BuildScript(sql, "PostgreSQL", analyze: true), null, 30, CancellationToken.None);
+
+        var plan = Assert.Single(PlanReader.Read(result.ResultSets, "PostgreSQL", sql));
+        Assert.True(plan.IsActual);
+        Assert.NotNull(plan.ExecutionTimeMs);
+        Assert.Contains(plan.Nodes, n => n.ActualRows == 3);
+        var count = await _session.Provider.ExecuteScriptAsync("SELECT count(*) FROM orders", null, 30, CancellationToken.None);
+        Assert.Equal(4L, Convert.ToInt64(count.ResultSets[0].Rows[0][0]));
     }
 
     [SkippableFact]

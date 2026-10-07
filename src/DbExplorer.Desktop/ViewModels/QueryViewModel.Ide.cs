@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Models;
@@ -143,19 +144,29 @@ public partial class QueryViewModel
         Status = analyze ? "Running and measuring…" : "Getting the estimated plan…";
         try
         {
-            var script = QueryPlanTools.BuildExplainScript(sql, key, analyze);
-            var result = await queryService.ExecuteScriptAsync(session, script, TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
-            // SQL Server's STATISTICS PROFILE interleaves the statements' own results with the plans; keep the plans.
-            var plans = result.ResultSets
-                .Where(rs => key != "SqlServer" || rs.Columns.Contains("StmtText", StringComparer.OrdinalIgnoreCase))
-                .ToList();
-            ResultSets = plans.Select((rs, i) => ResultSetView.From(plans.Count == 1 ? "Plan" : $"Plan {i + 1}", rs, session)).ToList();
+            var result = await queryService.ExecuteScriptAsync(session, PlanReader.BuildScript(sql, key, analyze), TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
+            IReadOnlyList<ExecutionPlan> plans;
+            try
+            {
+                plans = PlanReader.Read(result.ResultSets, key, sql);
+            }
+            catch (Exception ex) when (PlanReader.IsUnreadable(ex))
+            {
+                plans = [];
+            }
 
-            var insights = QueryPlanTools.Insights(plans.Select(p => (p.Columns, p.Rows)).ToList(), key);
-            foreach (var insight in insights) Messages.Add("💡 " + insight);
-            foreach (var m in result.Messages) Messages.Add(m);
-            Status = $"{(analyze ? "Measured plan" : "Estimated plan")} in {result.Elapsed.TotalMilliseconds:N0} ms" +
-                     (insights.Count > 0 ? $" · {insights.Count} hint(s) in Messages" : "");
+            if (plans.Count > 0)
+                ShowPlans(session, plans, result, analyze);
+            else if (!analyze)
+                // A plan this version cannot draw: show the engine's own plan rows, as before.
+                await ShowPlanRowsAsync(session, sql, analyze, _runCts.Token);
+            else
+            {
+                // Already run once; running it again for the rows would repeat its work.
+                ResultSets = result.ResultSets.Select((rs, i) => ResultSetView.From($"Plan {i + 1}", rs, session)).ToList();
+                foreach (var m in result.Messages) Messages.Add(m);
+                Status = $"Measured in {result.Elapsed.TotalMilliseconds:N0} ms (the plan could not be drawn)";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -170,6 +181,53 @@ public partial class QueryViewModel
         {
             IsRunning = false;
         }
+    }
+
+    /// <summary>One Plan tab per statement (the drawn plan), then a Plan rows tab with every operator as a grid row.
+    /// Warnings go to Messages too.</summary>
+    private void ShowPlans(DatabaseSession session, IReadOnlyList<ExecutionPlan> plans, QueryExecutionResult result, bool analyze)
+    {
+        var views = plans.Select((plan, i) => new ResultSetView(plans.Count == 1 ? "Plan" : $"Plan {i + 1}", [], [])
+        {
+            Plan = new PlanViewModel(plan),
+            Connection = ResultSetView.DescribeConnection(session)
+        }).ToList();
+
+        var columns = plans.Count == 1 ? PlanTable.Columns : ["Statement", .. PlanTable.Columns];
+        var rows = plans.SelectMany((plan, i) => PlanTable.Rows(plan)
+            .Select(r => plans.Count == 1 ? r : (IReadOnlyList<object?>)[i + 1, .. r])).ToList();
+        views.Add(ResultSetView.From("Plan rows", new QueryResultSet { Columns = columns, Rows = rows, TotalRowCount = rows.Count }, session));
+        ResultSets = views;
+
+        var warnings = 0;
+        for (var i = 0; i < plans.Count; i++)
+            foreach (var warning in plans[i].Warnings)
+            {
+                Messages.Add("⚠ " + (plans.Count == 1 ? "" : $"Statement {i + 1}: ") + warning.Message);
+                warnings++;
+            }
+        foreach (var m in result.Messages) Messages.Add(m);
+        Status = $"{(analyze ? "Measured plan" : "Estimated plan")} in {result.Elapsed.TotalMilliseconds:N0} ms" +
+                 (warnings > 0 ? $" · {warnings} warning(s), click one in the Plan tab to find its operator" : "");
+    }
+
+    /// <summary>The plan as the engine's own rows (SHOWPLAN_ALL / EXPLAIN text) with hints, when it cannot be drawn.</summary>
+    private async Task ShowPlanRowsAsync(DatabaseSession session, string sql, bool analyze, CancellationToken ct)
+    {
+        var key = session.Provider.ProviderKey;
+        var script = QueryPlanTools.BuildExplainScript(sql, key, analyze);
+        var result = await queryService.ExecuteScriptAsync(session, script, TargetDatabase, TimeoutSeconds * 5, ct);
+        // SQL Server's STATISTICS PROFILE interleaves the statements' own results with the plans; keep the plans.
+        var plans = result.ResultSets
+            .Where(rs => key != "SqlServer" || rs.Columns.Contains("StmtText", StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        ResultSets = plans.Select((rs, i) => ResultSetView.From(plans.Count == 1 ? "Plan" : $"Plan {i + 1}", rs, session)).ToList();
+
+        var insights = QueryPlanTools.Insights(plans.Select(p => (p.Columns, p.Rows)).ToList(), key);
+        foreach (var insight in insights) Messages.Add("💡 " + insight);
+        foreach (var m in result.Messages) Messages.Add(m);
+        Status = $"{(analyze ? "Measured plan" : "Estimated plan")} in {result.Elapsed.TotalMilliseconds:N0} ms" +
+                 (insights.Count > 0 ? $" · {insights.Count} hint(s) in Messages" : "");
     }
 
     /// <summary>The table/view/routine at <paramref name="offset"/> opened as its CREATE script in a new tab.</summary>

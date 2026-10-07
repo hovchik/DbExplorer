@@ -174,6 +174,11 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
     /// <summary>Shows the row a foreign key value refers to. Null where navigation is not offered.</summary>
     public Action<ResultSetView, ResultReference, ResultRow>? OpenReference { get; init; }
 
+    /// <summary>Set on a query's Plan tab: the tab draws this plan instead of a grid.</summary>
+    public PlanViewModel? Plan { get; init; }
+
+    public bool IsGrid => Plan is null;
+
     public bool CanEdit(int column) => CommitEdits is not null && Source?.CanEdit(column) == true;
 
     /// <summary>Rows can be added to and deleted from this result (it reads one table whose key is in the result).</summary>

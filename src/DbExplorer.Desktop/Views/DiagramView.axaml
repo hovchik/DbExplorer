@@ -53,7 +53,8 @@
 
     <Grid x:Name="Body" ColumnDefinitions="*,Auto,0">
       <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-        <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      Background="{DynamicResource AppCodeBackgroundBrush}">
           <controls:ErDiagramControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
                                      SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
                                      HorizontalAlignment="Left" VerticalAlignment="Top" />

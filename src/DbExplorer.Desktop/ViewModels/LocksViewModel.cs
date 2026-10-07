@@ -31,7 +31,12 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private IReadOnlyList<DbLock> _locks = [];
     [ObservableProperty] private DbLock? _selectedLock;
     [ObservableProperty] private bool _showTree;
-    [ObservableProperty] private IReadOnlyList<BlockingNode> _blockingTree = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBlockingTree))]
+    private IReadOnlyList<BlockingNode> _blockingTree = [];
+
+    /// <summary>For the view: the tree is often an array, which has no Count for a binding to read.</summary>
+    public bool HasBlockingTree => BlockingTree.Count > 0;
     [ObservableProperty] private BlockingNode? _selectedNode;
     [ObservableProperty] private string? _selectedSql;
 

@@ -36,7 +36,7 @@
       </TreeView>
       <TextBlock Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
                  Text="No blocking right now. Press Refresh (or enable auto-refresh) to check again."
-                 IsVisible="{Binding !BlockingTree.Count}" />
+                 IsVisible="{Binding !HasBlockingTree}" />
     </Grid>
 
     <Grid Grid.Row="2" IsVisible="{Binding ShowRecorder}" ColumnDefinitions="360,6,*">

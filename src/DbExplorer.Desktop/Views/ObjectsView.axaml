@@ -62,11 +62,11 @@
 
     <Grid Grid.Column="2" RowDefinitions="3*,6,2*">
       <!-- The selected object's name sits on the empty right side of the tab strip -->
-      <DockPanel Grid.Row="0" Margin="380,0,4,0" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1">
-        <controls:ObjectTypeBadge DockPanel.Dock="Right" Margin="8,0,0,0" Type="{Binding SelectedObject.Type}"
-                                  IsVisible="{Binding SelectedObject, Converter={x:Static ObjectConverters.IsNotNull}}" />
-        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding SelectedObject.FullName}"
-                   ToolTip.Tip="{Binding SelectedObject.FullName}" VerticalAlignment="Center" />
+      <DockPanel Grid.Row="0" Margin="380,0,4,0" Height="34" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1"
+                 DataContext="{Binding SelectedObject}" IsVisible="{Binding Converter={x:Static ObjectConverters.IsNotNull}}">
+        <controls:ObjectTypeBadge DockPanel.Dock="Right" Margin="8,0,0,0" Type="{Binding Type}" />
+        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding FullName}"
+                   ToolTip.Tip="{Binding FullName}" VerticalAlignment="Center" />
       </DockPanel>
       <TabControl Grid.Row="0">
         <TabItem Header="Columns">
@@ -74,9 +74,11 @@
                     IsReadOnly="True" AutoGenerateColumns="False"
                     CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="#" Binding="{Binding Ordinal}" Width="Auto" />
-              <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="*" />
-              <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto" />
+              <!-- Star widths for the two text columns: an Auto Type column that grew after the rows arrived used to
+                   push Null / PK / Computed out of view. -->
+              <DataGridTextColumn Header="#" Binding="{Binding Ordinal}" Width="Auto" MinWidth="48" />
+              <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="3*" MinWidth="120" />
+              <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="2*" MinWidth="120" />
               <DataGridCheckBoxColumn Header="Null" Binding="{Binding IsNullable}" Width="Auto" />
               <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
               <DataGridCheckBoxColumn Header="Computed" Binding="{Binding IsComputed}" Width="Auto" />
@@ -89,7 +91,7 @@
                     CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
             <DataGrid.Columns>
               <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-              <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" />
+              <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" MinWidth="112" />
               <DataGridCheckBoxColumn Header="Unique" Binding="{Binding IsUnique}" Width="Auto" />
               <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey}" Width="Auto" />
               <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
@@ -106,7 +108,7 @@
               <DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
                 <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
-                <DataGridTextColumn Header="References" Binding="{Binding ReferencedSchema}" Width="Auto" />
+                <DataGridTextColumn Header="References" Binding="{Binding ReferencedSchema}" Width="Auto" MinWidth="96" />
                 <DataGridTextColumn Header="Table" Binding="{Binding ReferencedTable}" Width="*" />
                 <DataGridTextColumn Header="Ref. Columns" Binding="{Binding ReferencedColumns}" Width="*" />
                 <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding IsDisabled}" Width="Auto" />
@@ -118,7 +120,7 @@
                       CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
               <DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-                <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
+                <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" MinWidth="80" />
                 <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="*" />
                 <DataGridTextColumn Header="Columns" Binding="{Binding Columns}" Width="*" />
                 <DataGridTextColumn Header="Ref. Columns" Binding="{Binding ReferencedColumns}" Width="*" />

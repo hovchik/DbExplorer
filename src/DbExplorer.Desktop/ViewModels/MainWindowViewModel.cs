@@ -33,6 +33,7 @@ public partial class MainWindowViewModel : ViewModelBase
         LocksViewModel locks,
         ActivityViewModel activity,
         DiagramViewModel diagram,
+        TableDesignerViewModel tableDesigner,
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
         LabViewModel lab)
@@ -50,11 +51,12 @@ public partial class MainWindowViewModel : ViewModelBase
         Locks = locks;
         Activity = activity;
         Diagram = diagram;
+        TableDesigner = tableDesigner;
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Lab = lab;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, query, comparer, lab];
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, query, comparer, lab];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -76,6 +78,16 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
         };
+        tableDesigner.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
+        tableDesigner.OpenObjectRequested += table =>
+        {
+            SelectedTab = AppTab.Objects;
+            objects.Reveal(table);
+        };
         dataSearch.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;
@@ -96,6 +108,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public LocksViewModel Locks { get; }
     public ActivityViewModel Activity { get; }
     public DiagramViewModel Diagram { get; }
+    public TableDesignerViewModel TableDesigner { get; }
 
     /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
     [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
@@ -451,6 +464,7 @@ public enum AppTab
     SearchNamesAndCode,
     SearchData,
     Diagram,
+    TableDesigner,
     Indexes,
     Locks,
     Activity,

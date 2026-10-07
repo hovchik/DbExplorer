@@ -75,6 +75,9 @@
       <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
         <views:DiagramView DataContext="{Binding Diagram}" />
       </TabItem>
+      <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
+        <views:TableDesignerView DataContext="{Binding TableDesigner}" />
+      </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />
       </TabItem>

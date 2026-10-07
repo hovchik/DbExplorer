@@ -10,6 +10,11 @@
 	  <TextBlock x:Name="BannerText" Foreground="White" FontWeight="Bold" />
 	</Border>
 	<TextBlock x:Name="MessageText" TextWrapping="Wrap" />
+	<Border x:Name="DetailsBox" IsVisible="False" CornerRadius="4" Padding="8,6" Background="{DynamicResource AppCodeBackgroundBrush}">
+	  <ScrollViewer MaxHeight="380" HorizontalScrollBarVisibility="Auto">
+		<SelectableTextBlock x:Name="DetailsText" FontSize="12" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
+	  </ScrollViewer>
+	</Border>
 	<StackPanel x:Name="TypePanel" Spacing="6" IsVisible="False">
 	  <TextBlock x:Name="TypePrompt" Classes="hint" TextWrapping="Wrap" />
 	  <TextBox x:Name="TypeBox" />

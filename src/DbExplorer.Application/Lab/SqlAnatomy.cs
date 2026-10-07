@@ -117,6 +117,32 @@ public static class SqlAnatomy
             : DmlKind.Other;
     }
 
+    /// <summary>
+    /// The transaction keyword(s) a statement starts with ("COMMIT", "BEGIN TRANSACTION", "START TRANSACTION", …) when it
+    /// starts, commits or rolls back a transaction; null otherwise. Any ROLLBACK counts (also TO SAVEPOINT), and a T-SQL
+    /// BEGIN … END block or BEGIN TRY does not. Comments and strings are skipped by the lexer.
+    /// </summary>
+    public static string? TransactionControl(string sql)
+    {
+        var tokens = SqlLexer.Tokenize(sql).Where(t => !t.IsTrivia).ToList();
+        if (tokens.Count == 0 || tokens[0].Kind != SqlTokenKind.Word) return null;
+        var first = tokens[0].Text.ToUpperInvariant();
+        var next = tokens.Count > 1 ? tokens[1] : (SqlToken?)null;
+        var nextWord = next is { Kind: SqlTokenKind.Word } n ? n.Text.ToUpperInvariant() : null;
+        string With(string? word) => word is null ? first : first + " " + word;
+        return first switch
+        {
+            "COMMIT" or "ROLLBACK" or "ABORT" => With(nextWord is "TRAN" or "TRANSACTION" or "WORK" or "PREPARED" ? nextWord : null),
+            // END / END TRANSACTION / END WORK (PostgreSQL); an END of a block never starts a statement of its own.
+            "END" when next is null or { Kind: SqlTokenKind.Semicolon } || nextWord is "TRAN" or "TRANSACTION" or "WORK" => With(nextWord),
+            "BEGIN" when next is null or { Kind: SqlTokenKind.Semicolon } ||
+                         nextWord is "TRAN" or "TRANSACTION" or "WORK" or "ISOLATION" or "DISTRIBUTED" or "READ" or "NOT" or "DEFERRABLE" => With(nextWord),
+            "START" when nextWord is "TRANSACTION" => With(nextWord),
+            "PREPARE" when nextWord is "TRANSACTION" => With(nextWord),
+            _ => null
+        };
+    }
+
     /// <summary>Index of the first token after a leading WITH … AS ( … ), … list.</summary>
     private static int SkipWith(List<Tok> tokens)
     {

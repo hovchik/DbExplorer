@@ -113,4 +113,27 @@ public class SqlAnatomyTests
         Assert.Equal(DmlKind.Merge, SqlAnatomy.KindOf("MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE;"));
         Assert.Equal(DmlKind.Other, SqlAnatomy.KindOf("ALTER TABLE t ADD c int"));
     }
+
+    [Theory]
+    [InlineData("COMMIT", "COMMIT")]
+    [InlineData("commit transaction", "COMMIT TRANSACTION")]
+    [InlineData("COMMIT PREPARED 'x'", "COMMIT PREPARED")]
+    [InlineData("ROLLBACK TO SAVEPOINT a", "ROLLBACK")]
+    [InlineData("ABORT", "ABORT")]
+    [InlineData("END", "END")]
+    [InlineData("END WORK", "END WORK")]
+    [InlineData("BEGIN", "BEGIN")]
+    [InlineData("BEGIN;", "BEGIN")]
+    [InlineData("BEGIN TRAN", "BEGIN TRAN")]
+    [InlineData("BEGIN ISOLATION LEVEL SERIALIZABLE", "BEGIN ISOLATION")]
+    [InlineData("BEGIN DISTRIBUTED TRANSACTION", "BEGIN DISTRIBUTED")]
+    [InlineData("/* go */ -- now\n START TRANSACTION", "START TRANSACTION")]
+    [InlineData("PREPARE TRANSACTION 'x'", "PREPARE TRANSACTION")]
+    [InlineData("BEGIN UPDATE t SET a = 1 END", null)]
+    [InlineData("BEGIN TRY SELECT 1 END TRY BEGIN CATCH END CATCH", null)]
+    [InlineData("UPDATE t SET note = 'COMMIT'", null)]
+    [InlineData("-- COMMIT\nSELECT 1", null)]
+    [InlineData("SAVE TRANSACTION a", null)]
+    public void Recognises_transaction_control(string sql, string? keyword) =>
+        Assert.Equal(keyword, SqlAnatomy.TransactionControl(sql));
 }

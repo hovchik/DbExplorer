@@ -113,8 +113,9 @@ internal static class SqlServerQueries
                    ELSE '' END AS [DataType],
                CASE
                    WHEN p.parameter_id = 0 THEN 3 -- ReturnValue
-                   WHEN p.is_output = 1 THEN 2    -- Output (also covers InputOutput; SQL Server has no separate flag)
+                   WHEN p.is_output = 1 THEN 1    -- InputOutput: an OUTPUT parameter also takes the value passed in
                    ELSE 0 END AS [Direction],
+               -- Known for CLR routines only: T-SQL parameter defaults are not kept in the catalog (always 0).
                p.has_default_value AS [HasDefault],
                p.parameter_id AS [Ordinal]
         FROM sys.parameters p

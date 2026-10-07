@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DbExplorer.Core.Connections;
+using DbExplorer.Core.Models;
 using DbExplorer.Core.Search;
 using DbExplorer.Providers.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -50,6 +51,7 @@ public sealed class SqlServerProviderIntegrationTests : IAsyncLifetime
                 CREATE TABLE dbo.Numbers (Id int PRIMARY KEY, Amount decimal(38, 0), Name nvarchar(50));
                 INSERT INTO dbo.Numbers VALUES (1, 12345678901234567890123456789, N'big'), (2, 42, N'small');
                 """);
+            await Exec(cn, "CREATE PROCEDURE dbo.Twice @n int OUTPUT AS SET @n = @n * 2;");
         }
         _provider = new SqlServerProvider(_profile);
     }
@@ -102,5 +104,18 @@ public sealed class SqlServerProviderIntegrationTests : IAsyncLifetime
 
         try { await first; } catch (Exception) { /* cancelled: its own outcome does not matter here */ }
         Assert.Contains(await second, c => c.Database == Database && c.Table == "Numbers");
+    }
+
+    [SkippableFact]
+    public async Task Output_parameters_send_their_value_in()
+    {
+        Skip.If(Settings is null);
+        var proc = new DbObject { Database = Database, Schema = "dbo", Name = "Twice", Type = DbObjectType.Procedure };
+        var parameters = await _provider!.GetRoutineParametersAsync(proc);
+        var n = Assert.Single(parameters, p => p.Direction != DbParameterDirection.ReturnValue);
+        Assert.Equal(("@n", DbParameterDirection.InputOutput), (n.Name, n.Direction));
+
+        var result = await _provider.ExecuteRoutineAsync(proc, parameters, new Dictionary<string, object?> { ["@n"] = "21" }, 30);
+        Assert.Equal("42", Convert.ToString(result.OutputValues["@n"]));
     }
 }

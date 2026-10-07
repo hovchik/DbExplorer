@@ -453,12 +453,14 @@ public sealed class SqlServerProvider : IDatabaseProvider
         var outputParams = new Dictionary<string, SqlParameter>();
         foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue))
         {
-            var sqlParam = new SqlParameter(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+            var value = arguments.GetValueOrDefault(p.Name);
+            // A procedure parameter left empty that has a default is not sent, so the default applies.
+            if (!isFunction && value is null && p.HasDefault) continue;
+            var sqlParam = new SqlParameter(p.Name, value ?? DBNull.Value);
             if (p.Direction == DbParameterDirection.Output || p.Direction == DbParameterDirection.InputOutput)
             {
-                sqlParam.Direction = p.Direction == DbParameterDirection.Output
-                    ? ParameterDirection.Output
-                    : ParameterDirection.InputOutput;
+                // T-SQL OUTPUT parameters are always input/output: Output alone would never send the value given.
+                sqlParam.Direction = ParameterDirection.InputOutput;
                 sqlParam.Size = 4000;
                 outputParams[p.Name] = sqlParam;
             }

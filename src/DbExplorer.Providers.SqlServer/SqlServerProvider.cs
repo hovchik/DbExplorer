@@ -558,8 +558,26 @@ public sealed class SqlServerProvider : IDatabaseProvider
         await using var cmd = cn.CreateCommand();
         cmd.CommandText = SqlServerSql.SessionPrefix(options.LockTimeoutMs) + sql;
         cmd.CommandTimeout = options.QueryTimeoutSeconds;
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        return await ReadFirstResultSetAsync(reader, maxRows, ct);
+        var reader = await cmd.ExecuteReaderAsync(ct);
+        QueryResultSet? result = null;
+        try
+        {
+            result = await ReadFirstResultSetAsync(reader, maxRows, ct);
+            // Closing the reader would otherwise read (and drop) every remaining row: cancel the rest on the server.
+            if (result.IsTruncated) cmd.Cancel();
+        }
+        finally
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch (SqlException) when (result is { IsTruncated: true })
+            {
+                // The cancellation just sent; the connection stays usable.
+            }
+        }
+        return result;
     }
 
     /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>

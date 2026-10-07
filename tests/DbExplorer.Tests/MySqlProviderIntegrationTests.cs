@@ -240,6 +240,34 @@ public abstract class MySqlProviderIntegrationTestsBase(string variable) : IAsyn
     }
 
     [SkippableFact]
+    public async Task Read_only_query_stops_on_the_server_at_the_row_limit()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        await using (var cn = new MySqlConnection(MySqlSql.BuildConnectionString(_profile!)))
+        {
+            await cn.OpenAsync();
+            await Exec(cn, """
+                CREATE TABLE ten (n int PRIMARY KEY);
+                INSERT INTO ten VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
+                """);
+        }
+        // 10^9 rows: reading them all would hit the statement timeout.
+        const string sql = "SELECT a.n FROM ten a, ten b, ten c, ten d, ten e, ten f, ten g, ten h, ten i";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await Provider.QueryReadOnlyAsync(sql, Database, Options, maxRows: 10);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"took {sw.Elapsed}");
+        Assert.Equal(10, result.Rows.Count);
+        Assert.True(result.IsTruncated);
+
+        // The pooled connections that were cancelled still work.
+        for (var i = 0; i < 3; i++)
+        {
+            var again = await Provider.QueryReadOnlyAsync("SELECT COUNT(*) FROM orders", Database, Options);
+            Assert.Equal(3L, Convert.ToInt64(again.Rows[0][0]));
+        }
+    }
+
+    [SkippableFact]
     public async Task Procedures_return_out_values_and_functions_their_result()
     {
         Skip.If(_settings is null, variable + " not set");

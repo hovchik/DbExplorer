@@ -181,4 +181,25 @@ public sealed class PostgresProviderIntegrationTests : IAsyncLifetime
         Assert.Equal(42, row[0]);
         Assert.Equal(new DateTime(2025, 1, 1), Convert.ToDateTime(row[1]));
     }
+
+    [SkippableFact]
+    public async Task Read_only_query_stops_on_the_server_at_the_row_limit()
+    {
+        Skip.If(Settings is null);
+        // 10^12 rows streamed by a nested loop: reading them all would hit the statement timeout.
+        const string sql = "SELECT a.x FROM generate_series(1, 1000000) a(x), generate_series(1, 1000000) b(y)";
+        var options = new DbExplorer.Core.Search.DataSearchOptions(1000, 30, 2000);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _provider!.QueryReadOnlyAsync(sql, null, options, maxRows: 10);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"took {sw.Elapsed}");
+        Assert.Equal(10, result.Rows.Count);
+        Assert.True(result.IsTruncated);
+
+        // The pooled connections that were cancelled still work.
+        for (var i = 0; i < 3; i++)
+        {
+            var again = await _provider.QueryReadOnlyAsync("SELECT count(*) FROM items", null, options);
+            Assert.Equal(5L, again.Rows[0][0]);
+        }
+    }
 }

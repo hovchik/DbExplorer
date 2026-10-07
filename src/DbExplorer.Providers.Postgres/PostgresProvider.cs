@@ -634,9 +634,48 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     {
         await using var scope = await OpenReadOnlyAsync(database, options, ct, anyDatabase: true);
         await using var cmd = new NpgsqlCommand(sql, scope.Connection, scope.Transaction) { CommandTimeout = options.QueryTimeoutSeconds + 5 };
-        var resultSets = new List<QueryResultSet>();
-        await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
-        return resultSets.FirstOrDefault() ?? new QueryResultSet();
+        var reader = await cmd.ExecuteReaderAsync(ct);
+        QueryResultSet? result = null;
+        try
+        {
+            result = await ReadFirstResultSetAsync(reader, maxRows, ct);
+            // Closing the reader would otherwise read (and drop) every remaining row: cancel the rest on the server.
+            if (result.IsTruncated) cmd.Cancel();
+        }
+        finally
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch (PostgresException ex) when (result is { IsTruncated: true } && ex.SqlState == PostgresErrorCodes.QueryCanceled)
+            {
+                // The cancellation just sent; the scope's rollback ends the aborted transaction.
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>
+    private static async Task<QueryResultSet> ReadFirstResultSetAsync(NpgsqlDataReader reader, int maxRows, CancellationToken ct)
+    {
+        while (reader.FieldCount == 0 && await reader.NextResultAsync(ct)) { }
+        if (reader.FieldCount == 0) return new QueryResultSet();
+        var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+        var rows = new List<IReadOnlyList<object?>>();
+        var truncated = false;
+        while (await reader.ReadAsync(ct))
+        {
+            if (rows.Count >= maxRows) { truncated = true; break; }
+            var row = new object?[reader.FieldCount];
+            for (var i = 0; i < row.Length; i++) row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            rows.Add(row);
+        }
+        return new QueryResultSet
+        {
+            Columns = columns, Rows = rows, IsTruncated = truncated,
+            TotalRowCount = rows.Count + (truncated ? 1 : 0), TotalRowCountIsExact = !truncated
+        };
     }
 
     public async Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default)

@@ -20,7 +20,10 @@ public sealed class SessionLoadingTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        // A background cache write can still be finishing; a folder left in the temp directory is not a failure.
+        try { if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private SshTunnelService Tunnels() => new(new KnownHostsStore(new AppPaths(_root)), new RejectUnknownHostKeys());

@@ -153,7 +153,7 @@ public class DesktopTabTests
     }
 
     [Fact]
-    public async Task Table_designer_keeps_an_edited_new_table_across_a_reconnect()
+    public Task Table_designer_keeps_an_edited_new_table_across_a_reconnect() => UiThread.RunAsync(async () =>
     {
         var profile = new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" };
         var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
@@ -167,10 +167,10 @@ public class DesktopTabTests
 
         Assert.Equal("Invoices", vm.TableName);
         Assert.Equal("main", vm.SelectedDatabase);
-    }
+    });
 
     [Fact]
-    public async Task Table_designer_keeps_an_open_table_to_alter_across_a_reconnect()
+    public Task Table_designer_keeps_an_open_table_to_alter_across_a_reconnect() => UiThread.RunAsync(async () =>
     {
         var profile = new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" };
         var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
@@ -186,27 +186,29 @@ public class DesktopTabTests
         Assert.True(vm.IsAltering);
         Assert.Equal("Changing dbo.Orders", vm.ModeText);
         Assert.Equal("main", vm.SelectedDatabase);
-    }
+    });
 
     [Fact]
-    public async Task Table_designer_shows_the_table_opened_last_when_an_earlier_open_finishes_later()
+    public Task Table_designer_shows_the_table_opened_last_when_an_earlier_open_finishes_later() => UiThread.RunAsync(async () =>
     {
         var slow = Constraints();
-        var calls = new Queue<TaskCompletionSource<DbTableConstraints>>([slow, Constraints()]);
+        var fast = Constraints();
+        var calls = new Queue<TaskCompletionSource<DbTableConstraints>>([slow, fast]);
         var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
         vm.Attach(DesignerSession(new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" }, calls.Dequeue));
 
         var first = vm.OpenTableAsync(new DbObject { Database = "main", Schema = "dbo", Name = "Orders", Type = DbObjectType.Table });
         await Until(() => calls.Count == 1);
         var second = vm.OpenTableAsync(new DbObject { Database = "main", Schema = "dbo", Name = "Customers", Type = DbObjectType.Table });
-        calls.Peek().SetResult(DbTableConstraints.None);
+        // The second open may already have taken its reply off the queue, so answer it by reference.
+        fast.SetResult(DbTableConstraints.None);
         await second;
         slow.SetResult(DbTableConstraints.None);
         await first;
 
         Assert.Equal("Changing dbo.Customers", vm.ModeText);
         Assert.Equal("Customers", vm.TableName);
-    }
+    });
 
     [Fact]
     public void Er_model_flush_writes_the_pending_autosave_at_once()

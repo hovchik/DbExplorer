@@ -193,7 +193,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     private void Save()
     {
         if (string.IsNullOrWhiteSpace(Host)) { Message = "Host is required."; return; }
-        if (!string.IsNullOrWhiteSpace(Port) && !int.TryParse(Port, out _)) { Message = "Port must be a number."; return; }
+        if (!string.IsNullOrWhiteSpace(Port) && !(int.TryParse(Port, out var port) && port is > 0 and <= 65535))
+        { Message = "Port must be a number from 1 to 65535 (or empty for the default)."; return; }
         if (UseSsh)
         {
             if (string.IsNullOrWhiteSpace(SshHost)) { Message = "SSH: enter the SSH server."; return; }

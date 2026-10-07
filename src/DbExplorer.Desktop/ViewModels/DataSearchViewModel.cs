@@ -77,7 +77,7 @@ public partial class DataSearchViewModel(
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
-        if (_session is null) return;
+        if (_session is not { } session) return;
         if (string.IsNullOrWhiteSpace(Term)) { Status = "Enter a value to search for."; return; }
 
         var request = new DataSearchRequest
@@ -110,8 +110,10 @@ public partial class DataSearchViewModel(
 
         try
         {
-            await foreach (var e in service.SearchAsync(_session, request, _cts.Token))
+            await foreach (var e in service.SearchAsync(session, request, _cts.Token))
             {
+                // Matches already buffered when the connection changed belong to the old one; Attach cleared the list.
+                if (!ReferenceEquals(session, _session)) return;
                 switch (e)
                 {
                     case DataMatchFound found:

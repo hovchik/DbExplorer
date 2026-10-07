@@ -129,6 +129,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnSelectedThemeChanged(AppThemeMode value) => _settings.SetTheme(value);
 
+    /// <summary>The toolbar's theme menu.</summary>
+    [RelayCommand]
+    private void SetTheme(AppThemeMode mode) => SelectedTheme = mode;
+
     public ObjectsViewModel Objects { get; }
     public MetadataSearchViewModel Search { get; }
     public DataSearchViewModel DataSearch { get; }

@@ -134,6 +134,7 @@ namespace DbExplorer.UiRender
 
             await Step("tabs", RenderTabsAsync);
             await Step("small", RenderSmallAsync);
+            await Step("toolbar", RenderToolbarStatesAsync);
             await Step("dialogs", RenderDialogsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -347,6 +348,22 @@ namespace DbExplorer.UiRender
             _window.Width = 1400;
             _window.Height = 900;
             _vm.SelectedTab = AppTab.Query;
+            await Settle(6);
+        }
+
+        /// <summary>The app bar's busier states at 1024 px: reading the catalog (progress and Cancel) and a Team badge.</summary>
+        private async Task RenderToolbarStatesAsync()
+        {
+            _window.Width = 1024;
+            _window.Height = 700;
+            _vm.IsBusy = true;
+            if (_vm.Team is { } team) team.ChangedCount = 3;
+            await Settle(6);
+            await Shot(_window, "small-toolbar-busy");
+            _vm.IsBusy = false;
+            if (_vm.Team is { } t) t.ChangedCount = 0;
+            _window.Width = 1400;
+            _window.Height = 900;
             await Settle(6);
         }
 

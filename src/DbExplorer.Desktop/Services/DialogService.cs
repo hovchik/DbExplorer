@@ -26,6 +26,9 @@ public interface IDialogService
     Task ShowRoutineExecutionAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject routine);
 
+    /// <summary>Steps through a stored function or procedure (PostgreSQL PL/pgSQL; other engines explain what is possible).</summary>
+    void ShowRoutineDebugger(DatabaseSession session, DbObject routine);
+
     /// <param name="filter">Optional WHERE condition (e.g. one record's primary key); the window can drop it.</param>
     Task ShowGetDataAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject table,
@@ -137,6 +140,29 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         if (Owner is not null) window.Show(Owner);
         else window.Show();
         return Task.CompletedTask;
+    }
+
+    public void ShowRoutineDebugger(DatabaseSession session, DbObject routine)
+    {
+        var vm = new RoutineDebuggerViewModel();
+        var window = new RoutineDebuggerWindow { DataContext = vm };
+        if (session.Provider is not DbExplorer.Core.Debugging.IRoutineDebugProvider) window.Height = 300; // only an explanation
+        if (session.Profile.IsProduction)
+        {
+            // Even rolled back, a paused routine holds its locks for as long as it is paused.
+            vm.ConfirmStart = async commit =>
+            {
+                var dialog = new ConfirmWindow(
+                    $"Debug {routine.FullName} on PRODUCTION? The routine runs for real and holds its locks while paused; " +
+                    (commit ? "its changes are COMMITTED when it finishes." : "its changes are rolled back when it finishes."),
+                    "Debug on production", requiredText: "PRODUCTION", banner: $"PRODUCTION · {session.Profile.DisplayName}");
+                return await dialog.ShowDialog<bool>(window);
+            };
+        }
+        _ = vm.InitializeAsync(session, routine);
+
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 
     public async Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null)

@@ -79,6 +79,7 @@ public partial class ObjectsViewModel(
     {
         _ = LoadDetailsAsync(value);
         ExecuteSelectedCommand.NotifyCanExecuteChanged();
+        DebugSelectedCommand.NotifyCanExecuteChanged();
         GetDataCommand.NotifyCanExecuteChanged();
         ProfileCommand.NotifyCanExecuteChanged();
         ShowInDiagramCommand.NotifyCanExecuteChanged();
@@ -194,6 +195,13 @@ public partial class ObjectsViewModel(
     {
         if (_session is null || SelectedObject is null || !SelectedObject.IsRoutine) return;
         await dialogs.ShowRoutineExecutionAsync(queryService, _session, SelectedObject);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExecuteSelected))]
+    private void DebugSelected()
+    {
+        if (_session is null || SelectedObject is null || !SelectedObject.IsRoutine) return;
+        dialogs.ShowRoutineDebugger(_session, SelectedObject);
     }
 
     public bool CanGetData => SelectedObject?.IsTableLike == true;

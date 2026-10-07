@@ -3,6 +3,7 @@ using System.Text;
 using Dapper;
 using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Connections;
+using DbExplorer.Core.Debugging;
 using DbExplorer.Core.Models;
 using DbExplorer.Core.Search;
 using Npgsql;
@@ -10,7 +11,7 @@ using NpgsqlTypes;
 
 namespace DbExplorer.Providers.Postgres;
 
-public sealed class PostgresProvider : IDatabaseProvider
+public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
 {
     private const int MetadataStatementTimeoutMs = 120_000;
     private const int MetadataLockTimeoutMs = 5000;
@@ -37,6 +38,17 @@ public sealed class PostgresProvider : IDatabaseProvider
     }
 
     public string ProviderKey => PostgresProviderFactory.ProviderKey;
+
+    public Task<DebugSupport> GetDebugSupportAsync(string? database, CancellationToken ct = default) =>
+        PostgresDebugger.GetSupportAsync(_profile, string.IsNullOrEmpty(database) ? null : database, ct);
+
+    public Task<IReadOnlyList<DebugTarget>> GetDebugTargetsAsync(DbObject routine, CancellationToken ct = default) =>
+        PostgresDebugger.GetTargetsAsync(_profile, routine, ct);
+
+    public Task<IRoutineDebugSession> StartDebugAsync(
+        DebugTarget target, IReadOnlyList<string?> arguments, IReadOnlyCollection<DebugBreakpoint> breakpoints,
+        bool commit, CancellationToken ct = default) =>
+        PostgresDebugSession.StartAsync(_profile, target, arguments, breakpoints, commit, ct);
 
     public string QuoteIdentifier(string identifier) => PostgresSql.Quote(identifier);
 

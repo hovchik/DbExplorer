@@ -743,8 +743,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     /// <summary>Lists every database the current login can access, used only when no database was selected at connect time.</summary>
     private async Task<IReadOnlyList<string>> GetAccessibleDatabasesAsync(CancellationToken ct)
     {
-        var db = string.IsNullOrWhiteSpace(_profile.Database) ? "postgres" : _profile.Database;
-        return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, db, ct);
+        return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, _profile.Database, ct);
     }
 
     /// <summary>Runs one catalog read once a slot in <see cref="_catalogGate"/> is free.</summary>

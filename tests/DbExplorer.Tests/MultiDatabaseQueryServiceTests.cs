@@ -64,4 +64,28 @@ public class MultiDatabaseQueryServiceTests
         var merged = MultiDatabaseQueryService.Merge([Ok("db1", Set(["Database"], ["x"]))]);
         Assert.Equal(["Database_2", "Database"], merged[0].Columns);
     }
+
+    [Fact]
+    public void The_row_limit_applies_to_the_merged_grid_not_to_each_database()
+    {
+        var merged = MultiDatabaseQueryService.Merge(
+        [
+            Ok("db1", Set(["Id"], [1], [2])),
+            Ok("db2", Set(["Id"], [3], [4])),
+            Ok("db3", Set(["Id"], [5]))
+        ], maxRows: 3);
+
+        var set = Assert.Single(merged);
+        Assert.Equal([1, 2, 3], set.Rows.Select(r => (int)r[1]!));
+        Assert.True(set.IsTruncated);
+        Assert.Equal(5, set.TotalRowCount);
+    }
+
+    [Fact]
+    public void Merged_grid_within_the_limit_is_not_truncated()
+    {
+        var set = Assert.Single(MultiDatabaseQueryService.Merge([Ok("db1", Set(["Id"], [1])), Ok("db2", Set(["Id"], [2]))], maxRows: 2));
+        Assert.Equal(2, set.Rows.Count);
+        Assert.False(set.IsTruncated);
+    }
 }

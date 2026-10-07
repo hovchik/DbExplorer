@@ -11,7 +11,16 @@ public sealed record DatabaseRunResult(string Database, QueryExecutionResult? Re
 }
 
 /// <summary>Result sets with the same shape from several databases, stacked with a leading database column.</summary>
-public sealed record MergedResultSet(string Title, IReadOnlyList<string> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows);
+public sealed record MergedResultSet(string Title, IReadOnlyList<string> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows)
+{
+    /// <summary>The databases returned more rows than the row limit; only the first ones were kept.</summary>
+    public bool IsTruncated { get; init; }
+
+    /// <summary>Rows the databases returned together (a lower bound when <see cref="TotalRowCountIsExact"/> is false).</summary>
+    public long TotalRowCount { get; init; }
+
+    public bool TotalRowCountIsExact { get; init; } = true;
+}
 
 /// <summary>Runs one script against many databases (bounded parallelism, one failure never stops the rest).</summary>
 public sealed class MultiDatabaseQueryService(QueryExecutionService queryService)
@@ -49,9 +58,10 @@ public sealed class MultiDatabaseQueryService(QueryExecutionService queryService
 
     /// <summary>
     /// Stacks the i-th result set of every database into one grid when their columns match
-    /// (case-insensitively, in order); differently-shaped sets become separate grids.
+    /// (case-insensitively, in order); differently-shaped sets become separate grids. Each grid keeps at most
+    /// <paramref name="maxRows"/> rows in all, so running on many databases does not multiply the row limit.
     /// </summary>
-    public static IReadOnlyList<MergedResultSet> Merge(IReadOnlyList<DatabaseRunResult> results)
+    public static IReadOnlyList<MergedResultSet> Merge(IReadOnlyList<DatabaseRunResult> results, int maxRows = int.MaxValue)
     {
         var merged = new List<MergedResultSet>();
         var maxSets = results.Select(r => r.Result?.ResultSets.Count ?? 0).DefaultIfEmpty(0).Max();
@@ -71,10 +81,18 @@ public sealed class MultiDatabaseQueryService(QueryExecutionService queryService
                 var dbColumn = UniqueName(DatabaseColumn, columns);
                 // Plain arrays: UI grids bind cells through the indexer (Values[i]), which needs a public indexed type.
                 var rows = group
-                    .SelectMany(x => x.Set.Rows.Select(row => (IReadOnlyList<object?>)Prepend(x.Database, row)))
+                    .SelectMany(x => x.Set.Rows.Select(row => (x.Database, Row: row)))
+                    .Take(Math.Max(1, maxRows))
+                    .Select(x => (IReadOnlyList<object?>)Prepend(x.Database, x.Row))
                     .ToList();
+                var total = group.Sum(x => Math.Max(x.Set.TotalRowCount, x.Set.Rows.Count));
                 var title = shapes.Count == 1 ? $"Result set {i + 1}" : $"Result set {i + 1} ({(char)('a' + s)})";
-                merged.Add(new MergedResultSet(title, [dbColumn, .. columns], rows));
+                merged.Add(new MergedResultSet(title, [dbColumn, .. columns], rows)
+                {
+                    IsTruncated = total > rows.Count || group.Any(x => x.Set.IsTruncated),
+                    TotalRowCount = total,
+                    TotalRowCountIsExact = group.All(x => x.Set.TotalRowCountIsExact)
+                });
             }
         }
 

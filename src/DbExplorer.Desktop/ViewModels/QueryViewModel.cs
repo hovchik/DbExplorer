@@ -28,7 +28,12 @@ public sealed partial class DatabaseChoice(string name) : ObservableObject
 /// </summary>
 public partial class QueryViewModel : ViewModelBase, ISessionAware
 {
+    /// <summary>For the tab's own helper statements (plans, lab probes); user scripts use <see cref="ScriptTimeoutSeconds"/>.</summary>
     private const int TimeoutSeconds = 60;
+
+    /// <summary>User scripts run without a command timeout (0 = none in every provider): reports and migrations may take
+    /// long, and Cancel stops them.</summary>
+    private const int ScriptTimeoutSeconds = 0;
     private readonly QueryExecutionService queryService;
     private readonly MultiDatabaseQueryService multiQuery;
     private readonly ScriptStore scripts;
@@ -525,7 +530,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private async Task RunOnceAsync(DatabaseSession session, string sql, CancellationToken ct)
     {
         Status = "Running…";
-        var result = await queryService.ExecuteScriptAsync(session, sql, TargetDatabase, TimeoutSeconds, ct, RowLimit);
+        var result = await queryService.ExecuteScriptAsync(session, sql, TargetDatabase, ScriptTimeoutSeconds, ct, RowLimit);
         ShowResult(session, sql, result);
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }
@@ -555,16 +560,20 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Status = $"Running on {databases.Count} database(s)…";
         var progress = new Progress<int>(n => Status = $"Running… {n}/{databases.Count} database(s) done");
 
-        var results = await multiQuery.RunAsync(session, sql, databases, TimeoutSeconds, (int)Math.Clamp(Parallelism, 1, 16), progress, ct, RowLimit);
+        var results = await multiQuery.RunAsync(session, sql, databases, ScriptTimeoutSeconds, (int)Math.Clamp(Parallelism, 1, 16), progress, ct, RowLimit);
 
-        var merged = MultiDatabaseQueryService.Merge(results);
+        var merged = MultiDatabaseQueryService.Merge(results, RowLimit);
         ResultSets = merged
             .Select(m => new ResultSetView(m.Title, m.Columns, m.Rows.Select(r => new ResultRow(r)).ToList())
             {
+                IsTruncated = m.IsTruncated,
+                TotalRowCount = m.TotalRowCount,
+                TotalRowCountIsExact = m.TotalRowCountIsExact,
                 Connection = ResultSetView.DescribeConnection(session),
                 Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
                 Quote = session.Provider.QuoteIdentifier
             })
+            .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
 
         var failed = results.Where(r => !r.Succeeded).ToList();
@@ -584,7 +593,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
         Status = $"Ran on {results.Count - failed.Count} of {databases.Count} database(s) in {(DateTime.UtcNow - started).TotalMilliseconds:N0} ms" +
                  (failed.Count > 0 ? $" · {failed.Count} failed (see messages)" : "") +
-                 $" · {merged.Count} merged result set(s)";
+                 $" · {merged.Count} merged result set(s)" +
+                 (merged.Any(m => m.IsTruncated) ? $" · showing the first {RowLimit:N0} rows of each (raise the row limit to see more)" : "");
 
         await SafeAppendHistoryAsync(sql, succeeded: failed.Count == 0,
             error: failed.Count == 0 ? null : string.Join("; ", failed.Select(f => $"{f.Database}: {f.Error}")));

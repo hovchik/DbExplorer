@@ -68,12 +68,11 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         _session = session;
         if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
         ClearDesign();
+        ClearTables();
         if (session is null)
         {
             Databases = [];
             SelectedDatabase = null;
-            _snapshot = null;
-            AvailableTables = [];
             return;
         }
 
@@ -91,9 +90,17 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
 
     partial void OnSelectedDatabaseChanged(string? value)
     {
-        // Tables of one database do not join to another's: start over.
+        // Tables of one database do not join to another's: start over, without offering the previous database's
+        // tables while the new one loads.
         ClearDesign();
+        ClearTables();
         _ = LoadSnapshotAsync();
+    }
+
+    private void ClearTables()
+    {
+        _snapshot = null;
+        AvailableTables = [];
     }
 
     private async Task LoadSnapshotAsync()

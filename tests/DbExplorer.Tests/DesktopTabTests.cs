@@ -228,6 +228,20 @@ public class DesktopTabTests
         }
     }
 
+    [Fact]
+    public async Task Query_builder_stops_offering_the_previous_databases_tables_when_another_is_picked()
+    {
+        var never = new TaskCompletionSource<DbTableConstraints>();
+        var vm = new QueryBuilderViewModel(new SessionService(null!, null!, null!));
+        vm.Attach(DesignerSession(new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" }, never));
+        await Until(() => vm.AvailableTables.Count == 2);
+
+        vm.SelectedDatabase = "elsewhere";
+
+        Assert.Empty(vm.AvailableTables);
+        Assert.Null(vm.AddTable(new DbObject { Database = "main", Schema = "dbo", Name = "Orders", Type = DbObjectType.Table }, null));
+    }
+
     private const string SqlServer = Application.Copy.SqlDialect.SqlServerKey;
 
     private static TaskCompletionSource<DbTableConstraints> Constraints() => new(TaskCreationOptions.RunContinuationsAsynchronously);

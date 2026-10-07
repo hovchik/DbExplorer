@@ -188,9 +188,12 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     private async Task LoadSchemasAsync()
     {
         if (_session is not { } session) return;
+        var database = SourceDatabase;
         try
         {
-            var snapshot = await SnapshotOf(session, SourceDatabase);
+            var snapshot = await SnapshotOf(session, database);
+            // Another database picked (or another session) meanwhile: its own load fills the list.
+            if (!ReferenceEquals(session, _session) || !string.Equals(database, SourceDatabase, StringComparison.Ordinal)) return;
             var schemas = snapshot.Objects.Where(o => o.Type == DbObjectType.Table).Select(o => o.Schema)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
             Schemas = [AllSchemas, .. schemas];
@@ -198,7 +201,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         catch (Exception ex)
         {
-            Status = $"Could not read the tables of {SourceDatabase}: {ex.Message}";
+            if (ReferenceEquals(session, _session) && string.Equals(database, SourceDatabase, StringComparison.Ordinal))
+                Status = $"Could not read the tables of {database}: {ex.Message}";
         }
     }
 

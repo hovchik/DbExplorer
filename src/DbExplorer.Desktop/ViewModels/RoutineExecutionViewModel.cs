@@ -284,9 +284,10 @@ public partial class RoutineExecutionViewModel : ViewModelBase
         Status = "Running…";
         try
         {
-            var arguments = Parameters
-                .Where(p => p.IsEditable)
-                .ToDictionary(p => p.Parameter.Name, object? (p) => p.Value.Length == 0 ? null : p.Value);
+            // Keyed by name; a repeated name (never expected from a provider) keeps the first value instead of throwing.
+            var arguments = new Dictionary<string, object?>();
+            foreach (var p in Parameters.Where(p => p.IsEditable))
+                arguments.TryAdd(p.Parameter.Name, p.Value.Length == 0 ? null : p.Value);
 
             var result = await _service.ExecuteRoutineAsync(
                 _session, _routine, _routineParameters, arguments, timeoutSeconds: 60);

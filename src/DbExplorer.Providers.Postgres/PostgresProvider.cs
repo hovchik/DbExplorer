@@ -509,18 +509,11 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             : null;
         var dataSource = scopedDataSource ?? _dataSource;
 
-        var isProcedure = routine.Type == DbObjectType.Procedure;
-        var inputParams = parameters.Where(p => p.Direction != DbParameterDirection.Output).ToList();
-        var argList = string.Join(", ", inputParams.Select(p => "@" + p.Name));
-        var sql = isProcedure
-            ? $"CALL {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});"
-            : $"SELECT * FROM {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
+        var (sql, values) = BuildRoutineCall(routine, parameters, arguments);
 
         await using var cn = await dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sql, cn) { CommandTimeout = timeoutSeconds };
-
-        foreach (var p in inputParams)
-            cmd.Parameters.AddWithValue(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+        foreach (var value in values) cmd.Parameters.Add(value);
 
         var resultSets = new List<QueryResultSet>();
         var rowsAffected = 0;
@@ -556,6 +549,49 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             Messages = [],
             Elapsed = sw.Elapsed
         };
+    }
+
+    /// <summary>
+    /// The statement that runs a routine from the Run dialog, like <see cref="PostgresDebugger.BuildCall"/>: each argument
+    /// is a positional placeholder cast to the declared type (text from the dialog goes as an untyped literal, so anything
+    /// psql would accept works), so the call resolves to that routine and not to a missing f(text). OUT parameters of a
+    /// procedure are passed as typed NULLs (PostgreSQL 14+ lists them in CALL); a function returns them instead.
+    /// </summary>
+    private static (string Sql, IReadOnlyList<NpgsqlParameter> Values) BuildRoutineCall(
+        DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments)
+    {
+        var isProcedure = routine.Type == DbObjectType.Procedure;
+        var values = new List<NpgsqlParameter>();
+        var parts = new List<string>();
+        foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue).OrderBy(p => p.Ordinal))
+        {
+            var variadic = p.DataType.StartsWith("VARIADIC ", StringComparison.OrdinalIgnoreCase);
+            var type = variadic ? p.DataType["VARIADIC ".Length..] : p.DataType;
+            string expression;
+            if (p.Direction == DbParameterDirection.Output)
+            {
+                if (!isProcedure) continue;
+                expression = $"NULL::{type}";
+            }
+            else if (arguments.GetValueOrDefault(p.Name) is not { } value)
+            {
+                expression = $"NULL::{type}";
+            }
+            else
+            {
+                values.Add(value is string text
+                    ? new NpgsqlParameter { Value = text, NpgsqlDbType = NpgsqlDbType.Unknown }
+                    : new NpgsqlParameter { Value = value });
+                expression = $"${values.Count}::{type}";
+            }
+            parts.Add(variadic ? "VARIADIC " + expression : expression);
+        }
+
+        var name = PostgresSql.QuoteFullName(routine.Schema, routine.Name);
+        var sql = isProcedure
+            ? $"CALL {name}({string.Join(", ", parts)});"
+            : $"SELECT * FROM {name}({string.Join(", ", parts)});";
+        return (sql, values);
     }
 
     public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)

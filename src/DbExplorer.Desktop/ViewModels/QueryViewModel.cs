@@ -302,7 +302,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             var built = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
             {
                 ValueSource = values is null ? null : values.TryGet,
-                UserSnippets = () => Snippets.Items
+                UserSnippets = () => [.. Snippets.Items, .. Snippets.TeamItems()]
             };
             var checks = new SqlInspector(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
             return (built, checks, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());

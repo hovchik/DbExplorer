@@ -258,7 +258,8 @@ public partial class ComparerViewModel
         var sameServer = left == right ||
                          (left.Profile.ProviderKey == right.Profile.ProviderKey &&
                           string.Equals(left.Profile.Host, right.Profile.Host, StringComparison.OrdinalIgnoreCase) &&
-                          left.Profile.Port == right.Profile.Port);
+                          left.Profile.Port == right.Profile.Port &&
+                          left.Profile.TunnelKey == right.Profile.TunnelKey);
         var targetDatabase = SelectedRightDatabase ?? right.Profile.Database ?? "";
 
         return ObjectCopyService.Analyze(

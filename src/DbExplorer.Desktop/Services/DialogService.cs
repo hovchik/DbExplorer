@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using DbExplorer.Application.Connections;
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
@@ -67,7 +68,7 @@ public interface IDialogService
     Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName);
 }
 
-public sealed class DialogService(ProviderRegistry registry) : IDialogService
+public sealed class DialogService(ProviderRegistry registry, SshTunnelService tunnels) : IDialogService
 {
     public Window? Owner { get; set; }
 
@@ -75,11 +76,15 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         if (Owner is null) return null;
 
-        var vm = new ConnectionDialogViewModel(registry, draft, folders);
+        var vm = new ConnectionDialogViewModel(registry, draft, folders, tunnels);
         var dialog = new ConnectionDialog { DataContext = vm, Title = title };
+        // Asked for a password on connect: open where the missing one goes.
+        dialog.ShowSshTab = draft.Ssh.NeedsPassword && !NeedsDatabasePassword(draft);
         var ok = await dialog.ShowDialog<bool>(Owner);
         return ok ? vm.ToProfile() : null;
     }
+
+    private static bool NeedsDatabasePassword(ConnectionProfile p) => !p.IntegratedSecurity && string.IsNullOrEmpty(p.Password);
 
     public async Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,

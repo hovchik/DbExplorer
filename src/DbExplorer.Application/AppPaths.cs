@@ -27,4 +27,5 @@ public sealed class AppPaths
     public string Root { get; }
     public string CacheDirectory => Path.Combine(Root, "cache");
     public string ConnectionsFile => Path.Combine(Root, "connections.json");
+    public string KnownHostsFile => Path.Combine(Root, "ssh-known-hosts.json");
 }

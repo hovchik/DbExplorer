@@ -37,7 +37,8 @@ public sealed class ConnectionExportFile
 public static class ConnectionTransfer
 {
     public const string FormatName = "DbExplorer.Connections";
-    public const int FormatVersion = 1;
+    /// <summary>2 added SSH tunnels: an older app would silently connect without the tunnel, so it refuses the file.</summary>
+    public const int FormatVersion = 2;
     public const string FileExtension = "dbxconnections";
 
     private const int Iterations = 310_000;
@@ -75,10 +76,15 @@ public static class ConnectionTransfer
         {
             var copy = profile.Clone();
             copy.Password = null;
+            copy.Ssh.Password = null;
+            copy.Ssh.Passphrase = null;
+            var ssh = profile.Ssh.Enabled;
             document.Connections.Add(new ExportedConnection
             {
                 Profile = copy,
-                Password = key is not null && !string.IsNullOrEmpty(profile.Password) ? Encrypt(key, profile.Password) : null
+                Password = EncryptOrNull(key, profile.Password),
+                SshPassword = ssh ? EncryptOrNull(key, profile.Ssh.Password) : null,
+                SshPassphrase = ssh ? EncryptOrNull(key, profile.Ssh.Passphrase) : null
             });
         }
 
@@ -134,10 +140,14 @@ public static class ConnectionTransfer
             if (entry.Profile is null) continue;
             var profile = entry.Profile.Clone();
             profile.Password = null;
-            if (key is not null && entry.Password is { } secret)
+            profile.Ssh.Password = null;
+            profile.Ssh.Passphrase = null;
+            if (key is not null)
             {
-                profile.Password = Decrypt(key, secret) ?? throw new InvalidDataException($"The password of {profile.DisplayName} is damaged.");
-                profile.SavePassword = true;
+                profile.Password = DecryptOrNull(key, entry.Password, profile, "password");
+                profile.Ssh.Password = DecryptOrNull(key, entry.SshPassword, profile, "SSH password");
+                profile.Ssh.Passphrase = DecryptOrNull(key, entry.SshPassphrase, profile, "SSH key passphrase");
+                if (entry.Password is not null || entry.SshPassword is not null || entry.SshPassphrase is not null) profile.SavePassword = true;
             }
             result.Add(profile);
         }
@@ -197,6 +207,12 @@ public static class ConnectionTransfer
         }
     }
 
+    private static string? EncryptOrNull(byte[]? key, string? secret) =>
+        key is not null && !string.IsNullOrEmpty(secret) ? Encrypt(key, secret) : null;
+
+    private static string? DecryptOrNull(byte[] key, string? secret, ConnectionProfile profile, string what) =>
+        secret is null ? null : Decrypt(key, secret) ?? throw new InvalidDataException($"The {what} of {profile.DisplayName} is damaged.");
+
     private static byte[] DeriveKey(string password, byte[] salt, int iterations) =>
         Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations, HashAlgorithmName.SHA256, 32);
 
@@ -252,6 +268,8 @@ public static class ConnectionTransfer
     {
         public ConnectionProfile? Profile { get; set; }
         public string? Password { get; set; }
+        public string? SshPassword { get; set; }
+        public string? SshPassphrase { get; set; }
     }
 }
 

@@ -56,7 +56,11 @@ public static class PostgresSql
             Timeout = 15,
             // "Encrypt" without "Trust certificate" checks the server certificate and host name, like SQL Server does;
             // Require alone encrypts but accepts any certificate, so it would not stop a man in the middle.
-            SslMode = !p.Encrypt ? SslMode.Prefer : p.TrustServerCertificate ? SslMode.Require : SslMode.VerifyFull
+            // Through an SSH tunnel the driver dials 127.0.0.1, which the certificate never names: the chain is still
+            // checked, and the SSH host key already vouches for the path to the server.
+            SslMode = !p.Encrypt ? SslMode.Prefer
+                : p.TrustServerCertificate ? SslMode.Require
+                : p.CertificateHostName is null ? SslMode.VerifyFull : SslMode.VerifyCA
         };
 
         if (!p.IntegratedSecurity)

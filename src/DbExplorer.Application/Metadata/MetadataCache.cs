@@ -22,6 +22,8 @@ public sealed class MetadataCache(AppPaths paths)
     public static string CacheKey(ConnectionProfile p)
     {
         var raw = $"{p.ProviderKey}|{p.Host}|{p.Port}|{p.Database}".ToLowerInvariant();
+        // Tunnelled databases are often all "localhost": keep them apart by SSH server. Direct keys stay as they were.
+        if (p.TunnelKey is { } tunnel) raw += "|ssh:" + tunnel;
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)))[..24];
     }
 

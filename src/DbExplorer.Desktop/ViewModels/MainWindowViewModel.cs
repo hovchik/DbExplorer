@@ -341,9 +341,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedProfile is not { } profile) return;
 
-        if (!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password))
+        if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
         {
-            // Password was not saved: ask for it.
+            // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");
             if (withPassword is null) return;
             var index = Profiles.IndexOf(profile);
@@ -526,7 +526,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private static string BuildStatus(DatabaseSession s) =>
-        $"{s.Profile} · {s.ServerVersion} · {s.Snapshot.Objects.Count:N0} objects, " +
+        $"{s.Profile}{(s.Tunnel is { } t ? $" via SSH {t.Server}" : "")} · {s.ServerVersion} · {s.Snapshot.Objects.Count:N0} objects, " +
         $"{s.Snapshot.Columns.Count:N0} columns · metadata from {s.Snapshot.RefreshedAt:g}";
 
     private async Task SaveProfilesAsync()

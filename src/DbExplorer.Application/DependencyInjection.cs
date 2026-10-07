@@ -1,6 +1,7 @@
 using DbExplorer.Application.Api;
 using DbExplorer.Application.Compare;
 using DbExplorer.Application.Connections;
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Lab;
 using DbExplorer.Application.Metadata;
@@ -9,6 +10,7 @@ using DbExplorer.Application.Query;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace DbExplorer.Application;
 
@@ -22,6 +24,9 @@ public static class DependencyInjection
             ? new DpapiSecretProtector()
             : new NoSecretProtector());
         services.AddSingleton<ConnectionStore>();
+        services.AddSingleton<KnownHostsStore>();
+        services.TryAddSingleton<ISshHostKeyPrompt, RejectUnknownHostKeys>();
+        services.AddSingleton<SshTunnelService>();
         services.AddSingleton<ProviderRegistry>();
         services.AddSingleton<MetadataCache>();
         services.AddSingleton<SchemaHistoryStore>();

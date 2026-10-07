@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using DbExplorer.Application.Copy;
 
 namespace DbExplorer.Application.Query;
 
@@ -129,7 +130,9 @@ public static class SqlEditorAnalysis
         var v = value.Trim();
         if (v.ToUpperInvariant() is "NULL" or "TRUE" or "FALSE") return v.ToUpperInvariant();
         if (Literal.IsMatch(v)) return v;
-        return (providerKey == "SqlServer" ? "N'" : "'") + v.Replace("'", "''") + "'";
+        return providerKey == SqlDialect.MySqlKey
+            ? "'" + v.Replace("\\", "\\\\").Replace("'", "''") + "'"
+            : (providerKey == SqlDialect.SqlServerKey ? "N'" : "'") + v.Replace("'", "''") + "'";
     }
 
     /// <summary>Replaces each parameter token (outside strings and comments) with its value.</summary>
@@ -225,7 +228,16 @@ public static class QueryPlanTools
     /// </summary>
     public static string BuildExplainScript(string sql, string providerKey, bool analyze)
     {
-        if (providerKey == "SqlServer")
+        if (providerKey == SqlDialect.MySqlKey)
+        {
+            // The classic table: one row per table read. Nothing runs, even for Explain Analyze (the drawn plan measures).
+            return string.Join("\n", SqlScriptTools.SplitStatements(sql)
+                .Select(r => r.Of(sql).TrimEnd().TrimEnd(';').Trim())
+                .Where(s => s.Length > 0)
+                .Select(s => $"EXPLAIN {s};"));
+        }
+
+        if (providerKey == SqlDialect.SqlServerKey)
         {
             return analyze
                 ? $"SET STATISTICS PROFILE ON;\nGO\nBEGIN TRANSACTION;\nGO\n{sql}\nGO\nIF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\nGO\nSET STATISTICS PROFILE OFF;"
@@ -249,7 +261,29 @@ public static class QueryPlanTools
         var insights = new List<string>();
         foreach (var (columns, rows) in plans)
         {
-            if (providerKey == "SqlServer")
+            if (providerKey == SqlDialect.MySqlKey)
+            {
+                var table = IndexOf(columns, "table");
+                var type = IndexOf(columns, "type");
+                var estimate = IndexOf(columns, "rows");
+                var extra = IndexOf(columns, "Extra");
+                if (type < 0) continue;
+                foreach (var row in rows)
+                {
+                    var name = table >= 0 ? row[table]?.ToString() ?? "" : "";
+                    var rowsEstimate = estimate >= 0 && row[estimate] is { } e ? Convert.ToDouble(e, CultureInfo.InvariantCulture) : 0;
+                    var notes = extra >= 0 ? row[extra]?.ToString() ?? "" : "";
+                    if (row[type]?.ToString() is "ALL" && rowsEstimate >= 10_000)
+                        insights.Add($"Full table scan of {name} (≈{rowsEstimate:N0} rows) — an index on the filtered/joined columns may help");
+                    else if (row[type]?.ToString() is "index" && rowsEstimate >= 10_000)
+                        insights.Add($"Full index scan of {name} (≈{rowsEstimate:N0} rows)");
+                    if (notes.Contains("Using filesort", StringComparison.Ordinal) && rowsEstimate >= 10_000)
+                        insights.Add($"Sort of ≈{rowsEstimate:N0} rows from {name} (filesort) — an index in that order avoids it");
+                    if (notes.Contains("Using temporary", StringComparison.Ordinal))
+                        insights.Add($"A temporary table is built for {name} (GROUP BY / DISTINCT / UNION) — an index on the grouped columns may avoid it");
+                }
+            }
+            else if (providerKey == SqlDialect.SqlServerKey)
             {
                 var op = IndexOf(columns, "PhysicalOp");
                 var estimate = IndexOf(columns, "EstimateRows");

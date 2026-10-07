@@ -8,6 +8,10 @@ namespace DbExplorer.Application.Security;
 /// <summary>Reads logins, users, roles, memberships and permissions from the catalog with read-only queries.</summary>
 public static class SecurityCatalogLoader
 {
+    public const string MySqlNotSupported =
+        "The Security tab does not cover MySQL / MariaDB accounts yet. In a Query tab, SELECT user, host FROM mysql.user " +
+        "lists them, SHOW GRANTS FOR 'name'@'host' shows their privileges, and CREATE USER / GRANT / REVOKE change them.";
+
     private const int MaxRows = 50_000;
     private static readonly DataSearchOptions Options = new(MaxRows, QueryTimeoutSeconds: 30, LockTimeoutMs: 3000);
 
@@ -15,6 +19,7 @@ public static class SecurityCatalogLoader
     /// default when null). Server-wide logins and roles come along either way.</param>
     public static async Task<SecurityCatalog> LoadAsync(IDatabaseProvider provider, string? database, CancellationToken ct = default)
     {
+        if (provider.ProviderKey == SqlDialect.MySqlKey) throw new NotSupportedException(MySqlNotSupported);
         var db = string.IsNullOrWhiteSpace(database) ? null : database;
         var warnings = new List<string>();
 

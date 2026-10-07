@@ -1,4 +1,5 @@
 using System.Text;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Diagram;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Core.Models;
@@ -146,7 +147,9 @@ public static class DataMatchSql
 
     public static string Literal(string? value, string providerKey) =>
         value is null ? "NULL"
-        : (IsSqlServer(providerKey) ? "N'" : "'") + value.Replace("'", "''") + "'";
+        : string.Equals(providerKey, SqlDialect.MySqlKey, StringComparison.OrdinalIgnoreCase)
+            ? "'" + value.Replace("\\", "\\\\").Replace("'", "''") + "'"
+            : (IsSqlServer(providerKey) ? "N'" : "'") + value.Replace("'", "''") + "'";
 
     private static string Equal(string column, string? value, string providerKey) =>
         value is null ? $"{column} IS NULL" : $"{column} = {Literal(value, providerKey)}";

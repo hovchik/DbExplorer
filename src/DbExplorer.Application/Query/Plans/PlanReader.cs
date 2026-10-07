@@ -5,7 +5,8 @@ using DbExplorer.Core.Models;
 
 namespace DbExplorer.Application.Query.Plans;
 
-/// <summary>Asks the engine for plans it can draw (PostgreSQL JSON, SQL Server showplan XML) and reads them.</summary>
+/// <summary>Asks the engine for plans it can draw (PostgreSQL JSON, SQL Server showplan XML, MySQL trees, MariaDB JSON)
+/// and reads them.</summary>
 public static class PlanReader
 {
     /// <summary>The statements of <paramref name="sql"/> as PostgreSQL will explain them, one plan each.</summary>
@@ -19,8 +20,24 @@ public static class PlanReader
     /// The script that returns machine-readable plans of <paramref name="sql"/>. Estimated plans do not run the
     /// statements. With <paramref name="analyze"/> they do run (to measure them), inside a transaction that is rolled back.
     /// </summary>
-    public static string BuildScript(string sql, string providerKey, bool analyze)
+    /// <param name="serverVersion">The session's server version: MySQL and MariaDB explain differently.</param>
+    public static string BuildScript(string sql, string providerKey, bool analyze, string? serverVersion = null)
     {
+        if (providerKey == SqlDialect.MySqlKey)
+        {
+            var mariaDb = IsMariaDb(serverVersion);
+            var explain = (mariaDb, analyze) switch
+            {
+                (true, true) => "ANALYZE FORMAT=JSON",
+                (true, false) => "EXPLAIN FORMAT=JSON",
+                (false, true) => "EXPLAIN ANALYZE",
+                _ => "EXPLAIN FORMAT=TREE"
+            };
+            var statements = string.Join("\n", Statements(sql).Select(s => $"{explain}\n{s};"));
+            // DDL commits on its own in MySQL; Explain Analyze warns before running anything that writes.
+            return analyze ? $"START TRANSACTION;\n{statements}\nROLLBACK;" : statements;
+        }
+
         if (providerKey == SqlDialect.SqlServerKey)
         {
             return analyze
@@ -41,6 +58,8 @@ public static class PlanReader
     /// </summary>
     public static IReadOnlyList<ExecutionPlan> Read(IReadOnlyList<QueryResultSet> resultSets, string providerKey, string sql)
     {
+        if (providerKey == SqlDialect.MySqlKey) return ReadMySql(resultSets, sql);
+
         var plans = new List<ExecutionPlan>();
         var statements = providerKey == SqlDialect.SqlServerKey ? [] : Statements(sql);
         var index = 0;
@@ -57,6 +76,27 @@ public static class PlanReader
                 plans.AddRange(PostgresPlanParser.Parse(text, index < statements.Count ? statements[index] : null));
                 index++;
             }
+        }
+        return plans;
+    }
+
+    public static bool IsMariaDb(string? serverVersion) => serverVersion?.Contains("MariaDB", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>One result set per explained statement, each a single text cell (a tree or JSON).</summary>
+    private static IReadOnlyList<ExecutionPlan> ReadMySql(IReadOnlyList<QueryResultSet> resultSets, string sql)
+    {
+        var plans = new List<ExecutionPlan>();
+        var statements = Statements(sql);
+        var index = 0;
+        foreach (var rs in resultSets)
+        {
+            if (rs.Columns.Count != 1 || rs.Rows.Count == 0) continue;
+            var text = string.Concat(rs.Rows.Select(r => r.FirstOrDefault()?.ToString())).Trim();
+            var statement = index < statements.Count ? statements[index] : null;
+            if (MySqlPlanParser.IsTree(text)) plans.Add(MySqlPlanParser.ParseTree(text, statement));
+            else if (MySqlPlanParser.IsMariaDbJson(text)) plans.Add(MySqlPlanParser.ParseMariaDbJson(text, statement));
+            else continue;
+            index++;
         }
         return plans;
     }

@@ -15,11 +15,29 @@ public abstract class SqlDialect
 {
     public const string SqlServerKey = "SqlServer";
     public const string PostgresKey = "Postgres";
+    public const string MySqlKey = "MySql";
 
     public static readonly SqlDialect SqlServer = new SqlServerDialect();
     public static readonly SqlDialect Postgres = new PostgresDialect();
+    public static readonly SqlDialect MySql = new MySqlDialect();
 
-    public static SqlDialect For(string providerKey) => providerKey == SqlServerKey ? SqlServer : Postgres;
+    public static SqlDialect For(string providerKey) => providerKey switch
+    {
+        SqlServerKey => SqlServer,
+        MySqlKey => MySql,
+        _ => Postgres
+    };
+
+    /// <summary>"SQL Server", "PostgreSQL" or "MySQL", for messages.</summary>
+    public static string EngineName(string providerKey) => providerKey switch
+    {
+        SqlServerKey => "SQL Server",
+        MySqlKey => "MySQL",
+        _ => "PostgreSQL"
+    };
+
+    /// <summary>A MySQL schema is the database itself: objects always live in the schema named after their database.</summary>
+    public static bool SchemaIsDatabase(string providerKey) => providerKey == MySqlKey;
 
     public abstract string ProviderKey { get; }
 
@@ -317,6 +335,116 @@ public abstract class SqlDialect
             return definition;
         }
 
+        public override string AsStatement(string definition)
+        {
+            var trimmed = definition.TrimEnd();
+            return trimmed.EndsWith(';') ? trimmed : trimmed + ";";
+        }
+    }
+
+    private sealed class MySqlDialect : SqlDialect
+    {
+        private static readonly Regex CreateRoutine = new(
+            @"\GCREATE\s+(?:OR\s+REPLACE\s+)?(?:DEFINER\s*=\s*(?:`[^`]*`|'[^']*'|[^\s@]+)(?:@(?:`[^`]*`|'[^']*'|\S+))?\s+)?" +
+            @"(?:SQL\s+SECURITY\s+\w+\s+)?(?<kind>PROCEDURE|FUNCTION|TRIGGER|EVENT)\s+(?:IF\s+NOT\s+EXISTS\s+)?" +
+            @"(?<name>(?:`(?:[^`]|``)*`|[\w$]+)(?:\s*\.\s*(?:`(?:[^`]|``)*`|[\w$]+))?)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        private static readonly Regex CreateView = new(@"\GCREATE(?!\s+OR\s+REPLACE)(?=(\s+(ALGORITHM|DEFINER|SQL)\b[^\n]*?)?\s+VIEW\b)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        private static readonly HashSet<string> SpatialTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon",
+            "geometrycollection", "geomcollection"
+        };
+
+        public override string ProviderKey => MySqlKey;
+        public override int MaxIdentifierLength => 64;
+        public override string Quote(string identifier) => "`" + identifier.Replace("`", "``") + "`";
+        public override string EndOfStep => "\n";
+        public override string BeginTransaction => "START TRANSACTION;\n";
+        public override string CommitTransaction => "COMMIT;\n";
+
+        public override string SelectTop(string columns, string from, string? where, string? orderBy, int limit) =>
+            $"SELECT {columns} FROM {from}" +
+            (string.IsNullOrWhiteSpace(where) ? "" : $" WHERE {where}") +
+            (string.IsNullOrWhiteSpace(orderBy) ? "" : $" ORDER BY {orderBy}") + $" LIMIT {limit};";
+
+        public override string CountRows(string from, string? where) =>
+            $"SELECT COUNT(*) FROM {from}" + (string.IsNullOrWhiteSpace(where) ? "" : $" WHERE {where}") + ";";
+
+        public override string CreateSchemaIfMissing(string schema) => $"CREATE DATABASE IF NOT EXISTS {Quote(schema)};";
+        public override string CopyTableAs(string sourceTable, string schema, string newName) =>
+            $"CREATE TABLE {Table(schema, newName)} AS SELECT * FROM {sourceTable};";
+        public override string DropTable(string table) => $"DROP TABLE {table};";
+        public override string Truncate(string table) => $"TRUNCATE TABLE {table};";
+        public override string AddColumn(string table, string column, string type, string? defaultExpression = null) =>
+            $"ALTER TABLE {table} ADD COLUMN {Quote(column)} {type} NULL{(defaultExpression is null ? "" : " DEFAULT " + defaultExpression)};";
+        public override string IdentityClause => " AUTO_INCREMENT";
+        public override string InsertIdentityOverride => "";
+        public override (string Before, string After) IdentityInsertScope(string table) => ("", "");
+
+        // Explicit values above the counter move AUTO_INCREMENT forward by themselves.
+        public override string ResetSequence(string schema, string name, string column) => "";
+
+        public override string SelectExpression(DbColumn column) =>
+            SpatialTypes.Contains(column.BaseType)
+                ? $"ST_AsText({Quote(column.Name)}) AS {Quote(column.Name)}"
+                : Quote(column.Name);
+
+        public override bool IsReadOnlyColumn(DbColumn column) => column.IsComputed;
+
+        public override string Literal(object? value, string? targetBaseType = null)
+        {
+            var target = targetBaseType?.ToLowerInvariant();
+            return value switch
+            {
+                null or DBNull => "NULL",
+                bool b => b ? "TRUE" : "FALSE",
+                string s => Text(s),
+                char c => Text(c.ToString()),
+                byte[] bytes => "X'" + Hex(bytes) + "'",
+                Guid g => "'" + g.ToString("D") + "'",
+                double d when double.IsNaN(d) || double.IsInfinity(d) =>
+                    throw new InvalidOperationException($"MySQL cannot store the floating point value {d}."),
+                float f when float.IsNaN(f) || float.IsInfinity(f) =>
+                    throw new InvalidOperationException($"MySQL cannot store the floating point value {f}."),
+                double d => Invariant(d, "R"),
+                float f => Invariant(f, "R"),
+                decimal m => Invariant(m),
+                sbyte or byte or short or ushort or int or uint or long or ulong => Invariant((IFormattable)value),
+                DateTime dt => "'" + (target == "date" ? Invariant(dt, "yyyy-MM-dd") : Invariant(dt, "yyyy-MM-dd HH:mm:ss.ffffff")) + "'",
+                // No time zone type: the instant is stored as UTC.
+                DateTimeOffset dto => "'" + Invariant(dto.UtcDateTime, "yyyy-MM-dd HH:mm:ss.ffffff") + "'",
+                DateOnly d => "'" + Invariant(d, "yyyy-MM-dd") + "'",
+                TimeOnly t => "'" + Invariant(t, "HH:mm:ss.ffffff") + "'",
+                TimeSpan ts => "'" + FormatTimeSpan(ts) + "'",
+                IEnumerable items => Text(PostgresArrayText(items)),
+                _ => Text(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "")
+            };
+        }
+
+        // Backslashes are escapes unless NO_BACKSLASH_ESCAPES is set; doubled, they read the same either way.
+        private static string Text(string s) => "'" + s.Replace("\\", "\\\\").Replace("'", "''") + "'";
+
+        public override string ToReplaceDefinition(string definition, DbObjectType type)
+        {
+            var start = FirstTokenIndex(definition);
+            if (type is DbObjectType.View)
+            {
+                var view = CreateView.Match(definition, start);
+                return view.Success ? definition[..start] + "CREATE OR REPLACE" + definition[(start + view.Length)..] : definition;
+            }
+
+            // MySQL has no CREATE OR REPLACE for routines and triggers: drop the old one first.
+            var match = CreateRoutine.Match(definition, start);
+            return match.Success
+                ? $"DROP {match.Groups["kind"].Value.ToUpperInvariant()} IF EXISTS {match.Groups["name"].Value};\n{definition}"
+                : definition;
+        }
+
+        // The server parses BEGIN … END bodies itself, so a definition runs as one statement.
         public override string AsStatement(string definition)
         {
             var trimmed = definition.TrimEnd();

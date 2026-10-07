@@ -39,7 +39,7 @@ public static class ErModelContext
             .Concat(tables.SelectMany(t => t.Design.ForeignKeys.Select(f => new DbForeignKey
             {
                 Name = f.Name, Schema = t.Schema(providerKey), Table = t.Name, Columns = f.Column,
-                ReferencedSchema = string.IsNullOrWhiteSpace(f.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(providerKey) : f.ReferencedSchema,
+                ReferencedSchema = string.IsNullOrWhiteSpace(f.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(providerKey, model.Database) : f.ReferencedSchema,
                 ReferencedTable = f.ReferencedTable, ReferencedColumns = f.ReferencedColumn
             })))
             .ToList();

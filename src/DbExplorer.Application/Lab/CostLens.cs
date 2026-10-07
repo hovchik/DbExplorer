@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Models;
 
@@ -77,8 +78,36 @@ public static class CostLens
             return plan is null ? null : FromShowPlan(plan.Columns, plan.Rows);
         }
 
+        if (key == SqlDialect.MySqlKey)
+        {
+            var result = await session.Provider.ExecuteScriptAsync(PlanReader.BuildScript(statement, key, analyze: false, session.ServerVersion), database, 15, ct);
+            return PlanReader.Read(result.ResultSets, key, statement).FirstOrDefault() is { } plan ? FromPlan(plan) : null;
+        }
+
         var json = await session.Provider.ExecuteScriptAsync($"EXPLAIN (FORMAT JSON) {statement}", database, 15, ct);
         return json.ResultSets.FirstOrDefault()?.Rows.FirstOrDefault()?.FirstOrDefault()?.ToString() is { } text ? FromPostgresPlan(text) : null;
+    }
+
+    /// <summary>Reads a drawn plan (MySQL / MariaDB): the statement's rows and cost, and every table scan in it.</summary>
+    public static CostEstimate FromPlan(ExecutionPlan plan)
+    {
+        var scans = plan.Nodes
+            .Where(n => n.Operator.StartsWith("Table scan", StringComparison.Ordinal) && n.Object is not null &&
+                        n.EstimatedRows * Math.Max(1, n.EstimatedExecutions) >= ScanRowsWorthNoting)
+            .Select(n => new PlannedScan(n.Object!.Split(" using ")[0], n.EstimatedRows * Math.Max(1, n.EstimatedExecutions)))
+            .ToList();
+        // MariaDB gives no row count for the statement: the last table of the join, run once per earlier row, is it.
+        var rows = plan.Root.EstimatedRows > 0
+            ? plan.Root.EstimatedRows
+            : plan.Nodes.Where(n => n.Children.Count == 0).Select(n => n.EstimatedRows * Math.Max(1, n.EstimatedExecutions)).DefaultIfEmpty(0).Max();
+        var total = plan.TotalCost ?? plan.Root.SubtreeCost;
+        var level = total switch
+        {
+            >= 100_000 => CostLevel.Expensive,
+            >= 5_000 => CostLevel.Moderate,
+            _ => scans.Count > 0 ? CostLevel.Moderate : CostLevel.Cheap
+        };
+        return new CostEstimate(rows, total, Distinct(scans), level);
     }
 
     /// <summary>Reads an <c>EXPLAIN (FORMAT JSON)</c> plan: the top node's rows and cost, and every Seq Scan under it.</summary>

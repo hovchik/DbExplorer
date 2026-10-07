@@ -56,6 +56,7 @@ public sealed class ColumnValueCache(DatabaseSession session, int sampleRows = 1
         var dataType = column.DataType.ToLowerInvariant();
         // SQL Server's text/ntext are legacy LOBs; PostgreSQL's text is the everyday string type.
         if (type is "text" && providerKey == "SqlServer") return false;
+        if (providerKey == "MySql" && type is "tinytext" or "mediumtext" or "longtext" or "tinyblob" or "blob" or "mediumblob" or "longblob") return false;
         if (type is "ntext" or "xml" or "json" or "jsonb" or "bytea" or "image" or "varbinary" or "binary" or "geometry" or "geography") return false;
         if (dataType.Contains("(max)", StringComparison.Ordinal)) return false;
         return true;

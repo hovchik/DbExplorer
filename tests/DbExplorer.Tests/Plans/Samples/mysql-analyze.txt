@@ -1,0 +1,7 @@
+-> Table scan on <temporary>  (actual time=0.151..0.152 rows=1 loops=1)
+    -> Aggregate using temporary table  (actual time=0.15..0.15 rows=1 loops=1)
+        -> Nested loop inner join  (cost=0.9 rows=1) (actual time=0.0642..0.0728 rows=2 loops=1)
+            -> Filter: (o.`status` = 'new')  (cost=0.55 rows=1) (actual time=0.045..0.0527 rows=2 loops=1)
+                -> Table scan on o  (cost=0.55 rows=3) (actual time=0.0413..0.048 rows=3 loops=1)
+            -> Single-row index lookup on c using PRIMARY (id=o.customer_id)  (cost=0.35 rows=1) (actual time=0.0084..0.00848 rows=1 loops=2)
+

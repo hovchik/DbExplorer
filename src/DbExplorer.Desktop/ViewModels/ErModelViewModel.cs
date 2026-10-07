@@ -478,7 +478,7 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     {
         var provider = Model.ProviderKey;
         var context = ErModelContext.For(Model, _databaseSnapshot, provider);
-        var schema = context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider);
+        var schema = context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider, Model.Database);
         var name = Model.UniqueTableName(schema, context.TableStyle == NamingStyle.Snake ? "new_table" : "NewTable");
         var draft = new TableDesign { Schema = schema, Name = name };
         var (type, _) = ColumnTypes.Preferred(provider, TypeFamily.Integer);
@@ -685,7 +685,7 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     {
         key = null;
         var dot = fullName.IndexOf('.');
-        var (schema, name) = dot < 0 ? (TableScriptBuilder.DefaultSchema(Model.ProviderKey), fullName) : (fullName[..dot], fullName[(dot + 1)..]);
+        var (schema, name) = dot < 0 ? (TableScriptBuilder.DefaultSchema(Model.ProviderKey, Model.Database), fullName) : (fullName[..dot], fullName[(dot + 1)..]);
         if (Model.FindByName(schema, name) is { } table)
         {
             var keys = table.Design.PrimaryKey.ToList();
@@ -946,7 +946,7 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     }
 
     private static string Engine(string providerKey) =>
-        providerKey == SqlDialect.SqlServerKey ? "SQL Server" : providerKey == SqlDialect.PostgresKey ? "PostgreSQL" : providerKey;
+        SqlDialect.EngineName(providerKey);
 
     private static bool SameDesign(TableDesign a, TableDesign b) =>
         a.Schema == b.Schema && a.Name == b.Name && a.PrimaryKeyName == b.PrimaryKeyName &&

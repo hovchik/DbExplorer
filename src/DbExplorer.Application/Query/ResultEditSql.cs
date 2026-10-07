@@ -71,8 +71,9 @@ public static class ResultEditSql
     /// <summary>
     /// One INSERT per new row into <see cref="ResultSource.RowTable"/>, with the values typed into its cells (by result
     /// column; columns left empty get their defaults). Each statement also returns the row as stored, so generated keys and
-    /// defaults show up and the row can be edited afterwards: RETURNING on PostgreSQL; on SQL Server a SELECT by the key,
-    /// typed or taken from SCOPE_IDENTITY() for an identity key (nothing is read back when the key is generated otherwise).
+    /// defaults show up and the row can be edited afterwards: RETURNING on PostgreSQL; on SQL Server and MySQL a SELECT by
+    /// the key, typed or taken from SCOPE_IDENTITY() / LAST_INSERT_ID() for an identity key (nothing is read back when the
+    /// key is generated otherwise).
     /// </summary>
     /// <exception cref="InvalidOperationException">Rows cannot be added to this result, or a value is set in a column that
     /// cannot be written.</exception>
@@ -99,19 +100,20 @@ public static class ResultEditSql
                 .Select(g => (Column: g.Key, Value: g.Last().Value))
                 .ToList();
             var insert = values.Count == 0
-                ? $"INSERT INTO {name} DEFAULT VALUES"
+                ? dialect == SqlDialect.MySql ? $"INSERT INTO {name} () VALUES ()" : $"INSERT INTO {name} DEFAULT VALUES"
                 : $"INSERT INTO {name} ({string.Join(", ", values.Select(v => quote(v.Column)))}) VALUES ({string.Join(", ", values.Select(v => Literal(v.Value, dialect)))})";
 
             string sql;
             var readBack = true;
-            if (dialect == SqlDialect.SqlServer)
+            if (dialect == SqlDialect.SqlServer || dialect == SqlDialect.MySql)
             {
+                var lastIdentity = dialect == SqlDialect.MySql ? "LAST_INSERT_ID()" : "SCOPE_IDENTITY()";
                 var conditions = new List<string>();
                 foreach (var k in table.Key)
                 {
                     var typed = values.FirstOrDefault(v => string.Equals(v.Column, k.Column.Name, StringComparison.OrdinalIgnoreCase));
                     if (typed.Column is not null) conditions.Add($"{quote(k.Column.Name)} = {Literal(typed.Value, dialect)}");
-                    else if (table.Key.Count == 1 && k.Column.IsIdentity) conditions.Add($"{quote(k.Column.Name)} = SCOPE_IDENTITY()");
+                    else if (table.Key.Count == 1 && k.Column.IsIdentity) conditions.Add($"{quote(k.Column.Name)} = {lastIdentity}");
                     else readBack = false;
                 }
                 sql = insert + ";" + (readBack ? $"\nSELECT {shownList} FROM {name} WHERE {string.Join(" AND ", conditions)};" : "");
@@ -193,13 +195,18 @@ public static class ResultEditSql
     }
 
     /// <summary>A literal that keeps the value's type: dates and times are cast on SQL Server so precision and offsets
-    /// survive, UTC timestamps carry their offset on PostgreSQL.</summary>
+    /// survive, UTC timestamps carry their offset on PostgreSQL. MySQL has no offsets: an instant is written in UTC.</summary>
     public static string Literal(object? value, SqlDialect dialect)
     {
         var sqlServer = dialect == SqlDialect.SqlServer;
+        var mySql = dialect == SqlDialect.MySql;
         string Text(string s) => (sqlServer ? "N'" : "'") + s.Replace("'", "''") + "'";
         return value switch
         {
+            DateTime dt when mySql => Text(dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFF", CultureInfo.InvariantCulture)),
+            DateTimeOffset dto when mySql => Text(dto.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.FFFFFF", CultureInfo.InvariantCulture)),
+            TimeSpan ts when mySql => Text((ts < TimeSpan.Zero ? "-" : "") +
+                $"{(long)ts.Duration().TotalHours:00}:{ts.Duration().Minutes:00}:{ts.Duration().Seconds:00}.{ts.Duration().Ticks % TimeSpan.TicksPerSecond / 10:000000}"),
             DateTime dt when sqlServer => $"CAST({Text(ResultExporter.FormatInvariant(dt))} AS datetime2(7))",
             DateTime dt when dt.Kind == DateTimeKind.Utc => Text(dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture) + "+00"),
             DateTimeOffset dto when sqlServer => $"CAST({Text(ResultExporter.FormatInvariant(dto))} AS datetimeoffset(7))",

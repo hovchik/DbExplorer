@@ -122,7 +122,7 @@ public sealed record ErModel
         foreach (var child in Tables)
         foreach (var fk in child.Design.ForeignKeys)
         {
-            var parent = FindByName(string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(ProviderKey) : fk.ReferencedSchema, fk.ReferencedTable);
+            var parent = FindByName(string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(ProviderKey, Database) : fk.ReferencedSchema, fk.ReferencedTable);
             if (parent is not null) yield return (child, fk, parent);
         }
     }
@@ -203,6 +203,6 @@ public sealed record ErModel
         this with { Tables = Tables.Select(t => t.Id == id ? change(t) : t).ToList() };
 
     private bool References(ForeignKeyDesign fk, string schema, string name) =>
-        TableDesign.Same(string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(ProviderKey) : fk.ReferencedSchema, schema) &&
+        TableDesign.Same(string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(ProviderKey, Database) : fk.ReferencedSchema, schema) &&
         TableDesign.Same(fk.ReferencedTable, name);
 }

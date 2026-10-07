@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -18,6 +18,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Desktop", "src\DbExplorer.Desktop\DbExplorer.Desktop.csproj", "{98B019CF-F22A-4177-B68D-55D39438CC86}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DbExplorer.Tests", "tests\DbExplorer.Tests\DbExplorer.Tests.csproj", "{5A15B322-EF75-4AFC-BF0A-E6942458AA02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DbExplorer.Providers.MySql", "src\DbExplorer.Providers.MySql\DbExplorer.Providers.MySql.csproj", "{B99323C3-9FD9-422A-81D9-857122D6BA66}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -49,6 +51,10 @@ Global
 		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5A15B322-EF75-4AFC-BF0A-E6942458AA02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B99323C3-9FD9-422A-81D9-857122D6BA66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B99323C3-9FD9-422A-81D9-857122D6BA66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B99323C3-9FD9-422A-81D9-857122D6BA66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B99323C3-9FD9-422A-81D9-857122D6BA66}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -60,5 +66,6 @@ Global
 		{AC795039-238C-44BA-98AC-75049FD822F6} = {930665A1-2894-47D0-BDD4-05B61E931195}
 		{98B019CF-F22A-4177-B68D-55D39438CC86} = {930665A1-2894-47D0-BDD4-05B61E931195}
 		{5A15B322-EF75-4AFC-BF0A-E6942458AA02} = {525D2BAB-0727-4AF1-8AB8-09CBD375197A}
+		{B99323C3-9FD9-422A-81D9-857122D6BA66} = {930665A1-2894-47D0-BDD4-05B61E931195}
 	EndGlobalSection
 EndGlobal

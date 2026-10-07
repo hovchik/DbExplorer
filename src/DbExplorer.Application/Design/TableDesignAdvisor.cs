@@ -91,8 +91,17 @@ public static class TableDesignAdvisor
                 $"Use {type}", d => d.WithColumn(column.Name, c => c with { Type = type, Size = null }));
         }
 
-        if (provider == SqlDialect.SqlServerKey && columns.Count(c => c.IsIdentity) > 1)
-            Add("identity-count", DesignSeverity.Error, "Only one identity column is allowed", "SQL Server allows one IDENTITY column per table.");
+        if (provider is SqlDialect.SqlServerKey or SqlDialect.MySqlKey && columns.Count(c => c.IsIdentity) > 1)
+            Add("identity-count", DesignSeverity.Error, "Only one identity column is allowed",
+                provider == SqlDialect.MySqlKey ? "MySQL allows one AUTO_INCREMENT column per table." : "SQL Server allows one IDENTITY column per table.");
+
+        // MySQL needs an AUTO_INCREMENT column to lead a key, or the CREATE / ALTER fails.
+        if (provider == SqlDialect.MySqlKey)
+            foreach (var column in columns.Where(c => c.IsIdentity && !c.IsPrimaryKey &&
+                                                      !design.Indexes.Any(i => i.Columns.Count > 0 && TableDesign.Same(i.Columns[0].Trim(), c.Name.Trim()))))
+                Add($"identity-key:{column.Name}", DesignSeverity.Error, $"{column.Name} is AUTO_INCREMENT but not a key",
+                    "MySQL only numbers a column that is the primary key or leads an index.",
+                    "Make it the primary key", d => d.WithColumn(column.Name, c => c with { IsPrimaryKey = true, IsNullable = false }));
 
         foreach (var fk in design.ForeignKeys)
         {
@@ -179,8 +188,10 @@ public static class TableDesignAdvisor
             if (ColumnTypes.NeedsLength(provider, bare) && string.IsNullOrEmpty(column.EffectiveSize) && bare is not ("char" or "nchar"))
             {
                 var size = SuggestedLength(words) ?? 100;
-                Add($"length:{column.Name}", DesignSeverity.Warning, $"{column.Name} has no length",
-                    $"A {bare} without a length holds a single character in a CREATE TABLE.",
+                Add($"length:{column.Name}", provider == SqlDialect.MySqlKey ? DesignSeverity.Error : DesignSeverity.Warning, $"{column.Name} has no length",
+                    provider == SqlDialect.MySqlKey
+                        ? $"MySQL needs a length for {bare}; the CREATE TABLE fails without one."
+                        : $"A {bare} without a length holds a single character in a CREATE TABLE.",
                     $"Use {bare}({size})", d => d.WithColumn(column.Name, c => c with { Type = bare, Size = size.ToString() }));
             }
 
@@ -242,7 +253,7 @@ public static class TableDesignAdvisor
                     "datetime rounds to 3 ms and starts in 1753; datetime2 is exact to 100 ns, covers every date and takes no more space.",
                     "Use datetime2", d => d.WithColumn(column.Name, c => c with { Type = "datetime2", Size = null }));
 
-            if (provider != SqlDialect.SqlServerKey && bare is "timestamp" or "timestamp without time zone")
+            if (provider == SqlDialect.PostgresKey && bare is "timestamp" or "timestamp without time zone")
                 Add($"timestamptz:{column.Name}", DesignSeverity.Tip, $"{column.Name}: timestamptz records the moment",
                     "timestamp drops the time zone, so values from clients in different zones cannot be compared; timestamptz stores the instant.",
                     "Use timestamptz", d => d.WithColumn(column.Name, c => c with { Type = "timestamptz", Size = null }));

@@ -161,7 +161,7 @@ public static partial class QuerySqlBuilder
     public static string Identifier(string name, SqlDialect dialect)
     {
         var plain = PlainIdentifier().IsMatch(name) && !Reserved.Contains(name) &&
-                    (dialect.ProviderKey == SqlDialect.SqlServerKey || name == name.ToLowerInvariant());
+                    (dialect.ProviderKey != SqlDialect.PostgresKey || name == name.ToLowerInvariant());
         return plain ? name : dialect.Quote(name);
     }
 

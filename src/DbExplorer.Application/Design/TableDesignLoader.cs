@@ -124,7 +124,7 @@ public static class TableDesignLoader
     }
 
     private static string Unquote(string name) =>
-        name.Length > 1 && (name[0] == '"' && name[^1] == '"' || name[0] == '[' && name[^1] == ']') ? name[1..^1] : name;
+        name.Length > 1 && (name[0] == '"' && name[^1] == '"' || name[0] == '[' && name[^1] == ']' || name[0] == '`' && name[^1] == '`') ? name[1..^1] : name;
 
     private static bool IsPlainType(string type, string providerKey) =>
         providerKey == SqlDialect.SqlServerKey

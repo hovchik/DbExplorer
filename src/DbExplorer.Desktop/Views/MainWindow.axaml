@@ -20,11 +20,22 @@
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Image Source="/Assets/logo.png" Width="24" Height="24" Margin="0,0,4,0" VerticalAlignment="Center" />
           <TextBlock Text="DB Explorer" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0" />
-          <ComboBox Width="240"
+          <ComboBox Width="280"
                     ItemsSource="{Binding Profiles}"
                     SelectedItem="{Binding SelectedProfile}"
                     PlaceholderText="Select a connection…"
-                    IsEnabled="{Binding !IsConnected}" />
+                    IsTextSearchEnabled="True"
+                    IsEnabled="{Binding !IsConnected}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                           Fill="{Binding Environment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}" />
+                  <TextBlock Text="{Binding}" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <Button Classes="icon" Content="＋" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}" />
           <Button Classes="icon" Content="✎" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}" />
           <Button Classes="icon" Content="🗑" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}" />

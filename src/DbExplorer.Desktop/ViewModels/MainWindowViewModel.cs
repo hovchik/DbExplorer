@@ -148,7 +148,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             await Query.RestoreTabsAsync();
-            foreach (var p in await _store.LoadAsync()) Profiles.Add(p);
+            foreach (var p in ConnectionFolders.Order(await _store.LoadAsync())) Profiles.Add(p);
             SelectedProfile = Profiles.FirstOrDefault();
         }
         catch (Exception ex)
@@ -209,11 +209,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task NewConnectionAsync()
     {
         var draft = new ConnectionProfile { ProviderKey = _registry.All[0].Key };
-        var profile = await _dialogs.EditConnectionAsync(draft, "New connection");
+        var profile = await _dialogs.EditConnectionAsync(draft, "New connection", ConnectionFolders.All(Profiles));
         if (profile is null) return;
 
         Profiles.Add(profile);
-        SelectedProfile = profile;
+        SortProfiles(profile);
         await SaveProfilesAsync();
     }
 
@@ -224,13 +224,25 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedProfile is not { } current) return;
 
-        var edited = await _dialogs.EditConnectionAsync(current.Clone(), "Edit connection");
+        var edited = await _dialogs.EditConnectionAsync(current.Clone(), "Edit connection", ConnectionFolders.All(Profiles));
         if (edited is null) return;
 
         var index = Profiles.IndexOf(current);
         Profiles[index] = edited;
-        SelectedProfile = edited;
+        SortProfiles(edited);
         await SaveProfilesAsync();
+    }
+
+    /// <summary>Keeps the list grouped by folder, then by name, and selects <paramref name="select"/>.</summary>
+    private void SortProfiles(ConnectionProfile select)
+    {
+        var ordered = ConnectionFolders.Order(Profiles);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var at = Profiles.IndexOf(ordered[i]);
+            if (at != i) Profiles.Move(at, i);
+        }
+        SelectedProfile = select;
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
@@ -309,7 +321,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var selectedId = SelectedProfile?.Id;
             var result = ConnectionTransfer.Merge(Profiles, incoming, choice);
             Profiles.Clear();
-            foreach (var profile in result.Profiles) Profiles.Add(profile);
+            foreach (var profile in ConnectionFolders.Order(result.Profiles)) Profiles.Add(profile);
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
             await SaveProfilesAsync();
 

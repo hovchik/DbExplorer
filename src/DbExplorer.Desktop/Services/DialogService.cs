@@ -15,7 +15,7 @@ namespace DbExplorer.Desktop.Services;
 
 public interface IDialogService
 {
-    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title);
+    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null);
 
     Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,
@@ -71,11 +71,11 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
 {
     public Window? Owner { get; set; }
 
-    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title)
+    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null)
     {
         if (Owner is null) return null;
 
-        var vm = new ConnectionDialogViewModel(registry, draft);
+        var vm = new ConnectionDialogViewModel(registry, draft, folders);
         var dialog = new ConnectionDialog { DataContext = vm, Title = title };
         var ok = await dialog.ShowDialog<bool>(Owner);
         return ok ? vm.ToProfile() : null;

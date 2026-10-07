@@ -6,6 +6,9 @@ public sealed class ConnectionProfile
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
+
+    /// <summary>Groups connections in the list ("Shop", "Clients/Acme"); empty for none.</summary>
+    public string Folder { get; set; } = "";
     public string ProviderKey { get; set; } = "";
     public string Host { get; set; } = "localhost";
     public int? Port { get; set; }
@@ -35,6 +38,10 @@ public sealed class ConnectionProfile
     [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"{Host}/{Database}" : Name;
 
+    /// <summary>"Folder / Name", or the name alone outside folders.</summary>
+    [JsonIgnore]
+    public string QualifiedName => string.IsNullOrWhiteSpace(Folder) ? DisplayName : $"{Folder.Trim()} / {DisplayName}";
+
     public override string ToString() =>
-        Environment.ShortTag() is { } tag ? $"{DisplayName}  [{tag}]" : DisplayName;
+        Environment.ShortTag() is { } tag ? $"{QualifiedName}  [{tag}]" : QualifiedName;
 }

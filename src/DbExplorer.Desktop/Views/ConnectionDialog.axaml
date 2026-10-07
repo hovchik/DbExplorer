@@ -51,6 +51,10 @@
         <StackPanel Grid.Column="0">
           <TextBlock Classes="field" Text="Name" />
           <TextBox Text="{Binding Name}" Watermark="host/database if empty" />
+          <TextBlock Classes="field" Text="Folder" />
+          <AutoCompleteBox Text="{Binding Folder}" ItemsSource="{Binding Folders}" FilterMode="ContainsOrdinal"
+                           MinimumPrefixLength="0" Watermark="none (e.g. Shop or Clients/Acme)"
+                           ToolTip.Tip="Groups connections in the list; use / for a folder inside a folder" />
         </StackPanel>
         <StackPanel Grid.Column="2">
           <TextBlock Classes="field" Text="Environment" />

@@ -66,6 +66,10 @@
 					  ToolTip.Tip="Cross-tabulate the rows in view: group by row fields, spread a column's values across, and sum, count or average a value" />
 		<Button x:Name="ClearAllButton" Classes="compact" Content="Clear filters &amp; sort" Margin="0,0,10,2" IsVisible="False"
 				Click="OnClearAll" ToolTip.Tip="Remove every filter and sort and show all fetched rows" />
+		<Button x:Name="AddRowButton" Classes="compact" Content="+ Row" Margin="0,0,4,2" IsVisible="False" Click="OnAddRow"
+				ToolTip.ShowOnDisabled="True" />
+		<Button x:Name="DeleteRowsButton" Classes="compact" Content="− Delete" Margin="0,0,10,2" IsVisible="False" Click="OnDeleteRows"
+				ToolTip.ShowOnDisabled="True" />
 		<TextBlock x:Name="EditInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" IsVisible="False" />
 		<TextBlock x:Name="RowCountText" Classes="hint" VerticalAlignment="Center" Margin="0,0,10,2" TextTrimming="CharacterEllipsis" />
 		<TextBlock x:Name="AggregateText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" FontWeight="SemiBold"
@@ -134,9 +138,9 @@
 	  <DockPanel>
 		<StackPanel x:Name="EditButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
 		  <Button x:Name="CommitEditsButton" Classes="compact accent" Content="Commit" Click="OnCommitEdits"
-				  ToolTip.Tip="Write the edited values to the database (Ctrl+S)" />
+				  ToolTip.Tip="Write the edited values, new rows and deletions to the database (Ctrl+S); new and deleted rows show the SQL first" />
 		  <Button x:Name="RevertEditsButton" Classes="compact" Content="Revert all" Click="OnRevertEdits"
-				  ToolTip.Tip="Discard every edit that is not committed yet" />
+				  ToolTip.Tip="Discard every change that is not committed yet: edits, new rows and deletions" />
 		  <Button x:Name="DismissEditMessageButton" Classes="compact" Content="✕" Padding="6,0" Click="OnDismissEditMessage"
 				  ToolTip.Tip="Hide this message" />
 		</StackPanel>

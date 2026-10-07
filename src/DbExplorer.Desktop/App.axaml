@@ -25,6 +25,9 @@
           <SolidColorBrush x:Key="AppGridHeaderBrush">#0D000000</SolidColorBrush>
           <!-- An edited, not yet committed value in a result grid -->
           <SolidColorBrush x:Key="AppCellEditedBrush">#40F5A623</SolidColorBrush>
+          <!-- A row added in a result grid, and one marked for deletion, not committed yet -->
+          <SolidColorBrush x:Key="AppCellNewBrush">#332E7D32</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDeletedBrush">#33D13438</SolidColorBrush>
           <!-- Objects tab: one colour per object type (ObjectTypeColors) -->
           <SolidColorBrush x:Key="AppObjectTableBrush">#FFC25100</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectViewBrush">#FF2E7D32</SolidColorBrush>
@@ -55,6 +58,8 @@
           <SolidColorBrush x:Key="AppGridAltRowBrush">#08FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#12FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellEditedBrush">#4DB8860B</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNewBrush">#407BC67E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDeletedBrush">#40F1707A</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectTableBrush">#FFF5A55A</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectViewBrush">#FF7BC67E</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectMaterializedViewBrush">#FF4DD0E1</SolidColorBrush>

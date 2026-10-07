@@ -22,11 +22,28 @@ public sealed partial class RoutineParameterInput : ObservableObject
     [ObservableProperty] private string _value = "";
 }
 
+/// <summary>Whether a result row is as read, added in the grid, or marked for deletion; new and deleted rows wait for a
+/// commit like edited values do.</summary>
+public enum ResultRowState { Unchanged, New, Deleted, Removed }
+
 /// <summary>A grid-friendly wrapper around one row of a <see cref="QueryResultSet"/>. Cells can be edited in place: the row
-/// keeps the values it was read with until the edits are committed (<see cref="AcceptChanges"/>) or reverted.</summary>
+/// keeps the values it was read with until the edits are committed (<see cref="AcceptChanges"/>) or reverted. A row can also
+/// be new (added in the grid, not inserted yet) or marked for deletion.</summary>
 public sealed class ResultRow(IReadOnlyList<object?> values) : INotifyPropertyChanged
 {
     private Dictionary<int, object?>? _originals;
+
+    /// <summary>An empty row added in the grid; it is inserted on commit.</summary>
+    public static ResultRow CreateNew(int columnCount) => new(new object?[columnCount]) { State = ResultRowState.New };
+
+    public ResultRowState State { get; private set; }
+
+    public bool IsNew => State == ResultRowState.New;
+
+    public bool IsDeleted => State == ResultRowState.Deleted;
+
+    /// <summary>Anything to commit: edited values, a new row, or a row to delete.</summary>
+    public bool HasChanges => IsModified || State is ResultRowState.New or ResultRowState.Deleted;
 
     /// <summary>The current values (edited ones included). Replaced, never mutated, so a background filter always sees
     /// a consistent row.</summary>
@@ -72,20 +89,46 @@ public sealed class ResultRow(IReadOnlyList<object?> values) : INotifyPropertyCh
         Replace(column, original);
     }
 
+    /// <summary>Discards the edits and un-marks a deletion. (A new row is reverted by removing it from the result.)</summary>
     public void Revert()
     {
-        if (!IsModified) return;
-        Values = OriginalValues;
-        _originals!.Clear();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Values)));
+        if (!IsModified && !IsDeleted) return;
+        if (IsModified) Values = OriginalValues;
+        _originals?.Clear();
+        if (IsDeleted) State = ResultRowState.Unchanged;
+        Changed();
     }
 
-    /// <summary>The edits are now in the database: the current values become the original ones.</summary>
-    public void AcceptChanges()
+    /// <summary>Marks the row to be deleted on commit (its edits are kept, in case the deletion is undone).</summary>
+    public void MarkDeleted()
     {
-        if (!IsModified) return;
-        _originals!.Clear();
-        Values = Values.ToArray(); // a new instance, so bindings to Values see the change of state
+        if (State != ResultRowState.Unchanged) return;
+        State = ResultRowState.Deleted;
+        Changed();
+    }
+
+    public void UndoDelete()
+    {
+        if (!IsDeleted) return;
+        State = ResultRowState.Unchanged;
+        Changed();
+    }
+
+    /// <summary>The changes are now in the database: the current values (or, for a new row, the row as stored when it was
+    /// read back) become the original ones; a deleted row becomes <see cref="ResultRowState.Removed"/>.</summary>
+    public void AcceptChanges(IReadOnlyList<object?>? stored = null)
+    {
+        if (!HasChanges) return;
+        _originals?.Clear();
+        if (stored is not null) Values = stored;
+        State = State == ResultRowState.Deleted ? ResultRowState.Removed : ResultRowState.Unchanged;
+        Changed();
+    }
+
+    // A new value list, so bindings to Values see the change of state.
+    private void Changed()
+    {
+        Values = Values.ToArray();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Values)));
     }
 
@@ -132,6 +175,21 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
     public Action<ResultSetView, ResultReference, ResultRow>? OpenReference { get; init; }
 
     public bool CanEdit(int column) => CommitEdits is not null && Source?.CanEdit(column) == true;
+
+    /// <summary>Rows can be added to and deleted from this result (it reads one table whose key is in the result).</summary>
+    public bool CanEditRows => CommitEdits is not null && Source?.RowTable is not null && Rows is List<ResultRow>;
+
+    /// <summary>Adds an empty row at the end, to be inserted on commit; null when rows cannot be added.</summary>
+    public ResultRow? AddRow()
+    {
+        if (!CanEditRows) return null;
+        var row = ResultRow.CreateNew(Columns.Count);
+        ((List<ResultRow>)Rows).Add(row);
+        return row;
+    }
+
+    /// <summary>Takes rows that are gone out of the result: new rows that were discarded, deleted rows once committed.</summary>
+    public int RemoveRows(Func<ResultRow, bool> predicate) => Rows is List<ResultRow> list ? list.RemoveAll(r => predicate(r)) : 0;
 
     public ResultReference? ReferenceOf(int column) => OpenReference is null ? null : Source?.ReferenceOf(column);
 

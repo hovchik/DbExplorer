@@ -133,7 +133,7 @@ public partial class GetDataViewModel : ViewModelBase
 
     private async Task<bool> ConfirmDiscardEditsAsync() =>
         !ResultEditing.HasEdits(ResultSets) || _dialogs is null ||
-        await _dialogs.ConfirmAsync("The rows have edited values that are not committed yet. Reload and discard the edits?", "Discard and reload");
+        await _dialogs.ConfirmAsync("The rows have changes that are not committed yet (edited, new or deleted rows). Reload and discard them?", "Discard and reload");
 
     private static string BuildSelect(DbObject table, int limit, string providerKey, Func<string, string> quote, string? filter)
     {

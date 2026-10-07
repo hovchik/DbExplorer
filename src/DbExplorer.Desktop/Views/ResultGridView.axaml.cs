@@ -115,6 +115,8 @@ public partial class ResultGridView : UserControl
     private readonly MenuItem _setNullItem;
     private readonly MenuItem _revertCellItem;
     private readonly MenuItem _revertRowItem;
+    private readonly MenuItem _addRowItem;
+    private readonly MenuItem _deleteRowsItem;
     private readonly MenuItem _selectTextItem;
     private readonly Separator _editSeparator = new();
 
@@ -125,7 +127,7 @@ public partial class ResultGridView : UserControl
         _quickFilterTimer.Tick += (_, _) => FlushQuickFilter();
 
         Grid.AddHandler(KeyDownEvent, OnGridKeyDown, RoutingStrategies.Tunnel);
-        Grid.SelectionChanged += (_, _) => { UpdateAggregates(); UpdateDetails(); };
+        Grid.SelectionChanged += (_, _) => { UpdateAggregates(); UpdateDetails(); UpdateRowButtons(); };
         Grid.CurrentCellChanged += (_, _) => UpdateAggregates();
         Grid.DoubleTapped += OnGridDoubleTapped;
         Grid.Sorting += OnSorting;
@@ -170,12 +172,16 @@ public partial class ResultGridView : UserControl
         _editCellItem.InputGesture = new KeyGesture(Key.F2);
         _setNullItem = Item("Set to NULL", () => EditTarget((row, column) => row.SetValue(column, null)));
         _revertCellItem = Item("Revert this value", () => EditTarget((row, column) => row.RevertCell(column)));
-        _revertRowItem = Item("Revert this row", () => EditTarget((row, _) => row.Revert()));
+        _revertRowItem = Item("Revert this row", () => RevertRow(TargetCell()?.Row));
+        _addRowItem = Item("Add row", AddRow);
+        _addRowItem.InputGesture = new KeyGesture(Key.Insert, KeyModifiers.Alt);
+        _deleteRowsItem = Item("Delete selected rows", ToggleDeleteSelected);
+        _deleteRowsItem.InputGesture = new KeyGesture(Key.Delete, KeyModifiers.Control);
         _selectTextItem = Item("Select text in cell", () => BeginCellEdit(TargetCell()));
         _selectTextItem.InputGesture = new KeyGesture(Key.F2);
         if (Grid.ContextMenu is { } menu)
         {
-            var items = new Control[] { _openReferenceItem, _editCellItem, _setNullItem, _revertCellItem, _revertRowItem, _editSeparator };
+            var items = new Control[] { _openReferenceItem, _editCellItem, _setNullItem, _revertCellItem, _revertRowItem, _addRowItem, _deleteRowsItem, _editSeparator };
             for (var i = 0; i < items.Length; i++) menu.Items.Insert(i, items[i]);
             var view = menu.Items.OfType<MenuItem>().First(m => m.Header as string == "View cell value…");
             menu.Items.Insert(menu.Items.IndexOf(view) + 1, _selectTextItem);
@@ -219,6 +225,7 @@ public partial class ResultGridView : UserControl
                 UpdateDetails();
                 UpdateEditBar();
                 UpdateEditInfo();
+                UpdateRowButtons();
                 SyncPivotControls();
                 return;
             }
@@ -252,6 +259,7 @@ public partial class ResultGridView : UserControl
             FilterBox.Text = _state.QuickFilter;
             UpdateEditBar();
             UpdateEditInfo();
+            UpdateRowButtons();
             SyncPivotControls();
         }
         finally
@@ -276,9 +284,9 @@ public partial class ResultGridView : UserControl
         var cell = new Border { Background = Brushes.Transparent, Child = text };
 
         // Cells are recycled and rows change when edited, so re-read the row each time; rebind brushes only when they change.
-        string? colorKey = null;
-        bool? edited = null, linked = null;
-        IDisposable? editedBackground = null;
+        string? colorKey = null, backgroundKey = null;
+        bool? linked = null, struck = null;
+        IDisposable? stateBackground = null;
         void Refresh()
         {
             var row = cell.DataContext as ResultRow;
@@ -292,22 +300,42 @@ public partial class ResultGridView : UserControl
                 text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(key));
             }
 
+            // Deleted and new rows are tinted whole; otherwise only edited values are.
             var isEdited = row?.IsCellModified(index) == true;
-            if (isEdited != edited)
+            var stateKey = row?.State switch
             {
-                edited = isEdited;
-                editedBackground?.Dispose();
-                editedBackground = isEdited ? cell.Bind(Border.BackgroundProperty, cell.GetResourceObservable("AppCellEditedBrush")) : null;
-                if (!isEdited) cell.Background = Brushes.Transparent;
+                ResultRowState.Deleted => "AppCellDeletedBrush",
+                ResultRowState.New => "AppCellNewBrush",
+                _ => isEdited ? "AppCellEditedBrush" : null
+            };
+            if (stateKey != backgroundKey)
+            {
+                backgroundKey = stateKey;
+                stateBackground?.Dispose();
+                stateBackground = stateKey is null ? null : cell.Bind(Border.BackgroundProperty, cell.GetResourceObservable(stateKey));
+                if (stateKey is null) cell.Background = Brushes.Transparent;
             }
-            ToolTip.SetTip(cell, isEdited ? "Edited, not committed yet. Was: " + OriginalText(row!.OriginalValue(index)) : null);
+            ToolTip.SetTip(cell, row?.State switch
+            {
+                ResultRowState.Deleted => "Deleted when you commit. Undo delete (Ctrl+Delete) keeps the row.",
+                ResultRowState.New => "New row, inserted when you commit." + (ResultSet?.Source?.CanSetInNewRow(index) == true
+                    ? isEdited ? "" : " Empty: the column's default is used."
+                    : " This column is set by the database."),
+                _ => isEdited ? "Edited, not committed yet. Was: " + OriginalText(row!.OriginalValue(index)) : null
+            });
+            var isStruck = row?.IsDeleted == true;
+            if (isStruck != struck)
+            {
+                struck = isStruck;
+                text.TextDecorations = isStruck ? TextDecorations.Strikethrough : linked == true ? TextDecorations.Underline : null;
+            }
 
             var reference = value is null or DBNull ? null : ResultSet?.ReferenceOf(index);
             var isLinked = reference is not null;
             if (isLinked != linked)
             {
                 linked = isLinked;
-                text.TextDecorations = isLinked ? TextDecorations.Underline : null;
+                text.TextDecorations = struck == true ? TextDecorations.Strikethrough : isLinked ? TextDecorations.Underline : null;
                 text.Cursor = isLinked ? HandCursor : null;
                 // Only the value itself is the link, so clicking the rest of the cell still just selects the row.
                 text.HorizontalAlignment = !isLinked ? HorizontalAlignment.Stretch : numeric ? HorizontalAlignment.Right : HorizontalAlignment.Left;
@@ -693,15 +721,18 @@ public partial class ResultGridView : UserControl
         var quick = _state.QuickFilter;
         var filters = _state.Filters.Values.ToList();
         var sorts = _state.Sorts.ToList();
+        // Rows added in the grid stay at the end, whatever the filters and sort, so they can be filled in.
+        var added = rs.Rows.Where(r => r.IsNew).ToList();
+        var read = added.Count == 0 ? rs.Rows : rs.Rows.Where(r => !r.IsNew).ToList();
         List<ResultRow> rows;
         if (rs.Rows.Count < BackgroundViewRows)
-            rows = ResultViewQuery.Apply(rs.Rows, r => r.Values, quick, filters, sorts);
+            rows = ResultViewQuery.Apply(read, r => r.Values, quick, filters, sorts);
         else
         {
             RowCountText.Text = $"Filtering {rs.Rows.Count:N0} row(s)…";
             try
             {
-                rows = await Task.Run(() => ResultViewQuery.Apply(rs.Rows, r => r.Values, quick, filters, sorts));
+                rows = await Task.Run(() => ResultViewQuery.Apply(read, r => r.Values, quick, filters, sorts));
             }
             catch (Exception ex)
             {
@@ -710,6 +741,7 @@ public partial class ResultGridView : UserControl
             }
             if (version != _viewVersion || !ReferenceEquals(rs, ResultSet)) return;
         }
+        rows.AddRange(added);
         _viewRows = rows;
         Grid.ItemsSource = _viewRows;
         AggregateText.Text = "";
@@ -1087,6 +1119,16 @@ public partial class ResultGridView : UserControl
             BeginCellEdit(TargetCell());
             e.Handled = true;
         }
+        else if (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Alt && ResultSet?.CanEditRows == true)
+        {
+            AddRow();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Delete && ctrl && ResultSet?.CanEditRows == true)
+        {
+            ToggleDeleteSelected();
+            e.Handled = true;
+        }
         else if (e.Key == Key.S && ctrl && HasPendingEdits())
         {
             _ = CommitEditsAsync();
@@ -1111,12 +1153,14 @@ public partial class ResultGridView : UserControl
     /// key is known (a LEFT JOIN may leave it NULL).</summary>
     private bool CanEditCell(ResultRow row, int column)
     {
-        if (ResultSet is not { Source: { } source } rs || !rs.CanEdit(column) || column >= row.Values.Count) return false;
+        if (row.IsDeleted || column >= row.Values.Count) return false;
+        if (row.IsNew) return ResultSet is { CanEditRows: true, Source: { } added } && added.CanSetInNewRow(column);
+        if (ResultSet is not { Source: { } source } rs || !rs.CanEdit(column)) return false;
         if (!ResultEditSql.IsEditableValue(row.OriginalValue(column)) || !ResultEditSql.IsEditableValue(row.Values[column])) return false;
         return source.Tables[source.Columns[column]!.Table].Key.All(k => row.OriginalValue(k.ResultColumn) is not (null or DBNull));
     }
 
-    private bool HasPendingEdits() => ResultSet?.Rows.Any(r => r.IsModified) == true;
+    private bool HasPendingEdits() => ResultSet?.Rows.Any(r => r.HasChanges) == true;
 
     /// <summary>Opens the in-place editor on a cell (read-only for cells that cannot be edited).</summary>
     private void BeginCellEdit((ResultRow Row, int Column)? target)
@@ -1140,7 +1184,12 @@ public partial class ResultGridView : UserControl
         {
             _editRequested = false;
         }
-        if (!_isEditing && ResultSet?.CanEdit(column) == true && !CanEditCell(row, column))
+        if (!_isEditing && row.IsDeleted)
+            ShowEditMessage("This row is deleted when you commit. Undo delete (Ctrl+Delete) to edit it.", error: true);
+        else if (!_isEditing && row.IsNew && !CanEditCell(row, column))
+            ShowEditMessage("This column of a new row is set by the database (identity, computed, or not a column of " +
+                            $"{ResultSet?.Source?.RowTable?.Table.FullName ?? "the table"}).", error: true);
+        else if (!_isEditing && !row.IsNew && ResultSet?.CanEdit(column) == true && !CanEditCell(row, column))
             ShowEditMessage("This value cannot be edited: " + (row.Values[column] is { } v && !ResultEditSql.IsEditableValue(v)
                 ? $"values of type {v.GetType().Name} are read-only here."
                 : "the row has no key value (e.g. the missing side of an outer join)."), error: true);
@@ -1227,7 +1276,13 @@ public partial class ResultGridView : UserControl
         _setNullItem.IsEnabled = editable && Cell(row!, column) is not (null or DBNull) &&
                                  rs?.Source?.ColumnSource(column)?.Column.IsNullable != false;
         _revertCellItem.IsEnabled = row?.IsCellModified(column) == true;
-        _revertRowItem.IsEnabled = row?.IsModified == true;
+        _revertRowItem.IsEnabled = row?.HasChanges == true;
+        _revertRowItem.Header = row?.IsNew == true ? "Remove this new row" : "Revert this row";
+        var rowsEditable = rs?.CanEditRows == true;
+        _addRowItem.IsVisible = _deleteRowsItem.IsVisible = rowsEditable;
+        var selected = SelectedRows();
+        _deleteRowsItem.IsEnabled = selected.Count > 0;
+        _deleteRowsItem.Header = DeleteHeader(selected);
         _editSeparator.IsVisible = reference is not null || editableResult;
         _selectTextItem.IsVisible = !editable;
         _selectTextItem.IsEnabled = row is not null;
@@ -1249,7 +1304,8 @@ public partial class ResultGridView : UserControl
         ToolTip.SetTip(EditInfoText, string.Join("\n", new[]
         {
             editable
-                ? $"Double-click or F2 edits a value of {tables}. Edits are written to the database only when you press Commit (Ctrl+S); Revert discards them."
+                ? $"Double-click or F2 edits a value of {tables}. Edits are written to the database only when you press Commit (Ctrl+S); Revert discards them." +
+                  (rs.CanEditRows ? " Alt+Insert adds a row and Ctrl+Delete deletes the selected ones; the SQL is shown for review before it runs." : "")
                 : rs.Source.ReadOnlyReason,
             links ? "Underlined values reference a row of another table: click one to open that row." : null
         }.Where(t => t is not null)));
@@ -1265,15 +1321,22 @@ public partial class ResultGridView : UserControl
 
     private void UpdateEditBar()
     {
-        var rows = ResultSet?.Rows.Where(r => r.IsModified).ToList() ?? [];
-        var cells = rows.Sum(r => r.ModifiedColumns.Count);
-        var pending = cells > 0;
+        var all = ResultSet?.Rows ?? [];
+        var edited = all.Where(r => r.State == ResultRowState.Unchanged && r.IsModified).ToList();
+        var cells = edited.Sum(r => r.ModifiedColumns.Count);
+        var added = all.Count(r => r.IsNew);
+        var deleted = all.Count(r => r.IsDeleted);
+        var pending = cells + added + deleted > 0;
 
         CommitEditsButton.IsVisible = RevertEditsButton.IsVisible = pending;
         CommitEditsButton.IsEnabled = RevertEditsButton.IsEnabled = !_committing && ResultSet?.CommitEdits is not null;
         DismissEditMessageButton.IsVisible = !pending && _editMessage is not null;
+        var parts = new List<string>();
+        if (cells > 0) parts.Add($"{cells:N0} edited value(s) in {edited.Count:N0} row(s)");
+        if (added > 0) parts.Add($"{added:N0} new row(s)");
+        if (deleted > 0) parts.Add($"{deleted:N0} row(s) to delete");
         EditStatusText.Text = pending
-            ? $"✎ {cells:N0} edited value(s) in {rows.Count:N0} row(s), not committed yet" + (_editMessage is null ? "" : " · " + _editMessage)
+            ? $"✎ {string.Join(", ", parts)}, not committed yet" + (_editMessage is null ? "" : " · " + _editMessage)
             : _editMessage;
         if (_editMessageIsError) EditStatusText.Foreground = ErrorBrush;
         else EditStatusText.ClearValue(TextBlock.ForegroundProperty);
@@ -1287,7 +1350,7 @@ public partial class ResultGridView : UserControl
     {
         if (_committing || ResultSet is not { CommitEdits: { } commit } rs) return;
         if (_isEditing) Grid.CommitEdit();
-        var rows = rs.Rows.Where(r => r.IsModified).ToList();
+        var rows = rs.Rows.Where(r => r.HasChanges).ToList();
         if (rows.Count == 0) return;
 
         _committing = true;
@@ -1295,6 +1358,7 @@ public partial class ResultGridView : UserControl
         try
         {
             var message = await commit(rs, rows);
+            if (rs.RemoveRows(r => r.State == ResultRowState.Removed) > 0 && ReferenceEquals(rs, ResultSet)) ApplyView();
             if (ReferenceEquals(rs, ResultSet)) ShowEditMessage(message);
         }
         catch (Exception ex)
@@ -1305,6 +1369,7 @@ public partial class ResultGridView : UserControl
         {
             _committing = false;
             UpdateEditBar();
+            UpdateRowButtons();
             UpdateDetails();
         }
     }
@@ -1313,9 +1378,116 @@ public partial class ResultGridView : UserControl
     {
         if (ResultSet is not { } rs) return;
         if (_isEditing) Grid.CancelEdit();
-        var count = ResultEditing.Revert(rs.Rows);
-        ShowEditMessage(count > 0 ? $"Reverted the edits of {count:N0} row(s)." : null);
+        var hadNew = rs.Rows.Any(r => r.IsNew);
+        var count = ResultEditing.Revert(rs);
+        if (hadNew) ApplyView();
+        ShowEditMessage(count > 0 ? $"Reverted the changes of {count:N0} row(s)." : null);
+        UpdateRowButtons();
         UpdateDetails();
+    }
+
+    // ---------------------------------------------------------------- adding and deleting rows
+
+    private void OnAddRow(object? sender, RoutedEventArgs e) => AddRow();
+
+    private void OnDeleteRows(object? sender, RoutedEventArgs e) => ToggleDeleteSelected();
+
+    /// <summary>Adds an empty row at the end of the grid and opens the editor on its first cell that takes a value.</summary>
+    private void AddRow()
+    {
+        if (ResultSet is not { } rs || _committing) return;
+        if (_isEditing && !Grid.CommitEdit()) return;
+        if (rs.AddRow() is not { } row)
+        {
+            ShowEditMessage(rs.Source?.RowEditReason ?? "Rows cannot be added to this result.", error: true);
+            return;
+        }
+        ApplyView();
+        UpdateEditBar();
+        var first = _columns.FirstOrDefault(c => c.Column.IsVisible && rs.Source!.CanSetInNewRow(c.Index));
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_viewRows.Contains(row)) return;
+            Grid.SelectedItem = row;
+            Grid.ScrollIntoView(row, first?.Column ?? _columns.FirstOrDefault()?.Column);
+            if (first is not null) BeginCellEdit((row, first.Index));
+        }, DispatcherPriority.Background);
+    }
+
+    /// <summary>Marks the selected rows for deletion, or, when every selected row is already marked, undoes it. New rows are
+    /// simply removed.</summary>
+    private void ToggleDeleteSelected()
+    {
+        if (ResultSet is not { CanEditRows: true } rs || _committing) return;
+        var rows = SelectedRows();
+        if (rows.Count == 0 && TargetCell() is ({ } target, _)) rows = [target];
+        if (rows.Count == 0) return;
+        if (_isEditing) Grid.CancelEdit();
+
+        var removedNew = rs.RemoveRows(r => r.IsNew && rows.Contains(r));
+        var existing = rows.Where(r => !r.IsNew).ToList();
+        if (existing.Count > 0 && existing.All(r => r.IsDeleted))
+            foreach (var row in existing) row.UndoDelete();
+        else
+        {
+            var keyless = existing.Where(r => !r.IsDeleted && !HasKey(rs, r)).ToList();
+            foreach (var row in existing.Except(keyless)) row.MarkDeleted();
+            if (keyless.Count > 0)
+                ShowEditMessage($"{keyless.Count:N0} row(s) have no key value and were not marked for deletion.", error: true);
+        }
+        if (removedNew > 0) ApplyView();
+        UpdateEditBar();
+        UpdateRowButtons();
+        UpdateDetails();
+    }
+
+    private static bool HasKey(ResultSetView rs, ResultRow row) =>
+        rs.Source?.RowTable?.Key.All(k => row.OriginalValue(k.ResultColumn) is not (null or DBNull)) == true;
+
+    /// <summary>"Discards" a new row; reverts the edits and the deletion of any other.</summary>
+    private void RevertRow(ResultRow? row)
+    {
+        if (row is null || ResultSet is not { } rs) return;
+        if (_isEditing) Grid.CancelEdit();
+        if (row.IsNew)
+        {
+            rs.RemoveRows(r => ReferenceEquals(r, row));
+            ApplyView();
+        }
+        else row.Revert();
+        UpdateEditBar();
+        UpdateRowButtons();
+        UpdateDetails();
+    }
+
+    private static string DeleteHeader(IReadOnlyList<ResultRow> selected) =>
+        selected.Count > 0 && selected.All(r => r.IsDeleted) ? "Undo delete"
+        : selected.Count > 0 && selected.All(r => r.IsNew) ? "Remove new row(s)"
+        : selected.Count > 1 ? $"Delete {selected.Count:N0} selected rows" : "Delete row";
+
+    /// <summary>Shows the add / delete buttons on results whose rows can be edited, disabled with the reason when rows of
+    /// this one cannot be added or deleted.</summary>
+    private void UpdateRowButtons()
+    {
+        var rs = ResultSet;
+        var shown = rs is { CommitEdits: not null, Source: { } source } && (source.HasEditableColumns || source.RowTable is not null);
+        AddRowButton.IsVisible = DeleteRowsButton.IsVisible = shown;
+        if (!shown) return;
+
+        var canEdit = rs!.CanEditRows;
+        var reason = rs.Source!.RowEditReason;
+        AddRowButton.IsEnabled = canEdit && !_committing;
+        ToolTip.SetTip(AddRowButton, canEdit
+            ? $"Add a row to {rs.Source.RowTable!.Table.FullName} (Alt+Insert). It is inserted when you commit, after you review the SQL."
+            : reason);
+        var selected = SelectedRows();
+        DeleteRowsButton.IsEnabled = canEdit && !_committing && selected.Count > 0;
+        DeleteRowsButton.Content = selected.Count > 0 && selected.All(r => r.IsDeleted) ? "↶ Undo delete" : "− Delete";
+        ToolTip.SetTip(DeleteRowsButton, !canEdit
+            ? reason
+            : selected.Count == 0
+                ? "Select the rows to delete first."
+                : "Mark the selected rows for deletion, or undo it (Ctrl+Delete). Rows are deleted by key when you commit, after you review the SQL.");
     }
 
     private void OnDismissEditMessage(object? sender, RoutedEventArgs e) => ShowEditMessage(null);

@@ -8,8 +8,19 @@ namespace DbExplorer.Application.Query;
 /// <summary>A result row with edited cells: its values as read (the key is taken from them) and the new values by result column.</summary>
 public sealed record ResultRowEdit(IReadOnlyList<object?> OriginalValues, IReadOnlyDictionary<int, object?> NewValues);
 
-/// <summary>One UPDATE that writes the edits of one row to one table.</summary>
-public sealed record ResultUpdate(string Sql, DbObject Table, IReadOnlyList<object?> OriginalValues);
+/// <summary>What a statement built from result grid changes does to its row.</summary>
+public enum ResultChangeKind { Update, Delete, Insert }
+
+/// <summary>One statement that writes a change of one result row to one table: the edits of a row (UPDATE), a deleted row
+/// (DELETE) or a new row (INSERT).</summary>
+public sealed record ResultUpdate(string Sql, DbObject Table, IReadOnlyList<object?> OriginalValues)
+{
+    public ResultChangeKind Kind { get; init; } = ResultChangeKind.Update;
+
+    /// <summary>For an INSERT: per column the statement returns (the row as stored, with defaults and generated keys), the
+    /// result columns that show it. Empty when the stored row cannot be read back.</summary>
+    public IReadOnlyList<IReadOnlyList<int>> ReturnedColumns { get; init; } = [];
+}
 
 /// <summary>
 /// SQL for editing and following query results: UPDATE statements keyed by the table's primary (or unique) key, the
@@ -35,19 +46,112 @@ public static class ResultEditSql
                 var sets = group
                     .GroupBy(kv => source.Columns[kv.Key]!.Column.Name, StringComparer.OrdinalIgnoreCase)
                     .Select(g => $"{quote(g.Key)} = {Literal(g.Last().Value, dialect)}");
-                var where = table.Key.Select(k =>
-                {
-                    var value = k.ResultColumn < row.OriginalValues.Count ? row.OriginalValues[k.ResultColumn] : null;
-                    if (value is null or DBNull)
-                        throw new InvalidOperationException($"A row of {table.Table.FullName} has no value in its key column {k.Column.Name}.");
-                    return $"{quote(k.Column.Name)} = {Literal(value, dialect)}";
-                });
-                var sql = $"UPDATE {TableName(table.Table, source.Database, dialect, quote)} SET {string.Join(", ", sets)} WHERE {string.Join(" AND ", where)};";
+                var sql = $"UPDATE {TableName(table.Table, source.Database, dialect, quote)} SET {string.Join(", ", sets)} WHERE {KeyCondition(table, row.OriginalValues, dialect, quote)};";
                 updates.Add(new ResultUpdate(sql, table.Table, row.OriginalValues));
             }
         }
         return updates;
     }
+
+    /// <summary>One DELETE per row of <see cref="ResultSource.RowTable"/>, matching it by the key values it was read with.</summary>
+    /// <exception cref="InvalidOperationException">Rows of this result cannot be deleted, or a row has no key value.</exception>
+    public static IReadOnlyList<ResultUpdate> BuildDeletes(
+        ResultSource source, IEnumerable<IReadOnlyList<object?>> originalRows, SqlDialect dialect, Func<string, string> quote)
+    {
+        var table = source.RowTable ?? throw new InvalidOperationException(source.RowEditReason);
+        var name = TableName(table.Table, source.Database, dialect, quote);
+        return originalRows
+            .Select(row => new ResultUpdate($"DELETE FROM {name} WHERE {KeyCondition(table, row, dialect, quote)};", table.Table, row)
+            {
+                Kind = ResultChangeKind.Delete
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// One INSERT per new row into <see cref="ResultSource.RowTable"/>, with the values typed into its cells (by result
+    /// column; columns left empty get their defaults). Each statement also returns the row as stored, so generated keys and
+    /// defaults show up and the row can be edited afterwards: RETURNING on PostgreSQL; on SQL Server a SELECT by the key,
+    /// typed or taken from SCOPE_IDENTITY() for an identity key (nothing is read back when the key is generated otherwise).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Rows cannot be added to this result, or a value is set in a column that
+    /// cannot be written.</exception>
+    public static IReadOnlyList<ResultUpdate> BuildInserts(
+        ResultSource source, IEnumerable<IReadOnlyDictionary<int, object?>> rows, SqlDialect dialect, Func<string, string> quote)
+    {
+        var table = source.RowTable ?? throw new InvalidOperationException(source.RowEditReason);
+        var name = TableName(table.Table, source.Database, dialect, quote);
+        var shown = Enumerable.Range(0, source.Columns.Count)
+            .Where(i => source.Columns[i] is not null)
+            .GroupBy(i => source.Columns[i]!.Column.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var shownList = string.Join(", ", shown.Select(g => quote(g.Key)));
+        var returned = shown.Select(g => (IReadOnlyList<int>)g.ToList()).ToList();
+
+        var inserts = new List<ResultUpdate>();
+        foreach (var row in rows)
+        {
+            var values = row
+                .Where(kv => source.CanSetInNewRow(kv.Key)
+                    ? kv.Value is not (null or DBNull)
+                    : throw new InvalidOperationException($"Result column {kv.Key + 1} cannot be set in a new row of {table.Table.FullName}."))
+                .GroupBy(kv => source.Columns[kv.Key]!.Column.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g => (Column: g.Key, Value: g.Last().Value))
+                .ToList();
+            var insert = values.Count == 0
+                ? $"INSERT INTO {name} DEFAULT VALUES"
+                : $"INSERT INTO {name} ({string.Join(", ", values.Select(v => quote(v.Column)))}) VALUES ({string.Join(", ", values.Select(v => Literal(v.Value, dialect)))})";
+
+            string sql;
+            var readBack = true;
+            if (dialect == SqlDialect.SqlServer)
+            {
+                var conditions = new List<string>();
+                foreach (var k in table.Key)
+                {
+                    var typed = values.FirstOrDefault(v => string.Equals(v.Column, k.Column.Name, StringComparison.OrdinalIgnoreCase));
+                    if (typed.Column is not null) conditions.Add($"{quote(k.Column.Name)} = {Literal(typed.Value, dialect)}");
+                    else if (table.Key.Count == 1 && k.Column.IsIdentity) conditions.Add($"{quote(k.Column.Name)} = SCOPE_IDENTITY()");
+                    else readBack = false;
+                }
+                sql = insert + ";" + (readBack ? $"\nSELECT {shownList} FROM {name} WHERE {string.Join(" AND ", conditions)};" : "");
+            }
+            else sql = $"{insert} RETURNING {shownList};";
+
+            inserts.Add(new ResultUpdate(sql, table.Table, new object?[source.Columns.Count])
+            {
+                Kind = ResultChangeKind.Insert,
+                ReturnedColumns = readBack ? returned : []
+            });
+        }
+        return inserts;
+    }
+
+    /// <summary>Every change of a result as one ordered script: DELETEs first (so a deleted key can be reused), then UPDATEs,
+    /// then INSERTs.</summary>
+    public static IReadOnlyList<ResultUpdate> BuildChanges(
+        ResultSource source, IEnumerable<IReadOnlyList<object?>> deleted, IEnumerable<ResultRowEdit> edited,
+        IEnumerable<IReadOnlyDictionary<int, object?>> added, SqlDialect dialect, Func<string, string> quote)
+    {
+        var deletes = deleted.ToList();
+        var inserts = added.ToList();
+        return
+        [
+            .. deletes.Count > 0 ? BuildDeletes(source, deletes, dialect, quote) : [],
+            .. BuildUpdates(source, edited, dialect, quote),
+            .. inserts.Count > 0 ? BuildInserts(source, inserts, dialect, quote) : []
+        ];
+    }
+
+    /// <summary>key1 = value AND key2 = value, from the key values a row was read with.</summary>
+    private static string KeyCondition(ResultTable table, IReadOnlyList<object?> originalValues, SqlDialect dialect, Func<string, string> quote) =>
+        string.Join(" AND ", table.Key.Select(k =>
+        {
+            var value = k.ResultColumn < originalValues.Count ? originalValues[k.ResultColumn] : null;
+            if (value is null or DBNull)
+                throw new InvalidOperationException($"A row of {table.Table.FullName} has no value in its key column {k.Column.Name}.");
+            return $"{quote(k.Column.Name)} = {Literal(value, dialect)}";
+        }));
 
     /// <summary>SELECT of the row(s) of the referenced table that <paramref name="row"/>'s foreign key values point to;
     /// null when a value is NULL (nothing referenced).</summary>

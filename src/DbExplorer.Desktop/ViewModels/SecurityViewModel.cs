@@ -156,6 +156,11 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     {
         if (_session is not { } session) return;
         var version = ++_loadVersion;
+        if (session.Provider.ProviderKey == SqlDialect.MySqlKey)
+        {
+            Status = SecurityCatalogLoader.MySqlNotSupported;
+            return;
+        }
         var database = SelectedDatabase;
         IsBusy = true;
         Status = $"Reading logins, users and roles{(string.IsNullOrEmpty(database) ? "" : " of " + database)}…";

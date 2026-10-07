@@ -2,6 +2,7 @@ using DbExplorer.Application;
 using DbExplorer.Application.Design;
 using DbExplorer.Application.Lab;
 using DbExplorer.Application.Metadata;
+using DbExplorer.Application.Modeling;
 using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Connections;
@@ -234,5 +235,40 @@ public abstract class MySqlFeaturesIntegrationTestsBase(string variable) : IAsyn
         var rows = await _session!.Provider.ExecuteScriptAsync("SELECT COUNT(*) FROM orders WHERE status = 'new';", Database, 30);
         Assert.Equal(2L, Convert.ToInt64(rows.ResultSets[0].Rows[0][0]));
         Assert.DoesNotContain((await ReloadAsync()).Columns, c => c.Table == "orders" && c.Name == "x");
+    }
+    [SkippableFact]
+    public async Task A_changed_er_model_is_applied_and_then_matches_the_database()
+    {
+        Skip.If(_settings is null);
+        var snapshot = await ReloadAsync();
+        var constraints = new Dictionary<DbObject, DbTableConstraints>();
+        foreach (var t in snapshot.Objects.Where(o => o.Type == DbObjectType.Table))
+            constraints[t] = await _session!.Provider.GetTableConstraintsAsync(t);
+        var model = ErModelReader.Read(snapshot, Key, Database, Database, constraints);
+        Assert.False(ErModelScriptBuilder.Build(model, snapshot, Key, constraints).HasChanges);
+
+        var invoices = new ModelTable
+        {
+            Design = new TableDesign
+            {
+                Schema = Database, Name = "invoices",
+                Columns = [new ColumnDesign { Name = "id", Type = "int", IsPrimaryKey = true, IsIdentity = true, IsNullable = false },
+                           new ColumnDesign { Name = "total", Type = "decimal", Size = "12,2", IsNullable = false, Default = "0" }]
+            }
+        };
+        model = model.Add(invoices);
+        model = model.LinkToTable(invoices.Id, null, model.FindByName(Database, "customers")!.Id)!;
+        var products = model.FindByName(Database, "products")!;
+        model = model.Update(products.Id, products.Design with { Name = "items" }).RenameColumn(products.Id, "title", "name");
+
+        var script = ErModelScriptBuilder.Build(model, snapshot, Key, constraints);
+        Assert.True(script.CanRun, string.Join("; ", script.Errors));
+        Assert.DoesNotContain("\nGO\n", script.Script);
+        await _session!.Provider.ExecuteScriptAsync(script.Script, Database, 60);
+
+        snapshot = await ReloadAsync();
+        Assert.Contains(snapshot.ForeignKeys, f => f.Table == "invoices" && f.ReferencedTable == "customers");
+        Assert.Contains(snapshot.Columns, c => c.Table == "items" && c.Name == "name");
+        Assert.All(snapshot.Objects.Where(o => o.Type == DbObjectType.Table), o => Assert.Equal(Database, o.Schema));
     }
 }

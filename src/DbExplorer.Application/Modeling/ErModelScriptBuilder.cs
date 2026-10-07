@@ -105,7 +105,7 @@ public static class ErModelScriptBuilder
         var knownSchemas = target.Objects.Select(o => o.Schema).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var schema in plans.Where(p => p.Action != ModelTableAction.Unchanged)
                      .Select(p => p.Table.Schema(providerKey)).Distinct(StringComparer.OrdinalIgnoreCase))
-            if (!knownSchemas.Contains(schema) && !TableDesign.Same(schema, TableScriptBuilder.DefaultSchema(providerKey)))
+            if (!knownSchemas.Contains(schema) && !TableDesign.Same(schema, TableScriptBuilder.DefaultSchema(providerKey, model.Database)))
                 schemaSteps.Add(d.CreateSchemaIfMissing(schema));
 
         foreach (var plan in plans.Where(p => p.Action == ModelTableAction.Create))
@@ -214,7 +214,7 @@ public static class ErModelScriptBuilder
         var keys = design.ForeignKeys.Select(fk =>
         {
             var before = original.ForeignKeys.FirstOrDefault(o => fk.Name.Trim().Length > 0 && TableDesign.Same(o.Name, fk.Name.Trim()));
-            var schema = string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(providerKey) : fk.ReferencedSchema;
+            var schema = string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(providerKey, model.Database) : fk.ReferencedSchema;
             if (before is null || model.FindByName(schema, fk.ReferencedTable) is not { Baseline: { } baseline } parent || !matches.ContainsKey(parent.Id))
                 return fk;
             var column = parent.Design.Column(fk.ReferencedColumn) is { } c ? c.OriginalName ?? c.Name.Trim() : fk.ReferencedColumn.Trim();
@@ -229,5 +229,5 @@ public static class ErModelScriptBuilder
         $"ALTER TABLE {table} ADD CONSTRAINT {d.Quote(TableScriptBuilder.ForeignKeyName(design, fk, d))} FOREIGN KEY ({d.Quote(fk.Column.Trim())})\n" +
         $"    REFERENCES {d.Table(fk.ReferencedSchema, fk.ReferencedTable)} ({d.Quote(fk.ReferencedColumn.Trim())});";
 
-    private static string Engine(string providerKey) => providerKey == SqlDialect.SqlServerKey ? "SQL Server" : providerKey == SqlDialect.PostgresKey ? "PostgreSQL" : providerKey;
+    private static string Engine(string providerKey) => SqlDialect.EngineName(providerKey);
 }

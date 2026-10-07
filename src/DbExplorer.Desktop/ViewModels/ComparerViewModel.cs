@@ -517,7 +517,9 @@ public partial class ComparerViewModel(
     public void Attach(DatabaseSession? session)
     {
         // The main session is about to be disposed by the caller (or was just disconnected):
-        // drop any reference to it here so we don't operate on / re-dispose a stale session.
+        // drop any reference to it here so we don't operate on / re-dispose a stale session, and stop whatever
+        // is still running on it.
+        if (_mainSession is not null && (LeftSession == _mainSession || RightSession == _mainSession)) _cts?.Cancel();
         if (LeftSession is not null && LeftSession == _mainSession) ClearLeft();
         if (RightSession is not null && RightSession == _mainSession) ClearRight();
 
@@ -1216,18 +1218,24 @@ public partial class ComparerViewModel(
     [RelayCommand(CanExecute = nameof(CanLoadLeftData))]
     private async Task LoadLeftDataAsync()
     {
-        if (LeftSession is null || SelectedLeftObject is null) return;
+        // The side (or its object) can change while the rows load; they belong to the ones they were read from.
+        if (LeftSession is not { } session || SelectedLeftObject is not { } obj || LeftTarget is not { } target) return;
 
         var ct = BeginOperation();
         LeftDataStatus = "Loading…";
         try
         {
             var limit = Math.Max(1, (int)RowLimit);
-            var result = await comparer.LoadTableDataAsync(LeftTarget!, SelectedLeftObject, limit, ct);
+            var result = await comparer.LoadTableDataAsync(target, obj, limit, ct);
+            if (!ReferenceEquals(session, LeftSession))
+            {
+                LeftDataStatus = "";
+                return;
+            }
             var rs = result.ResultSets.FirstOrDefault();
             LeftDataResult = rs is null
                 ? null
-                : ResultSetView.From("Left data", rs, LeftSession, QualifiedName(LeftSession, SelectedLeftObject));
+                : ResultSetView.From("Left data", rs, session, QualifiedName(session, obj));
             LeftDataStatus = $"{(rs?.Rows.Count ?? 0):N0} row(s) in {result.Elapsed.TotalMilliseconds:N0} ms";
         }
         catch (OperationCanceledException)
@@ -1249,18 +1257,24 @@ public partial class ComparerViewModel(
     [RelayCommand(CanExecute = nameof(CanLoadRightData))]
     private async Task LoadRightDataAsync()
     {
-        if (RightSession is null || SelectedRightObject is null) return;
+        // The side (or its object) can change while the rows load; they belong to the ones they were read from.
+        if (RightSession is not { } session || SelectedRightObject is not { } obj || RightTarget is not { } target) return;
 
         var ct = BeginOperation();
         RightDataStatus = "Loading…";
         try
         {
             var limit = Math.Max(1, (int)RowLimit);
-            var result = await comparer.LoadTableDataAsync(RightTarget!, SelectedRightObject, limit, ct);
+            var result = await comparer.LoadTableDataAsync(target, obj, limit, ct);
+            if (!ReferenceEquals(session, RightSession))
+            {
+                RightDataStatus = "";
+                return;
+            }
             var rs = result.ResultSets.FirstOrDefault();
             RightDataResult = rs is null
                 ? null
-                : ResultSetView.From("Right data", rs, RightSession, QualifiedName(RightSession, SelectedRightObject));
+                : ResultSetView.From("Right data", rs, session, QualifiedName(session, obj));
             RightDataStatus = $"{(rs?.Rows.Count ?? 0):N0} row(s) in {result.Elapsed.TotalMilliseconds:N0} ms";
         }
         catch (OperationCanceledException)

@@ -568,7 +568,7 @@
 			  <CheckBox Content="Stream rows" IsChecked="{Binding CopyStreamRows}" IsVisible="{Binding ShowStreamOption}"
 						ToolTip.Tip="Read the left rows page by page while running instead of loading them all first: no row limit and flat memory. Needs a primary key; the saved script then holds only the structure" />
 			  <CheckBox Content="One transaction" IsChecked="{Binding CopySingleTransaction}"
-						ToolTip.Tip="All or nothing: any error rolls everything back. Off: steps run one by one with progress, and completed steps stay applied" />
+						ToolTip.Tip="All or nothing: any error rolls everything back (MySQL commits schema changes as it goes, so those stay). Off: steps run one by one with progress, and completed steps stay applied" />
 			  <CheckBox Content="Verify row counts" IsChecked="{Binding CopyVerifyAfter}" IsVisible="{Binding ShowDataOptions}"
 						ToolTip.Tip="Count the rows on both sides after the copy" />
 			  <CheckBox Content="Refresh right metadata" IsChecked="{Binding CopyRefreshAfter}"

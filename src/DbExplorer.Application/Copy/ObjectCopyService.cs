@@ -1023,6 +1023,9 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         var started = DateTime.UtcNow;
         var affected = 0;
         var transactional = plan.Options.SingleTransaction;
+        // MySQL commits the open transaction before each schema statement (and TRUNCATE), so only the data steps
+        // after the last of those can be undone.
+        var commitsSchemaSteps = transactional && plan.TargetProviderKey == SqlDialect.MySqlKey;
         var done = 0;
 
         // After a failure or cancel at step `stopped`: the steps before it were undone (in a transaction) or stay
@@ -1031,7 +1034,18 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         {
             if (stepProgress is null) return;
             if (transactional)
-                for (var j = 0; j < Math.Min(stopped, plan.Steps.Count); j++) stepProgress.Report(new CopyStepUpdate(j, CopyStepState.RolledBack, "Undone: the transaction was rolled back"));
+            {
+                var last = Math.Min(stopped, plan.Steps.Count);
+                var first = 0;
+                if (commitsSchemaSteps)
+                    for (var j = Math.Min(stopped, plan.Steps.Count - 1); j >= 0; j--)
+                        if (CommitsImplicitly(plan.Steps[j]))
+                        {
+                            first = j + 1;
+                            break;
+                        }
+                for (var j = first; j < last; j++) stepProgress.Report(new CopyStepUpdate(j, CopyStepState.RolledBack, "Undone: the transaction was rolled back"));
+            }
             for (var j = stopped + 1; j < plan.Steps.Count; j++) stepProgress.Report(new CopyStepUpdate(j, CopyStepState.NotRun));
         }
 
@@ -1071,7 +1085,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                 ReportStop(i);
                 throw new InvalidOperationException(
                     $"Step {i + 1} ({step.Title}) failed" +
-                    (transactional ? "; everything was rolled back. " : "; the steps before it were applied. ") + ex.Message, ex);
+                    (commitsSchemaSteps ? "; MySQL commits schema changes as it goes, so the schema steps before it stay applied. "
+                        : transactional ? "; everything was rolled back. " : "; the steps before it were applied. ") + ex.Message, ex);
             }
         }
 
@@ -1087,6 +1102,11 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         }
         return new CopyRunResult(affected, DateTime.UtcNow - started, []);
     }
+
+    /// <summary>A step MySQL commits on its own (along with whatever ran before it): anything but plain row changes.</summary>
+    private static bool CommitsImplicitly(CopyStep step) =>
+        step.Kind is not (CopyStepKind.Insert or CopyStepKind.Update or CopyStepKind.Delete) ||
+        step.Sql.TrimStart().StartsWith("TRUNCATE", StringComparison.OrdinalIgnoreCase);
 
     private static string StepDetails(int rows, TimeSpan elapsed)
     {

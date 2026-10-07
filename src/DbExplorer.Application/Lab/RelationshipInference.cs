@@ -239,6 +239,8 @@ public sealed class VirtualForeignKeyStore(AppPaths paths)
         }
     }
 
+    /// <exception cref="IOException">The file could not be written; the previous version is kept.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file could not be written; the previous version is kept.</exception>
     public void Save(string key, IReadOnlyList<DbForeignKey> keys) =>
-        File.WriteAllText(FilePath(key), JsonSerializer.Serialize(keys.Select(k => k with { IsVirtual = true }).ToList(), Json));
+        AtomicFile.WriteAllText(FilePath(key),JsonSerializer.Serialize(keys.Select(k => k with { IsVirtual = true }).ToList(), Json));
 }

@@ -131,7 +131,7 @@ public sealed class AppSettingsService
                 Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
             };
-            File.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
+            AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
         }
         catch
         {

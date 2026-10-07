@@ -465,7 +465,15 @@ public sealed partial class RelationshipsViewModel(VirtualForeignKeyStore store,
         var fk = item.Relationship.ToForeignKey();
         keys.RemoveAll(k => Same(k, fk));
         if (accepted) keys.Add(fk);
-        store.Save(key, keys);
+        try
+        {
+            store.Save(key, keys);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = "Could not save the relationship: " + ex.Message;
+            return;
+        }
         item.IsAccepted = accepted;
         sessions.ReloadVirtualForeignKeys(session);
         Status = accepted

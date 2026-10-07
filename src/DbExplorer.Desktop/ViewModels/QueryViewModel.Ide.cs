@@ -20,6 +20,9 @@ public partial class QueryViewModel
     private DateTime _transactionStarted;
     private readonly Dictionary<string, string> _parameterValues = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Rows kept per result set of a plan script (the plans are one row each).</summary>
+    private const int AnalyzeRowLimit = 1000;
+
     /// <summary>Rows kept per result set (0 = no limit). Further rows are read and discarded so the app stays responsive.</summary>
     [ObservableProperty] private decimal _maxRows = 10_000;
 
@@ -131,7 +134,16 @@ public partial class QueryViewModel
     private async Task ExplainAsync(QueryRun? run) => await ExplainCoreAsync(run, analyze: false);
 
     [RelayCommand(CanExecute = nameof(CanExecute))]
-    private async Task ExplainAnalyzeAsync(QueryRun? run) => await ExplainCoreAsync(run, analyze: true);
+    private async Task ExplainAnalyzeAsync(QueryRun? run)
+    {
+        // Analyze runs the statements on a connection of its own, which would wait on the locks this tab's transaction holds.
+        if (HasOpenTransaction)
+        {
+            Status = "Commit or Rollback the open transaction first: Explain Analyze runs on another connection and would wait for its locks.";
+            return;
+        }
+        await ExplainCoreAsync(run, analyze: true);
+    }
 
     private async Task ExplainCoreAsync(QueryRun? run, bool analyze)
     {
@@ -163,7 +175,10 @@ public partial class QueryViewModel
         Status = analyze ? "Running and measuring…" : "Getting the estimated plan…";
         try
         {
-            var result = await queryService.ExecuteScriptAsync(session, PlanReader.BuildScript(sql, key, analyze, session.ServerVersion), TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
+            // Analyze on SQL Server returns the statements' own rows with the plans: keep only the first ones. Straight to the
+            // provider (no read-only row cap on the server), so the measured statements still run to the end.
+            var result = await session.Provider.ExecuteScriptAsync(PlanReader.BuildScript(sql, key, analyze, session.ServerVersion), TargetDatabase,
+                TimeoutSeconds * 5, _runCts.Token, maxRows: AnalyzeRowLimit);
             IReadOnlyList<ExecutionPlan> plans;
             try
             {

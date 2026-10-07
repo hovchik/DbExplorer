@@ -1,0 +1,153 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:views="using:DbExplorer.Desktop.Views"
+        xmlns:dbg="using:DbExplorer.Core.Debugging"
+        xmlns:ae="using:AvaloniaEdit"
+        x:Class="DbExplorer.Desktop.Views.RoutineDebuggerWindow"
+        x:DataType="vm:RoutineDebuggerViewModel"
+        Title="{Binding Title}"
+        Width="1180" Height="780" MinWidth="760" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="F5" Command="{Binding StartOrContinueCommand}" />
+    <KeyBinding Gesture="F10" Command="{Binding StepOverCommand}" />
+    <KeyBinding Gesture="F11" Command="{Binding StepIntoCommand}" />
+    <KeyBinding Gesture="Shift+F11" Command="{Binding StepOutCommand}" />
+    <KeyBinding Gesture="Shift+F5" Command="{Binding StopCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel Margin="10">
+    <!-- Title, overloads and the run options. -->
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <TextBlock Classes="section" Margin="0,0,12,4" Text="{Binding Title}" VerticalAlignment="Center" />
+      <ComboBox MinWidth="260" ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
+                IsVisible="{Binding HasOverloads}" IsEnabled="{Binding CanEditParameters}" ToolTip.Tip="Overload">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="dbg:DebugTarget">
+            <TextBlock Text="{Binding Signature}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <ProgressBar Width="80" IsIndeterminate="True" IsVisible="{Binding IsLoading}" />
+    </WrapPanel>
+
+    <!-- Why debugging cannot run here, and how to enable it. -->
+    <Border DockPanel.Dock="Top" Margin="0,4,0,8" Padding="10" CornerRadius="4"
+            Background="{DynamicResource AppSubtleBackgroundBrush}" BorderBrush="{DynamicResource AppPlanWarningBrush}" BorderThickness="1"
+            IsVisible="{Binding Problem.Length}">
+      <StackPanel Spacing="6">
+        <TextBlock Text="{Binding Problem}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <SelectableTextBlock Text="{Binding Setup}" TextWrapping="Wrap" IsVisible="{Binding Setup.Length}" />
+      </StackPanel>
+    </Border>
+
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar" IsVisible="{Binding HasDebugger}">
+      <Button Classes="accent" Command="{Binding StartOrContinueCommand}" ToolTip.Tip="Start or continue to the next breakpoint (F5)">
+        <TextBlock Text="{Binding StartText}" />
+      </Button>
+      <Button Content="Step over" Command="{Binding StepOverCommand}" ToolTip.Tip="Run the current line, then pause on the next one (F10)" />
+      <Button Content="Step into" Command="{Binding StepIntoCommand}" ToolTip.Tip="Go into a PL/pgSQL routine the line calls (F11)" />
+      <Button Content="Step out" Command="{Binding StepOutCommand}" ToolTip.Tip="Run to the line after the call of this routine (Shift+F11)" />
+      <Button Content="Stop" Command="{Binding StopCommand}" ToolTip.Tip="End the call; its changes are rolled back (Shift+F5)" />
+      <CheckBox Content="Commit when finished" IsChecked="{Binding CommitWhenFinished}" IsEnabled="{Binding CanEditParameters}"
+                ToolTip.Tip="Off: everything the routine changed is rolled back at the end. On: committed if the call succeeds." />
+      <ProgressBar Width="80" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+    </WrapPanel>
+
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />
+
+    <Grid RowDefinitions="3*,6,2*" IsVisible="{Binding HasDebugger}">
+      <Grid ColumnDefinitions="260,6,*,6,340">
+        <!-- Parameters before the run. -->
+        <DockPanel Grid.Column="0">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="Parameters" />
+          <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
+                     Text="Typed as text and cast to the parameter's type, e.g. 42, 2026-01-31, {1,2,3}." />
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Parameters}" IsEnabled="{Binding CanEditParameters}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DebugParameterInput">
+                  <StackPanel Margin="0,0,6,10" Spacing="3">
+                    <TextBlock>
+                      <Run Text="{Binding Name}" FontWeight="SemiBold" />
+                      <Run Text="{Binding DataType}" Foreground="{DynamicResource AppHintForegroundBrush}" />
+                    </TextBlock>
+                    <TextBox Text="{Binding Value}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                             IsEnabled="{Binding !UseDefault}" Watermark="value" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <CheckBox Content="NULL" IsChecked="{Binding IsNull}" IsEnabled="{Binding !UseDefault}" />
+                      <CheckBox Content="Default" IsChecked="{Binding UseDefault}" IsVisible="{Binding HasDefault}" />
+                    </StackPanel>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+        <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+        <!-- The body, with breakpoints and the current line. -->
+        <DockPanel Grid.Column="2">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="{Binding SourceTitle}" TextTrimming="CharacterEllipsis" />
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Hint}" />
+          <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="3">
+            <ae:TextEditor x:Name="SourceEditor" IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
+                           FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                           Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                           LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
+                           HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0" />
+          </Border>
+        </DockPanel>
+        <GridSplitter Grid.Column="3" ResizeDirection="Columns" Background="Transparent" />
+
+        <!-- Call stack and the selected frame's variables. -->
+        <Grid Grid.Column="4" RowDefinitions="Auto,Auto,6,Auto,*">
+          <TextBlock Grid.Row="0" Classes="section" Text="Call stack" />
+          <ListBox Grid.Row="1" MaxHeight="150" ItemsSource="{Binding Stack}" SelectedItem="{Binding SelectedFrame}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DebugFrameItem">
+                <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Text}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Grid.Row="3" Classes="section" Margin="0,8,0,6" Text="Variables" />
+          <DataGrid Grid.Row="4" x:Name="VariablesGrid" ItemsSource="{Binding Variables}" AutoGenerateColumns="False"
+                    IsReadOnly="True" CanUserResizeColumns="True" GridLinesVisibility="Horizontal"
+                    ToolTip.Tip="Double-click a value of the paused routine to change it.">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
+              <DataGridTextColumn Header="Value" Binding="{Binding ValueText}" Width="*" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
+              <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto" />
+              <DataGridTextColumn Header="" Binding="{Binding KindText}" Width="Auto" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </Grid>
+      </Grid>
+
+      <GridSplitter Grid.Row="1" ResizeDirection="Rows" Background="Transparent" />
+
+      <!-- Notices raised by the routine, and its results once it finishes. -->
+      <TabControl Grid.Row="2" x:Name="OutputTabs">
+        <TabItem Header="Output">
+          <TextBox Text="{Binding OutputText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                   FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
+        </TabItem>
+        <TabItem Header="Results">
+          <TabControl ItemsSource="{Binding ResultSets}">
+            <TabControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ResultSetView">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </TabControl.ItemTemplate>
+            <TabControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:ResultSetView">
+                <views:ResultGridView ResultSet="{Binding}" />
+              </DataTemplate>
+            </TabControl.ContentTemplate>
+          </TabControl>
+        </TabItem>
+      </TabControl>
+    </Grid>
+  </DockPanel>
+</Window>

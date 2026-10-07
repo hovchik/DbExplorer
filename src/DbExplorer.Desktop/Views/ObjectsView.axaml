@@ -26,6 +26,7 @@
         <DataGrid.ContextMenu>
           <ContextMenu>
             <MenuItem Header="Execute…" Command="{Binding ExecuteSelectedCommand}" />
+            <MenuItem Header="Debug…" Command="{Binding DebugSelectedCommand}" />
             <MenuItem Header="Get Data…" Command="{Binding GetDataCommand}" />
             <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" />
             <MenuItem Header="Change in Table designer…" Command="{Binding DesignTableCommand}" />

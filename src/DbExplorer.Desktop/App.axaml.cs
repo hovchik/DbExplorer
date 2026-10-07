@@ -37,6 +37,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<ActivityViewModel>();
         services.AddSingleton<DiagramViewModel>();
         services.AddSingleton<TableDesignerViewModel>();
+        services.AddSingleton<ErModelViewModel>();
         services.AddSingleton<QueryBuilderViewModel>();
         services.AddSingleton<SecurityViewModel>();
         services.AddTransient<QueryViewModel>();

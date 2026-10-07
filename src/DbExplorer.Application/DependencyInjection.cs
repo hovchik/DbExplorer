@@ -10,6 +10,7 @@ using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Search;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Application.Team;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -40,6 +41,8 @@ public static class DependencyInjection
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
         services.AddSingleton<SnippetLibrary>();
+        services.AddSingleton<TeamSyncStore>();
+        services.AddSingleton<TeamSync>();
         services.AddSingleton<QueryExecutionService>();
         services.AddSingleton<MultiDatabaseQueryService>();
         services.AddSingleton<ObjectComparisonService>();

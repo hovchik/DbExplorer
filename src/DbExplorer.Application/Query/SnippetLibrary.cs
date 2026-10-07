@@ -26,6 +26,9 @@ public sealed class SnippetLibrary(AppPaths paths)
     /// <summary>The snippets, sorted by name.</summary>
     public IReadOnlyList<UserSnippet> Items => _items ??= Load();
 
+    /// <summary>Snippets shared in the team folder (read-only here); empty when no team folder is set.</summary>
+    public Func<IReadOnlyList<UserSnippet>> TeamItems { get; set; } = () => [];
+
     /// <summary>Saves <paramref name="sql"/> as <paramref name="name"/>, replacing a snippet of the same name (case-insensitive).</summary>
     public void Save(string name, string sql)
     {

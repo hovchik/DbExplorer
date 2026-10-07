@@ -34,6 +34,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ActivityViewModel activity,
         DiagramViewModel diagram,
         TableDesignerViewModel tableDesigner,
+        QueryBuilderViewModel queryBuilder,
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
         LabViewModel lab,
@@ -53,13 +54,14 @@ public partial class MainWindowViewModel : ViewModelBase
         Activity = activity;
         Diagram = diagram;
         TableDesigner = tableDesigner;
+        QueryBuilder = queryBuilder;
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
         Security = security;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, query, comparer, lab, security];
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, queryBuilder, query, comparer, lab, security];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -77,6 +79,11 @@ public partial class MainWindowViewModel : ViewModelBase
             objects.Reveal(table);
         };
         diagram.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
+        queryBuilder.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
@@ -122,6 +129,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public ActivityViewModel Activity { get; }
     public DiagramViewModel Diagram { get; }
     public TableDesignerViewModel TableDesigner { get; }
+    public QueryBuilderViewModel QueryBuilder { get; }
 
     /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
     [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
@@ -485,6 +493,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
         Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
         Command("Import connections…", ImportConnectionsCommand);
+        Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
 
         if (!IsConnected && !IsBusy)
         {
@@ -577,6 +586,7 @@ public enum AppTab
     SearchData,
     Diagram,
     TableDesigner,
+    QueryBuilder,
     Indexes,
     Locks,
     Activity,

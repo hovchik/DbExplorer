@@ -162,10 +162,12 @@
 		<DataGrid.ContextMenu>
 		  <ContextMenu>
 			<MenuItem Header="View cell value…" InputGesture="Enter" Click="OnViewCell" />
+			<MenuItem Header="View row as JSON…" Click="OnViewRowJson" />
 			<MenuItem Header="Copy cell value" InputGesture="Ctrl+C" Click="OnCopyCell" />
 			<MenuItem Header="Copy selected rows" Click="OnCopySelected" />
 			<MenuItem Header="Copy selected rows with header" InputGesture="Ctrl+Shift+C" Click="OnCopySelectedWithHeader" />
 			<MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
+			<MenuItem Header="Copy selected rows as JSON" Click="OnCopySelectedJson" />
 			<Separator />
 			<MenuItem Header="Filter by this value" Click="OnFilterByCell" />
 			<MenuItem Header="Exclude this value" Click="OnExcludeCell" />

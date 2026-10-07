@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -497,6 +498,11 @@ public partial class ComparerViewModel
 
     private Task<bool> ConfirmCopyAsync(DatabaseSession right, CopyPlan plan)
     {
+        if (right.Profile.ReadOnly)
+        {
+            CopyStatus = ReadOnlyGuard.Refusal(right.Profile, "The copy");
+            return Task.FromResult(false);
+        }
         var a = plan.Analysis;
         var where = string.Join(" · ", new[] { right.Profile.DisplayName, a.TargetDatabase, a.TargetFullName }.Where(s => !string.IsNullOrEmpty(s)));
         var message = $"{ObjectCopyService.Humanize(plan.Action)}: {a.Source.FullName} → {where}\n\n{plan.Summary}" +

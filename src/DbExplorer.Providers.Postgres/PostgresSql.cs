@@ -65,6 +65,9 @@ public static class PostgresSql
             b.Password = p.Password;
         }
 
+        // A read-only connection is enforced by the server too: every transaction starts READ ONLY.
+        if (p.ReadOnly) b.Options = "-c default_transaction_read_only=on";
+
         return b.ConnectionString;
     }
 }

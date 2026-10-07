@@ -51,6 +51,10 @@
         <StackPanel Grid.Column="0">
           <TextBlock Classes="field" Text="Name" />
           <TextBox Text="{Binding Name}" Watermark="host/database if empty" />
+          <TextBlock Classes="field" Text="Folder" />
+          <AutoCompleteBox Text="{Binding Folder}" ItemsSource="{Binding Folders}" FilterMode="ContainsOrdinal"
+                           MinimumPrefixLength="0" Watermark="none (e.g. Shop or Clients/Acme)"
+                           ToolTip.Tip="Groups connections in the list; use / for a folder inside a folder" />
         </StackPanel>
         <StackPanel Grid.Column="2">
           <TextBlock Classes="field" Text="Environment" />
@@ -147,6 +151,8 @@
         <CheckBox Content="Read-only intent" IsChecked="{Binding ReadOnlyIntent}" IsEnabled="{Binding CanUseReadOnlyIntent}"
                   Margin="0,0,14,4"
                   ToolTip.Tip="ApplicationIntent=ReadOnly: Availability Group listeners route the app to a readable secondary" />
+        <CheckBox Content="Read-only (block writes)" IsChecked="{Binding ReadOnly}" Margin="0,0,14,4"
+                  ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only." />
       </WrapPanel>
     </StackPanel>
   </DockPanel>

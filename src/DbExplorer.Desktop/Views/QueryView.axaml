@@ -91,6 +91,8 @@
 			<MenuItem Header="UPPER CASE selection" InputGesture="Ctrl+Shift+U" Click="OnUpperCase" />
 			<MenuItem Header="lower case selection" InputGesture="Ctrl+Alt+U" Click="OnLowerCase" />
 			<MenuItem Header="Duplicate line / selection" InputGesture="Ctrl+D" Click="OnDuplicate" />
+			<MenuItem Header="Add next occurrence" InputGesture="Alt+J" Click="OnAddNextOccurrence" />
+			<MenuItem Header="Select all occurrences" InputGesture="Ctrl+Alt+Shift+J" Click="OnSelectAllOccurrences" />
 			<Separator />
 			<MenuItem Header="Find" InputGesture="Ctrl+F" Click="OnFind" />
 			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />

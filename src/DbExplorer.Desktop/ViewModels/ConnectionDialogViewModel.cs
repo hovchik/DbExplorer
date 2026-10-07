@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,8 +12,10 @@ public partial class ConnectionDialogViewModel : ViewModelBase
 {
     private readonly Guid _id;
 
-    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft)
+    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft, IReadOnlyList<string>? folders = null)
     {
+        Folders = folders ?? [];
+        _folder = draft.Folder;
         Providers = registry.All;
         _id = draft.Id;
         _selectedProvider = Providers.FirstOrDefault(p => p.Key == draft.ProviderKey) ?? Providers[0];
@@ -27,6 +30,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _encrypt = draft.Encrypt;
         _trustServerCertificate = draft.TrustServerCertificate;
         _readOnlyIntent = draft.ReadOnlyIntent;
+        _readOnly = draft.ReadOnly;
         _environment = draft.Environment;
     }
 
@@ -39,6 +43,10 @@ public partial class ConnectionDialogViewModel : ViewModelBase
 
     [ObservableProperty] private IDatabaseProviderFactory _selectedProvider;
     [ObservableProperty] private string _name;
+    [ObservableProperty] private string _folder;
+
+    /// <summary>Folders other connections use, offered while typing one.</summary>
+    public IReadOnlyList<string> Folders { get; }
     [ObservableProperty] private string _host;
     [ObservableProperty] private string _port;
     [ObservableProperty] private string _database;
@@ -49,6 +57,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private bool _encrypt;
     [ObservableProperty] private bool _trustServerCertificate;
     [ObservableProperty] private bool _readOnlyIntent;
+    [ObservableProperty] private bool _readOnly;
     [ObservableProperty] private string? _selectedDatabase;
     [ObservableProperty] private string? _message;
     [ObservableProperty] private bool _isBusy;
@@ -130,6 +139,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     {
         Id = _id,
         Name = string.IsNullOrWhiteSpace(Name) ? $"{Host.Trim()}/{Database.Trim()}" : Name.Trim(),
+        Folder = ConnectionFolders.Normalize(Folder),
         ProviderKey = SelectedProvider.Key,
         Host = Host.Trim(),
         Port = int.TryParse(Port, out var port) ? port : null,
@@ -141,6 +151,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         Encrypt = Encrypt,
         TrustServerCertificate = TrustServerCertificate,
         ReadOnlyIntent = ReadOnlyIntent && CanUseReadOnlyIntent,
+        ReadOnly = ReadOnly,
         Environment = Environment
     };
 }

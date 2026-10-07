@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -771,6 +772,12 @@ public partial class ComparerViewModel(
     private async Task CreateRightDatabaseAsync()
     {
         if (RightSession is not { } right || MissingRightDatabase is not { } name) return;
+
+        if (right.Profile.ReadOnly)
+        {
+            CopyStatus = ReadOnlyGuard.Refusal(right.Profile, "CREATE DATABASE");
+            return;
+        }
 
         var message = $"Create the empty database {name} on {right.Profile.DisplayName}?\n\n" +
                       "It gets the server's defaults (collation, files, owner). Objects can then be copied into it on the Copy & sync tab.";

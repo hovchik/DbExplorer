@@ -15,7 +15,7 @@ namespace DbExplorer.Desktop.Services;
 
 public interface IDialogService
 {
-    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title);
+    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null);
 
     Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,
@@ -71,11 +71,11 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
 {
     public Window? Owner { get; set; }
 
-    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title)
+    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null)
     {
         if (Owner is null) return null;
 
-        var vm = new ConnectionDialogViewModel(registry, draft);
+        var vm = new ConnectionDialogViewModel(registry, draft, folders);
         var dialog = new ConnectionDialog { DataContext = vm, Title = title };
         var ok = await dialog.ShowDialog<bool>(Owner);
         return ok ? vm.ToProfile() : null;
@@ -98,7 +98,18 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         var vm = new RoutineExecutionViewModel();
         var window = new RoutineExecutionWindow { DataContext = vm };
-        if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
+        if (session.Profile.ReadOnly && routine.Type == DbObjectType.Procedure)
+        {
+            vm.ConfirmBeforeRun = async () =>
+            {
+                var dialog = new ConfirmWindow(
+                    ReadOnlyGuard.Refusal(session.Profile, routine.FullName) + "\n\nStored procedures can modify data, so they do not run on read-only connections.",
+                    "OK");
+                await dialog.ShowDialog<bool>(window);
+                return false;
+            };
+        }
+        else if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
         {
             vm.ConfirmBeforeRun = async () =>
             {

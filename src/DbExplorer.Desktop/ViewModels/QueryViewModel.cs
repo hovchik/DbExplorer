@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using System.Collections.ObjectModel;
 using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -433,6 +434,11 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
         if (sql is null) { Status = "Not run (parameters were not given)."; return; }
 
+        if (session.Profile.ReadOnly && ReadOnlyGuard.MayWrite(sql))
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "The script");
+            return;
+        }
         if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
 
         _lastRun = new RepeatableRun(sql, startOffset, targets);
@@ -448,6 +454,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         IsRunning = true;
         StartElapsedClock();
         Messages.Clear();
+        var outcome = RunOutcome.Failed;
         try
         {
             var succeeded = true;
@@ -459,10 +466,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                 await RunOnceAsync(session, sql, ct);
             if (AutoTitle && QueryTabNamer.Suggest(sql) is { } name) Title = name;
             if (succeeded) AfterRun(session, sql);
+            if (succeeded) outcome = RunOutcome.Succeeded;
             return succeeded;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            outcome = RunOutcome.Cancelled;
             Status = "Cancelled." + (HasOpenTransaction ? " The transaction is still open: Commit or Rollback." : "");
             return false;
         }
@@ -477,9 +486,14 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         finally
         {
             IsRunning = false;
+            var elapsed = _runClock.Elapsed;
             StopElapsedClock();
+            if (!_isRefreshRun) RunFinished?.Invoke(this, elapsed, outcome);
         }
     }
+
+    /// <summary>A run of this tab ended (not auto refresh): the workspace may tell the user if they looked away.</summary>
+    public event Action<QueryViewModel, TimeSpan, RunOutcome>? RunFinished;
 
     private int RowLimit => MaxRows <= 0 ? int.MaxValue : (int)Math.Min(MaxRows, int.MaxValue);
 

@@ -101,6 +101,24 @@ public static partial class ResultExporter
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 
+    /// <summary>One row as a JSON object (column → value), for viewing or copying a single record.</summary>
+    public static string ToJsonObject(IReadOnlyList<string> columns, IReadOnlyList<object?> row)
+    {
+        using var ms = new MemoryStream();
+        using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
+        {
+            var names = UniqueNames(columns);
+            w.WriteStartObject();
+            for (var i = 0; i < names.Count; i++)
+            {
+                w.WritePropertyName(names[i]);
+                WriteJsonValue(w, i < row.Count ? row[i] : null);
+            }
+            w.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
     public static string ToMarkdown(IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows)
     {
         static string Cell(string s) => s.Replace("|", "\\|").Replace("\r\n", "<br>").Replace("\n", "<br>");

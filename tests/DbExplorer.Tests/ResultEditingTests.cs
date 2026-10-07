@@ -172,6 +172,24 @@ public class ResultEditingTests
     }
 
     [Fact]
+    public void Literals_match_the_stored_value()
+    {
+        // MySQL reads a backslash as an escape.
+        Assert.Equal(@"'\\'", ResultEditSql.Literal('\\', SqlDialect.MySql));
+        Assert.Equal(@"'a\\b''c'", ResultEditSql.Literal(@"a\b'c", SqlDialect.MySql));
+        Assert.Equal(@"N'\'", ResultEditSql.Literal('\\', SqlDialect.SqlServer));
+
+        // A SQL Server key is cast to its column's own type, so a datetime's .997 equals the stored value.
+        var at = new DateTime(2025, 3, 4, 10, 11, 12, 997);
+        Assert.Equal("CAST(N'2025-03-04T10:11:12.997' AS datetime)", ResultEditSql.Literal(at, SqlDialect.SqlServer, "datetime"));
+        Assert.Equal("CAST(N'2025-03-04T10:11:00.000' AS smalldatetime)",
+            ResultEditSql.Literal(new DateTime(2025, 3, 4, 10, 11, 0), SqlDialect.SqlServer, "SmallDateTime"));
+        Assert.Equal("CAST(N'2025-03-04' AS date)", ResultEditSql.Literal(new DateTime(2025, 3, 4), SqlDialect.SqlServer, "date"));
+        Assert.Equal("CAST(N'2025-03-04 10:11:12.997' AS datetime2(7))", ResultEditSql.Literal(at, SqlDialect.SqlServer, "datetime2"));
+        Assert.Equal("CAST(N'2025-03-04 10:11:12.997' AS datetime2(7))", ResultEditSql.Literal(at, SqlDialect.SqlServer));
+    }
+
+    [Fact]
     public void Typed_text_parses_back_to_the_cells_type()
     {
         Assert.Equal(42, ResultEditSql.ParseValue(" 42 ", 1, null));

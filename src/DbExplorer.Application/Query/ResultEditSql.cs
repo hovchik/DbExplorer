@@ -113,7 +113,7 @@ public static class ResultEditSql
                 foreach (var k in table.Key)
                 {
                     var typed = values.FirstOrDefault(v => string.Equals(v.Column, k.Column.Name, StringComparison.OrdinalIgnoreCase));
-                    if (typed.Column is not null) conditions.Add($"{quote(k.Column.Name)} = {Literal(typed.Value, dialect)}");
+                    if (typed.Column is not null) conditions.Add($"{quote(k.Column.Name)} = {Literal(typed.Value, dialect, k.Column.BaseType)}");
                     else if (table.Key.Count == 1 && k.Column.IsIdentity) conditions.Add($"{quote(k.Column.Name)} = {lastIdentity}");
                     else readBack = false;
                 }
@@ -153,7 +153,7 @@ public static class ResultEditSql
             var value = k.ResultColumn < originalValues.Count ? originalValues[k.ResultColumn] : null;
             if (value is null or DBNull)
                 throw new InvalidOperationException($"A row of {table.Table.FullName} has no value in its key column {k.Column.Name}.");
-            return $"{quote(k.Column.Name)} = {Literal(value, dialect)}";
+            return $"{quote(k.Column.Name)} = {Literal(value, dialect, k.Column.BaseType)}";
         }));
 
     /// <summary>SELECT of the row(s) of the referenced table that <paramref name="row"/>'s foreign key values point to;
@@ -196,19 +196,28 @@ public static class ResultEditSql
     }
 
     /// <summary>A literal that keeps the value's type: dates and times are cast on SQL Server so precision and offsets
-    /// survive, UTC timestamps carry their offset on PostgreSQL. MySQL has no offsets: an instant is written in UTC.</summary>
-    public static string Literal(object? value, SqlDialect dialect)
+    /// survive, UTC timestamps carry their offset on PostgreSQL. MySQL has no offsets: an instant is written in UTC.
+    /// <paramref name="baseType"/>, the column's type when known, makes a SQL Server DateTime cast to datetime /
+    /// smalldatetime / date, so it equals the stored value (a datetime2 never equals a datetime's .997 on compat ≥ 130).</summary>
+    public static string Literal(object? value, SqlDialect dialect, string? baseType = null)
     {
         var sqlServer = dialect == SqlDialect.SqlServer;
         var mySql = dialect == SqlDialect.MySql;
-        string Text(string s) => (sqlServer ? "N'" : "'") + s.Replace("'", "''") + "'";
+        // MySQL reads backslashes as escapes unless NO_BACKSLASH_ESCAPES is set; doubled, they read the same either way.
+        string Text(string s) => (sqlServer ? "N'" : "'") + (mySql ? s.Replace("\\", "\\\\") : s).Replace("'", "''") + "'";
         return value switch
         {
             DateTime dt when mySql => Text(dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFF", CultureInfo.InvariantCulture)),
             DateTimeOffset dto when mySql => Text(dto.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.FFFFFF", CultureInfo.InvariantCulture)),
             TimeSpan ts when mySql => Text((ts < TimeSpan.Zero ? "-" : "") +
                 $"{(long)ts.Duration().TotalHours:00}:{ts.Duration().Minutes:00}:{ts.Duration().Seconds:00}.{ts.Duration().Ticks % TimeSpan.TicksPerSecond / 10:000000}"),
-            DateTime dt when sqlServer => $"CAST({Text(ResultExporter.FormatInvariant(dt))} AS datetime2(7))",
+            DateTime dt when sqlServer => baseType?.ToLowerInvariant() switch
+            {
+                // The 'T' form: datetime reads "yyyy-MM-dd hh:mm" by SET DATEFORMAT.
+                "datetime" or "smalldatetime" => $"CAST({Text(dt.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture))} AS {baseType.ToLowerInvariant()})",
+                "date" => $"CAST({Text(dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))} AS date)",
+                _ => $"CAST({Text(ResultExporter.FormatInvariant(dt))} AS datetime2(7))"
+            },
             DateTime dt when dt.Kind == DateTimeKind.Utc => Text(dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture) + "+00"),
             DateTimeOffset dto when sqlServer => $"CAST({Text(ResultExporter.FormatInvariant(dto))} AS datetimeoffset(7))",
             DateOnly d when sqlServer => $"CAST({Text(ResultExporter.FormatInvariant(d))} AS date)",

@@ -1014,6 +1014,25 @@ public partial class QueryView : UserControl
             menu.Items.Add(item);
         }
 
+        var team = vm.Snippets.TeamItems();
+        if (team.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = "Team snippets", IsEnabled = false });
+            foreach (var snippet in team)
+            {
+                var item = new MenuItem { Header = snippet.Name };
+                ToolTip.SetTip(item, new TextBlock
+                {
+                    Text = snippet.Sql.Length > 1500 ? snippet.Sql[..1500] + "…" : snippet.Sql,
+                    FontFamily = Editor.FontFamily,
+                    FontSize = 12
+                });
+                item.Click += (_, _) => InsertSnippet(snippet.Sql);
+                menu.Items.Add(item);
+            }
+        }
+
         if (snippets.Count > 0)
         {
             var delete = new MenuItem { Header = "Delete" };

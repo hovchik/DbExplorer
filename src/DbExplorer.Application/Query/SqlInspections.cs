@@ -703,9 +703,8 @@ public sealed class SqlInspector
                 }
 
                 var written = text[s.Start..s.End];
-                var where = typedSchema is null ? "" : $" in schema {typedSchema}";
                 result.Add(new SqlInspection(s.Start, s.End - s.Start, InspectionSeverity.Error,
-                    $"Table {written} not found{where}" + (names.Count > 0 ? $". Did you mean {string.Join(", ", names)}?" : "."), fixes));
+                    $"Table {written} not found" + (names.Count > 0 ? $". Did you mean {string.Join(", ", names)}?" : "."), fixes));
             }
         }
 
@@ -1116,8 +1115,11 @@ public sealed class SqlInspector
                 if (KindAt(k + 1, SqlTokenKind.Dot) && k + 2 < _n && t[k + 2].IsIdentifier && !KindAt(k - 1, SqlTokenKind.Dot) &&
                     !KindAt(k + 3, SqlTokenKind.Dot) && !KindAt(k + 3, SqlTokenKind.OpenParen))
                 {
-                    refs.Add(new ColumnRef(t[k].Identifier, t[k + 2].Identifier, t[k].Start, t[k + 2].End, k + 2));
                     skipUntil = k + 2;
+                    // A misspelt column is reported as unknown; asking to group by it as well would only add noise.
+                    if (SourcesFor(t[k].Identifier, _scopeOf[k]) is [{ Object: { } table }, ..] && owner.ColumnsOf(table).Count > 0 &&
+                        !owner.HasColumn(table, t[k + 2].Identifier)) continue;
+                    refs.Add(new ColumnRef(t[k].Identifier, t[k + 2].Identifier, t[k].Start, t[k + 2].End, k + 2));
                     continue;
                 }
                 if (!IsColumnCandidate(k) || _known.Contains(t[k].Identifier)) continue;

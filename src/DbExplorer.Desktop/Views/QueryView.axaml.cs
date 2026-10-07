@@ -770,13 +770,12 @@ public partial class QueryView : UserControl
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
-        var problem = _inspections.Where(i => offset >= i.Start && offset < Math.Max(i.End, i.Start + 1))
-            .OrderByDescending(i => i.Severity).FirstOrDefault();
+        var problems = _inspections.Where(i => offset >= i.Start && offset < Math.Max(i.End, i.Start + 1))
+            .OrderByDescending(i => i.Severity).ToList();
         var described = _vm.Describe(Editor.Document.Text, offset);
-        if (described is null && problem is null) return;
+        if (described is null && problems.Count == 0) return;
 
-        var parts = new List<string>();
-        if (problem is not null) parts.Add(DescribeProblem(problem));
+        var parts = problems.Select(DescribeProblem).ToList();
         if (described is not null) parts.Add(described + "\n\nF12 / Ctrl+Click: open definition");
         ToolTip.SetTip(Editor, new TextBlock
         {
@@ -1125,20 +1124,26 @@ public partial class QueryView : UserControl
             vm.Status = fresh.Count == 0 ? "No SQL warnings." : "No SQL warning at the caret. F8 goes to the next one.";
             return;
         }
-        if (problem.Fixes.Count == 0)
+        // Several checks can flag the same name (ambiguous and missing from GROUP BY): offer the fixes of each.
+        var here = fresh.Where(i => i.Start == problem.Start && i.Length == problem.Length)
+            .OrderByDescending(i => i.Severity).ToList();
+        if (here.All(i => i.Fixes.Count == 0))
         {
             vm.Status = problem.Message;
             return;
         }
 
         var menu = new ContextMenu();
-        menu.Items.Add(new MenuItem { Header = problem.Message, IsEnabled = false });
-        menu.Items.Add(new Separator());
-        foreach (var fix in problem.Fixes)
+        foreach (var p in here)
         {
-            var item = new MenuItem { Header = fix.Title };
-            item.Click += (_, _) => ApplyFix(fix);
-            menu.Items.Add(item);
+            if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = new TextBlock { Text = p.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 460 }, IsEnabled = false });
+            foreach (var fix in p.Fixes)
+            {
+                var item = new MenuItem { Header = fix.Title };
+                item.Click += (_, _) => ApplyFix(fix);
+                menu.Items.Add(item);
+            }
         }
 
         var textView = Editor.TextArea.TextView;

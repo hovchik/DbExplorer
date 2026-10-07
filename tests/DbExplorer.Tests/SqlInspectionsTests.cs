@@ -281,6 +281,13 @@ public class SqlInspectionsTests
     }
 
     [Fact]
+    public void Misspelt_column_is_not_also_asked_for_in_group_by()
+    {
+        const string sql = "SELECT o.OrderDat, COUNT(*) FROM sales.Orders o GROUP BY o.CustomerId";
+        Assert.StartsWith("Column OrderDat not found", Single(sql, SqlServer).Message);
+    }
+
+    [Fact]
     public void Postgres_allows_columns_of_a_table_grouped_by_its_primary_key()
     {
         const string sql = "SELECT c.CustomerId, c.Name, COUNT(*) FROM dbo.Customers c JOIN sales.Orders o ON o.CustomerId = c.CustomerId GROUP BY c.CustomerId";

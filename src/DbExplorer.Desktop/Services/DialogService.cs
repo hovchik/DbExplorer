@@ -53,6 +53,10 @@ public interface IDialogService
     /// <summary>Puts text on the clipboard.</summary>
     Task CopyTextAsync(string text);
 
+    /// <summary>Asks for a new login (name and password) or, when <paramref name="name"/> is set, a new password for it;
+    /// null when cancelled. Passwords are typed masked and confirmed.</summary>
+    Task<LoginPromptAnswer?> PromptLoginAsync(string title, string message, string? name, string? createUserLabel = null);
+
     /// <summary>Lets the user set, replace or remove their Anthropic API key for the AI assistant.</summary>
     Task EditAssistantSettingsAsync(AssistantSettings settings);
 
@@ -154,6 +158,12 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     {
         if (Owner is null) return null;
         return await new TextPromptWindow(title, message, label, initial, watermark).ShowDialog<string?>(Owner);
+    }
+
+    public async Task<LoginPromptAnswer?> PromptLoginAsync(string title, string message, string? name, string? createUserLabel = null)
+    {
+        if (Owner is null) return null;
+        return await new LoginPromptWindow(title, message, name, createUserLabel).ShowDialog<LoginPromptAnswer?>(Owner);
     }
 
     public async Task EditAssistantSettingsAsync(AssistantSettings settings)

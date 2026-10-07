@@ -34,12 +34,15 @@ public sealed record TeamSnapshot(IReadOnlyList<TeamItem> Items, IReadOnlyList<s
 /// <summary>The saved connections after taking shared ones, and what happened to each.</summary>
 /// <param name="KeptBoth">Shared connections added next to a local one of the same name or with local edits.</param>
 /// <param name="PasswordsLeftOut">The files had passwords but no (or a wrong) team password is set: they are asked on connect.</param>
+/// <param name="Failed">Shared files that could not be read (locked by the sync tool, or not a valid export), with why;
+/// they stay new and can be pulled again.</param>
 public sealed record TeamPullResult(
     IReadOnlyList<ConnectionProfile> Profiles,
     IReadOnlyList<string> Added,
     IReadOnlyList<string> Updated,
     IReadOnlyList<string> KeptBoth,
-    bool PasswordsLeftOut);
+    bool PasswordsLeftOut,
+    IReadOnlyList<string> Failed);
 
 /// <summary>
 /// Shares connections, queries and snippets with teammates through a folder the team already syncs, with no server.
@@ -226,34 +229,48 @@ public sealed class TeamSync
     /// Adds or updates saved connections from shared files. A connection already taken from the team is updated in
     /// place unless it was edited here since; then both are kept (the local one becomes a connection of its own).
     /// A new connection whose name is taken is added as "Name (2)". Local passwords stay when the file has none.
+    /// A file that cannot be read is skipped, reported in
+    /// <see cref="TeamPullResult.Failed"/> and stays unseen.
     /// </summary>
     public TeamPullResult PullConnections(IEnumerable<TeamItem> items, IReadOnlyList<ConnectionProfile> local)
     {
         var folder = RequireFolder();
         var merged = local.ToList();
-        List<string> added = [], updated = [], keptBoth = [];
+        List<string> added = [], updated = [], keptBoth = [], failed = [];
         var passwordsLeftOut = false;
 
         foreach (var item in items.Where(i => i.Kind == TeamItemKind.Connection))
         {
-            var bytes = File.ReadAllBytes(folder.FullPath(item.RelativePath));
-            var hash = TeamFolder.HashOf(bytes);
-            var file = ConnectionTransfer.Read(Encoding.UTF8.GetString(bytes));
+            // Read and decrypt first: a file that fails is skipped (and stays unseen) without touching anything.
+            string hash;
             IReadOnlyList<ConnectionProfile> incoming;
-            if (file.HasPasswords && _password is not null)
+            var leftOut = false;
+            try
             {
-                try { incoming = ConnectionTransfer.Profiles(file, _password); }
-                catch (WrongExportPasswordException)
+                var bytes = File.ReadAllBytes(folder.FullPath(item.RelativePath));
+                hash = TeamFolder.HashOf(bytes);
+                var file = ConnectionTransfer.Read(Encoding.UTF8.GetString(bytes));
+                if (file.HasPasswords && _password is not null)
+                {
+                    try { incoming = ConnectionTransfer.Profiles(file, _password); }
+                    catch (WrongExportPasswordException)
+                    {
+                        incoming = ConnectionTransfer.Profiles(file);
+                        leftOut = true;
+                    }
+                }
+                else
                 {
                     incoming = ConnectionTransfer.Profiles(file);
-                    passwordsLeftOut = true;
+                    leftOut = file.HasPasswords;
                 }
             }
-            else
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                incoming = ConnectionTransfer.Profiles(file);
-                passwordsLeftOut |= file.HasPasswords;
+                failed.Add($"{item.Name} ({ex.Message})");
+                continue;
             }
+            passwordsLeftOut |= leftOut;
 
             foreach (var shared in incoming)
             {
@@ -264,7 +281,7 @@ public sealed class TeamSync
         }
 
         Save();
-        return new TeamPullResult(merged, added, updated, keptBoth, passwordsLeftOut);
+        return new TeamPullResult(merged, added, updated, keptBoth, passwordsLeftOut, failed);
     }
 
     private ConnectionProfile Take(List<ConnectionProfile> merged, ConnectionProfile shared,

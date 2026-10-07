@@ -182,6 +182,29 @@ public sealed class TeamSyncTests : IDisposable
     }
 
     [Fact]
+    public void A_file_that_cannot_be_read_is_skipped_and_stays_new()
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        alice.ShareConnection(Profile("Archive"), includePasswords: false);
+        alice.ShareConnection(Profile("Shop"), includePasswords: false);
+        var archive = Path.Combine(TeamRoot, "connections", "Archive.dbxconnections");
+        var good = File.ReadAllText(archive);
+        File.WriteAllText(archive, "{ not json");
+
+        var result = bob.PullConnections(bob.Scan().Items, []);
+
+        Assert.Equal(["Shop"], result.Added);
+        Assert.Equal("Shop", Assert.Single(result.Profiles).Name);
+        Assert.StartsWith("Archive", Assert.Single(result.Failed));
+        Assert.Equal(TeamItemStatus.New, Item(bob, "Archive").Status);
+        Assert.Equal(TeamItemStatus.Seen, Item(bob, "Shop").Status);
+
+        File.WriteAllText(archive, good);      // the sync tool caught up
+        Assert.Contains("Archive", bob.PullConnections([Item(bob, "Archive")], result.Profiles).Added);
+    }
+
+    [Fact]
     public void Connection_edited_on_both_sides_keeps_both()
     {
         var alice = Member("alice");

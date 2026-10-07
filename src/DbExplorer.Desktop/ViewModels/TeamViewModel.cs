@@ -238,9 +238,10 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
             if (result.Added.Count > 0) parts.Add("added " + string.Join(", ", result.Added));
             if (result.Updated.Count > 0) parts.Add("updated " + string.Join(", ", result.Updated));
             if (result.KeptBoth.Count > 0) parts.Add("kept both, added " + string.Join(", ", result.KeptBoth));
-            if (parts.Count == 0) parts.Add("already up to date");
+            if (parts.Count == 0) parts.Add(result.Failed.Count > 0 ? "nothing added" : "already up to date");
             Status = "Connections: " + string.Join("; ", parts) +
-                     (result.PasswordsLeftOut ? ". Passwords were left out (set the right team password to get them); you are asked on connect." : ".");
+                     (result.PasswordsLeftOut ? ". Passwords were left out (set the right team password to get them); you are asked on connect." : ".") +
+                     (result.Failed.Count > 0 ? " Could not read " + string.Join(", ", result.Failed) + "; try again later." : "");
         }
         catch (Exception ex)
         {

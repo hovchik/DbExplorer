@@ -11,9 +11,10 @@ public sealed class TeamFolderWatcher : IDisposable
     private readonly Timer _debounce;
     private readonly Timer _poll;
     private readonly TimeSpan _delay;
+    private readonly object _gate = new();
     private FileSystemWatcher? _watcher;
     private string _signature;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>Raised on a thread-pool thread.</summary>
     public event Action? Changed;
@@ -29,7 +30,17 @@ public sealed class TeamFolderWatcher : IDisposable
         StartWatcher();
     }
 
+    /// <summary>Under the lock, so a poll on a timer thread cannot start a watcher after <see cref="Dispose"/>.</summary>
     private void StartWatcher()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _watcher is not null) return;
+            CreateWatcher();
+        }
+    }
+
+    private void CreateWatcher()
     {
         try
         {
@@ -66,7 +77,7 @@ public sealed class TeamFolderWatcher : IDisposable
     private void Poll()
     {
         if (_disposed) return;
-        if (_watcher is null) StartWatcher();
+        StartWatcher();
         if (Signature() != _signature) Raise();
     }
 
@@ -100,8 +111,12 @@ public sealed class TeamFolderWatcher : IDisposable
 
     public void Dispose()
     {
-        _disposed = true;
-        _watcher?.Dispose();
+        lock (_gate)
+        {
+            _disposed = true;
+            _watcher?.Dispose();
+            _watcher = null;
+        }
         _debounce.Dispose();
         _poll.Dispose();
     }

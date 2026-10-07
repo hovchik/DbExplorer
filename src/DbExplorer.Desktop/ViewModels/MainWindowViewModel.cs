@@ -263,10 +263,23 @@ public partial class MainWindowViewModel : ViewModelBase
         var edited = await _dialogs.EditConnectionAsync(current.Clone(), "Edit connection", ConnectionFolders.All(Profiles));
         if (edited is null) return;
 
-        var index = Profiles.IndexOf(current);
+        // A Team pull can rebuild the list while the dialog is open: find the connection again.
+        var index = IndexOfProfile(current.Id);
+        if (index < 0)
+        {
+            StatusText = $"{current} is no longer in the saved connections; the edit was not saved.";
+            return;
+        }
         Profiles[index] = edited;
         SortProfiles(edited);
         await SaveProfilesAsync();
+    }
+
+    private int IndexOfProfile(Guid id)
+    {
+        for (var i = 0; i < Profiles.Count; i++)
+            if (Profiles[i].Id == id) return i;
+        return -1;
     }
 
     /// <summary>Keeps the list grouped by folder, then by name, and selects <paramref name="select"/>.</summary>
@@ -382,10 +395,15 @@ public partial class MainWindowViewModel : ViewModelBase
             // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");
             if (withPassword is null) return;
-            var index = Profiles.IndexOf(profile);
-            Profiles[index] = withPassword;
-            SelectedProfile = profile = withPassword;
-            await SaveProfilesAsync();
+            // A Team pull can rebuild the list while the dialog is open: find the connection again.
+            var index = IndexOfProfile(profile.Id);
+            profile = withPassword;
+            if (index >= 0)
+            {
+                Profiles[index] = withPassword;
+                SelectedProfile = withPassword;
+                await SaveProfilesAsync();
+            }
         }
 
         var ct = BeginLoad();

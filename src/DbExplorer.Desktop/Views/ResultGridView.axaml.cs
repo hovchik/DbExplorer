@@ -1574,42 +1574,49 @@ public partial class ResultGridView : UserControl
         });
         if (file is null) return;
 
+        // The rows and columns as shown now (rows are replaced, never changed, when edited); formatting and writing a
+        // large result happen off the UI thread.
         var visible = VisibleColumns();
         var columns = Names(visible);
-        var rows = Project(_viewRows, visible);
+        var shown = _viewRows.ToList();
+        var html = new HtmlExportInfo(rs.SourceTable ?? rs.Title, DateTimeOffset.Now)
+        {
+            Source = rs.SourceTable is null ? rs.Title : rs.SourceTable,
+            Connection = rs.Connection,
+            FetchedRowCount = rs.Rows.Count,
+            FetchedColumnCount = _columns.Count,
+            IsTruncated = rs.IsTruncated,
+            TotalRowCount = rs.TotalRowCount,
+            TotalRowCountIsExact = rs.TotalRowCountIsExact
+        };
         try
         {
             await using var stream = await file.OpenWriteAsync();
-            stream.SetLength(0);
-            if (format == ExportFormat.Excel)
+            RowCountText.Text = $"Exporting {shown.Count:N0} row(s)…";
+            await Task.Run(async () =>
             {
-                ResultExporter.WriteXlsx(stream, columns, rows, rs.Title);
-                RowCountText.Text = $"Exported {rows.Count:N0} row(s) to {file.Name}";
-                return;
-            }
-
-            var text = format switch
-            {
-                ExportFormat.Csv => ResultExporter.ToCsv(columns, rows),
-                ExportFormat.Json => ResultExporter.ToJson(columns, rows),
-                ExportFormat.Markdown => ResultExporter.ToMarkdown(columns, rows),
-                ExportFormat.Html => ResultExporter.ToHtml(columns, rows, new HtmlExportInfo(rs.SourceTable ?? rs.Title, DateTimeOffset.Now)
+                stream.SetLength(0);
+                var rows = Project(shown, visible);
+                if (format == ExportFormat.Excel)
                 {
-                    Source = rs.SourceTable is null ? rs.Title : rs.SourceTable,
-                    Connection = rs.Connection,
-                    FetchedRowCount = rs.Rows.Count,
-                    FetchedColumnCount = _columns.Count,
-                    IsTruncated = rs.IsTruncated,
-                    TotalRowCount = rs.TotalRowCount,
-                    TotalRowCountIsExact = rs.TotalRowCountIsExact
-                }),
-                _ => BuildInsert(rs, columns, rows)
-            };
-            // BOM so Excel detects UTF-8 when opening CSV directly.
-            var encoding = format == ExportFormat.Csv ? new UTF8Encoding(true) : new UTF8Encoding(false);
-            await using var writer = new StreamWriter(stream, encoding);
-            await writer.WriteAsync(text);
-            RowCountText.Text = $"Exported {rows.Count:N0} row(s) to {file.Name}";
+                    ResultExporter.WriteXlsx(stream, columns, rows, rs.Title);
+                    return;
+                }
+
+                var text = format switch
+                {
+                    ExportFormat.Csv => ResultExporter.ToCsv(columns, rows),
+                    ExportFormat.Json => ResultExporter.ToJson(columns, rows),
+                    ExportFormat.Markdown => ResultExporter.ToMarkdown(columns, rows),
+                    ExportFormat.Html => ResultExporter.ToHtml(columns, rows, html),
+                    _ => BuildInsert(rs, columns, rows)
+                };
+                // BOM so Excel detects UTF-8 when opening CSV directly.
+                var encoding = format == ExportFormat.Csv ? new UTF8Encoding(true) : new UTF8Encoding(false);
+                await using var writer = new StreamWriter(stream, encoding);
+                await writer.WriteAsync(text);
+            });
+            RowCountText.Text = $"Exported {shown.Count:N0} row(s) to {file.Name}";
         }
         catch (Exception ex)
         {

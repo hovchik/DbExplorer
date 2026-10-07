@@ -4,6 +4,7 @@ using AvaloniaEdit.Document;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
+using DbExplorer.Application.Assistant;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
@@ -34,6 +35,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private readonly IDialogService dialogs;
     private readonly DefinitionService definitions;
     private readonly SessionService sessions;
+    private readonly SqlAssistant assistant;
     private DatabaseSession? _session;
     private SqlCompletionEngine? _completion;
     private CancellationTokenSource? _runCts;
@@ -41,9 +43,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     public QueryViewModel(
         QueryExecutionService queryService, MultiDatabaseQueryService multiQuery, ScriptStore scripts, IDialogService dialogs,
-        DefinitionService definitions, SessionService sessions, AppSettingsService settings, SnippetLibrary snippets)
+        DefinitionService definitions, SessionService sessions, AppSettingsService settings, SnippetLibrary snippets,
+        AssistantSettings assistantSettings, SqlAssistant assistant)
     {
         Settings = settings;
+        AssistantSettings = assistantSettings;
+        this.assistant = assistant;
         Snippets = snippets;
         this.definitions = definitions;
         this.sessions = sessions;
@@ -467,6 +472,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             if (AutoTitle && QueryTabNamer.Suggest(sql) is { } name) Title = name;
             if (succeeded) AfterRun(session, sql);
             if (succeeded) outcome = RunOutcome.Succeeded;
+            RememberError(sql, succeeded ? null : NullIfEmpty(string.Join("\n", Messages.Where(m => m.StartsWith('✗')))));
             return succeeded;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -479,6 +485,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             Status = "Error: " + ex.Message + (HasOpenTransaction ? " · transaction still open" : "");
             Messages.Add(ex.Message);
+            RememberError(sql, ex.Message);
             if (ex is SqlExecutionException { Line: { } line } located) ErrorLocated?.Invoke(startOffset, line, located.Column);
             await SafeAppendHistoryAsync(sql, succeeded: false, error: ex.Message);
             return false;

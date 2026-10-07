@@ -6,6 +6,7 @@
     <ProjectReference Include="..\DbExplorer.Core\DbExplorer.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.53.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

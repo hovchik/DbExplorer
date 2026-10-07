@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using DbExplorer.Application.Assistant;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
@@ -50,6 +51,9 @@ public interface IDialogService
 
     /// <summary>Puts text on the clipboard.</summary>
     Task CopyTextAsync(string text);
+
+    /// <summary>Lets the user set, replace or remove their Anthropic API key for the AI assistant.</summary>
+    Task EditAssistantSettingsAsync(AssistantSettings settings);
 
     /// <summary>Picks connections to export and an optional export password; null when cancelled.</summary>
     Task<ConnectionExportRequest?> PromptConnectionExportAsync(IReadOnlyList<ConnectionProfile> profiles);
@@ -145,6 +149,12 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         if (Owner is null) return null;
         return await new TextPromptWindow(title, message, label, initial, watermark).ShowDialog<string?>(Owner);
+    }
+
+    public async Task EditAssistantSettingsAsync(AssistantSettings settings)
+    {
+        if (Owner is null) return;
+        await new AssistantSettingsWindow(settings).ShowDialog(Owner);
     }
 
     public async Task<ConnectionExportRequest?> PromptConnectionExportAsync(IReadOnlyList<ConnectionProfile> profiles)

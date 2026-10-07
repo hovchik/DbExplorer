@@ -20,6 +20,8 @@ SQL Server is the primary engine; PostgreSQL is included as a second provider to
 
 | **Lab** *(experimental)* | **Change recorder**: press Start, do something in your application, press Stop — lists every table whose insert/update/delete counters moved (`sys.dm_db_index_operational_stats` / `pg_stat_user_tables`) and the rows involved: an exact before/after diff for tables snapshotted at Start (tables up to 2,000 rows by default), otherwise the rows written since Start (PostgreSQL `xmin`, SQL Server `rowversion` columns), otherwise counts only. **Schema history**: every catalog read from the server is stored locally as a version when something changed (definitions de-duplicated by hash), so you can compare any two versions or see one object's revisions — no DDL triggers or audit on the server. **Inferred relationships**: foreign keys the schema does not declare, proposed from column names and types (`Orders.CustomerId → Customers.Id`, `order_lines.product_id → products.id`), checked against 2,000 sampled values, and — once accepted — used by the Diagram (dashed), Relations and JOIN suggestions. Accepted ones live in a local file, never in the database. |
 
+**AI assistant in the Query tab** (*✨ AI ▾*, shown once an Anthropic API key is set under *Tools ▾ › Set up the AI assistant*): **Write SQL** from a sentence, **Explain** the selection / statement at the caret, and **Fix error** for the tab's last failed run, using Claude with your own key. The assistant knows the tab's database: the names and types of its tables, views, columns, keys and routines go with each question (tables named in the question first, about 120 KB at most). Row data, row counts and routine bodies are never sent. Proposed SQL appears in the panel and goes into the editor only when you press *Insert*; it is never run automatically.
+
 **Lab tools in the Query tab** (*Lab ▾*):
 
 - **Why isn't my row here?** — give the row you expected as a condition (`o.OrderId = 1001`); the statement at the caret is replayed with read-only COUNT probes: does the row exist, which join drops it (and which part of its ON condition, with the values it looked for), which WHERE condition excludes it (with the row's actual values and a hint when a NULL is involved), whether HAVING removes its group, or whether TOP / LIMIT cut it (and its position).
@@ -147,6 +149,8 @@ Nothing else changes: the connection dialog, tabs, caches and searches pick the 
 ## Security
 
 Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect. A damaged `connections.json` is moved aside (`connections.json.corrupt-<time>`) rather than overwritten.
+
+The AI assistant's API key is kept in `assistant.json`, encrypted with DPAPI for the current Windows user; on macOS/Linux it lasts until the app closes. It is sent only to `api.anthropic.com`.
 
 *Encrypt (TLS)* with *Trust certificate* off validates the server certificate and host name on both engines (PostgreSQL `SslMode=VerifyFull`); with *Trust certificate* on, the connection is encrypted but any certificate is accepted (`TrustServerCertificate=True` / `SslMode=Require`). For servers reached over untrusted networks, turn *Encrypt* on and *Trust certificate* off.
 

@@ -6,6 +6,8 @@
         Icon="/Assets/logo.ico"
         Width="1400" Height="860"
         xmlns:conv="using:DbExplorer.Desktop.Converters"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
+        xmlns:models="using:DbExplorer.Core.Models"
         WindowStartupLocation="CenterScreen">
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
@@ -14,66 +16,371 @@
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
   </Window.Resources>
-  <DockPanel>
-    <Border DockPanel.Dock="Top" Padding="8,4" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
-      <Grid ColumnDefinitions="*,Auto">
-        <!-- The connection picker gives way first when the window is narrow (1024 px laptops): it shrinks before
-             anything on the right is pushed out of view. -->
-        <Grid Grid.Column="0" ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <Image Source="/Assets/logo.png" Width="24" Height="24" Margin="0,0,4,0" VerticalAlignment="Center" />
-          <TextBlock Text="DB Explorer" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0" />
-        </StackPanel>
-          <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="120" MaxWidth="280"
-                    ItemsSource="{Binding Profiles}"
-                    SelectedItem="{Binding SelectedProfile}"
-                    PlaceholderText="Select a connection…"
-                    IsTextSearchEnabled="True"
-                    IsEnabled="{Binding !IsConnected}">
-            <ComboBox.ItemTemplate>
-              <DataTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                           Fill="{Binding Environment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}" />
-                  <!-- StringFormat: a bare {Binding} to the profile object shows nothing in a TextBlock -->
-                  <TextBlock Text="{Binding, StringFormat='{}{0}'}" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="6,0,0,0">
-          <Button Classes="icon" Content="＋" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}" />
-          <Button Classes="icon" Content="✎" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}" />
-          <Button Classes="icon" Content="🗑" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}" />
-          <Button Classes="icon" Content="⇅" ToolTip.Tip="Import or export connections">
-            <Button.Flyout>
-              <MenuFlyout>
-                <MenuItem Header="Import connections…" Command="{Binding ImportConnectionsCommand}" />
-                <MenuItem Header="Export connections…" Command="{Binding ExportConnectionsCommand}" />
-              </MenuFlyout>
-            </Button.Flyout>
-          </Button>
-          <Button Content="{Binding Team.ButtonText}" ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}" />
-        </StackPanel>
-        </Grid>
+  <Window.Styles>
+    <!-- App bar: one height (32 px) for every control, ghost icon buttons with hover and pressed fills -->
+    <Style Selector="Border.appbar Border.group">
+      <Setter Property="Background" Value="{DynamicResource AppBarGroupBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBarGroupBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Height" Value="34" />
+    </Style>
+    <Style Selector="Border.appbar Border.divider">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource AppBarGroupBorderBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Ellipse.status">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="10" />
+    </Style>
+    <Style Selector="Border.appbar Ellipse.status.connected">
+      <Setter Property="Fill" Value="{DynamicResource AppStatusConnectedBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Ellipse.status.busy">
+      <Setter Property="Fill" Value="{DynamicResource AppStatusBusyBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Ellipse.status.idle">
+      <Setter Property="Stroke" Value="{DynamicResource AppStatusIdleBrush}" />
+      <Setter Property="StrokeThickness" Value="2" />
+    </Style>
 
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
-          <Button Content="Go to…  Ctrl+K" Command="{Binding OpenCommandPaletteCommand}"
-                  ToolTip.Tip="Jump to any table, view, procedure, tab or command" />
-          <ComboBox Width="100" ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme}"
-                    ToolTip.Tip="App theme" />
-          <ProgressBar Width="80" VerticalAlignment="Center"
-                       IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
-          <Button Content="Cancel" IsVisible="{Binding IsBusy}" Command="{Binding CancelLoadCommand}"
-                  ToolTip.Tip="Stop connecting / reading the catalog" />
-          <!-- Disabled while busy anyway; hiding it keeps the progress bar and Cancel inside a 1024 px window -->
-          <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}" IsVisible="{Binding !IsBusy}"
-                  ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
-          <Button Content="Disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}" />
-          <Button Content="Connect" Classes="accent" IsVisible="{Binding !IsConnected}" Command="{Binding ConnectCommand}" />
-        </StackPanel>
-      </Grid>
-    </Border>
+    <Style Selector="Border.appbar Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.appbar Button.tool.labelled">
+      <Setter Property="Width" Value="NaN" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="10,0,12,0" />
+    </Style>
+    <Style Selector="Border.appbar Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.tool:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolPressedBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- The app-wide TextBlock foreground would keep labels bright on a disabled button -->
+    <Style Selector="Border.appbar Button:disabled TextBlock">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Border.appbar Border.count">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="MinWidth" Value="18" />
+      <Setter Property="Height" Value="16" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.appbar Border.count > TextBlock">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- The connection picker sits inside the group's frame, so it has none of its own -->
+    <Style Selector="Border.appbar ComboBox.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Margin" Value="4,0,2,0" />
+      <Setter Property="Padding" Value="6,0,4,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare /template/ Border#Background">
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare:pointerover /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare:pressed /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource AppToolPressedBrush}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare:focus-visible /template/ Border#HighlightBackground">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <!-- Locked while connected: keep it readable rather than greyed out, and drop the arrow -->
+    <Style Selector="Border.appbar ComboBox.bare:disabled /template/ Border#Background">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare:disabled /template/ PathIcon#DropDownGlyph">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Border.appbar ComboBox.bare TextBlock.folder">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+    </Style>
+
+    <!-- Go to: a search field look-alike that opens the command palette -->
+    <Style Selector="Border.appbar Button.goto">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="10,0,5,0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource AppBarGroupBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBarGroupBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.goto:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppBarGroupBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.goto:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.goto TextBlock.placeholder">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="Border.appbar Border.keycap">
+      <Setter Property="Background" Value="{DynamicResource AppKeycapBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBarGroupBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.appbar Border.keycap > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <!-- Connect (accent) and Disconnect: the bar's primary action -->
+    <Style Selector="Border.appbar Button.primary">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="108" />
+      <Setter Property="Padding" Value="12,0,14,0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.appbar Button.primary.accent TextBlock">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Border.appbar Button.primary.accent">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Border.appbar Button.disconnect">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBarGroupBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.appbar Button.disconnect:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppDangerHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.disconnect:pointerover TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
+    <Style Selector="Border.appbar Button.disconnect:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.appbar Button.disconnect:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppDangerHoverBrush}" />
+    </Style>
+  </Window.Styles>
+  <DockPanel>
+    <!-- App bar: brand, then the connection group (status, picker, its actions, Team), then utilities and the
+         primary Connect / Disconnect on the right. The picker gives way first when the window is narrow (1024 px
+         laptops): its column shrinks to 130 px before anything on the right is pushed out of view. -->
+    <Panel DockPanel.Dock="Top">
+      <Border Classes="appbar" Padding="12,7" BorderThickness="0,0,0,1"
+              Background="{DynamicResource AppBarBackgroundBrush}" BorderBrush="{DynamicResource AppBorderBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="0,0,16,0">
+            <Image Source="/Assets/logo.png" Width="22" Height="22" VerticalAlignment="Center" />
+            <TextBlock Text="DB Explorer" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <Grid Grid.Column="1" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" MinWidth="130" MaxWidth="320" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Grid.ColumnSpan="3" Classes="group" />
+
+            <!-- Connection state: green connected, amber connecting / reading the catalog, hollow grey otherwise -->
+            <Panel Grid.Column="0" Width="10" Height="10" Margin="12,0,2,0" VerticalAlignment="Center">
+              <Ellipse Classes="status idle" ToolTip.Tip="Not connected">
+                <Ellipse.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="!IsConnected" />
+                    <Binding Path="!IsBusy" />
+                  </MultiBinding>
+                </Ellipse.IsVisible>
+              </Ellipse>
+              <Ellipse Classes="status busy" ToolTip.Tip="Working…" IsVisible="{Binding IsBusy}" />
+              <Ellipse Classes="status connected" ToolTip.Tip="Connected">
+                <Ellipse.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="IsConnected" />
+                    <Binding Path="!IsBusy" />
+                  </MultiBinding>
+                </Ellipse.IsVisible>
+              </Ellipse>
+            </Panel>
+
+            <ComboBox Grid.Column="1" Classes="bare" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding Profiles}"
+                      SelectedItem="{Binding SelectedProfile}"
+                      PlaceholderText="Select a connection…"
+                      IsTextSearchEnabled="True"
+                      IsEnabled="{Binding !IsConnected}"
+                      ToolTip.Tip="Connection (locked while connected)">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+                    <!-- The name keeps its width and the folder before it trims first when the bar is narrow.
+                         TextSearch still uses ToString(). -->
+                    <DockPanel Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center">
+                      <TextBlock DockPanel.Dock="Right" Text="{Binding DisplayName}" FontWeight="Medium"
+                                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      <TextBlock Classes="folder" Text="{Binding Folder, Converter={x:Static conv:FolderPrefixConverter.Instance}}"
+                                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <controls:StrokeIcon Grid.Column="1" Data="{x:Static controls:Icons.Lock}" Width="12" Height="12"
+                                         Margin="6,0,0,0" IsVisible="{Binding ReadOnly}" ToolTip.Tip="Read-only connection" />
+                    <controls:EnvironmentBadge Grid.Column="2" Environment="{Binding Environment}" Margin="8,0,0,0" />
+                  </Grid>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="0,0,3,0">
+              <Border Classes="divider" Margin="2,0,4,0" />
+              <Button Classes="tool" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Plus}" />
+              </Button>
+              <Button Classes="tool" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Pencil}" />
+              </Button>
+              <Button Classes="tool" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Trash}" />
+              </Button>
+              <Button Classes="tool" ToolTip.Tip="Import or export connections">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.ArrowsUpDown}" />
+                <Button.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                    <MenuItem Header="Import connections…" Command="{Binding ImportConnectionsCommand}" />
+                    <MenuItem Header="Export connections…" Command="{Binding ExportConnectionsCommand}" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
+
+            <Button Grid.Column="3" Classes="tool labelled" Margin="8,0,0,0" VerticalAlignment="Center"
+                    ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Users}" />
+                <TextBlock Text="Team" VerticalAlignment="Center" />
+                <Border Classes="count" IsVisible="{Binding Team.HasChanges, FallbackValue=False}">
+                  <TextBlock Text="{Binding Team.ChangedCount}" />
+                </Border>
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="12,0,0,0">
+            <!-- Looks like a search field; opens the command palette -->
+            <Button Classes="goto" Width="170" Command="{Binding OpenCommandPaletteCommand}"
+                    ToolTip.Tip="Jump to any table, view, procedure, tab or command (Ctrl+K or Ctrl+P)">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Search}" Width="15" Height="15" />
+                <TextBlock Grid.Column="1" Classes="placeholder" Text="Go to…" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <Border Grid.Column="2" Classes="keycap">
+                  <TextBlock Text="Ctrl K" />
+                </Border>
+              </Grid>
+            </Button>
+
+            <Button Classes="tool labelled" IsVisible="{Binding IsBusy}" Command="{Binding CancelLoadCommand}"
+                    ToolTip.Tip="Stop connecting / reading the catalog">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" />
+                <TextBlock Text="Cancel" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- Disabled while busy anyway; hiding it keeps the progress bar and Cancel inside a 1024 px window -->
+            <Button Classes="tool" Command="{Binding RefreshMetadataCommand}" IsVisible="{Binding !IsBusy}"
+                    ToolTip.Tip="Refresh metadata: re-read the catalog from the server and update the local cache">
+              <controls:StrokeIcon Data="{x:Static controls:Icons.Refresh}" />
+            </Button>
+            <Button Classes="tool" ToolTip.Tip="Theme">
+              <controls:StrokeIcon Data="{Binding SelectedTheme, Converter={x:Static conv:ThemeModeToIconConverter.Instance}}" />
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                  <MenuItem Header="System" Command="{Binding SetThemeCommand}" CommandParameter="{x:Static models:AppThemeMode.System}">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Check}" Width="14" Height="14"
+                                           IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=System}" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="Light" Command="{Binding SetThemeCommand}" CommandParameter="{x:Static models:AppThemeMode.Light}">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Check}" Width="14" Height="14"
+                                           IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=Light}" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="Dark" Command="{Binding SetThemeCommand}" CommandParameter="{x:Static models:AppThemeMode.Dark}">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Check}" Width="14" Height="14"
+                                           IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=Dark}" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+
+            <Border Classes="divider" Margin="6,0" />
+            <Button Classes="primary disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}"
+                    ToolTip.Tip="Close the connection">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Power}" />
+                <TextBlock Text="Disconnect" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="primary accent" IsVisible="{Binding !IsConnected}" Command="{Binding ConnectCommand}"
+                    ToolTip.Tip="Connect to the selected database">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Plug}" />
+                <TextBlock Text="Connect" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <!-- Connecting / reading the catalog: a thin line along the bar's bottom edge, so it costs no toolbar width -->
+      <ProgressBar VerticalAlignment="Bottom" Height="2" MinHeight="2" MinWidth="0" CornerRadius="0"
+                   Background="Transparent" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+    </Panel>
 
     <Border DockPanel.Dock="Top" Padding="10,2" IsVisible="{Binding ShowEnvironmentBanner}"
             Background="{Binding ConnectedEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">

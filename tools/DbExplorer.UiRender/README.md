@@ -24,6 +24,6 @@ Environment variables:
 | `DBX_RENDER_PG` | `host;port;user;password;database` of the PostgreSQL sample | `localhost;5432;postgres;postgres;uirender_shop` |
 | `DBX_RENDER_MSSQL` | same for SQL Server; when set, the engine-specific tabs are rendered on it too | unset |
 | `DBX_RENDER_MYSQL` | same for MySQL / MariaDB | unset |
-| `DBX_RENDER_ONLY` | comma-separated steps to run: `tabs`, `small`, `dialogs`, `sqlserver`, `mysql` | all |
+| `DBX_RENDER_ONLY` | comma-separated steps to run: `tabs`, `small`, `toolbar`, `dialogs`, `sqlserver`, `mysql` | all |
 
 The frames are deterministic apart from timestamps, so two runs can be diffed to review a UI change.

@@ -88,6 +88,9 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
     /// <summary>The toolbar button: "Team", or "Team · 3" when something is new.</summary>
     public string ButtonText => ChangedCount > 0 ? $"👥 Team · {ChangedCount}" : "👥 Team";
 
+    /// <summary>The toolbar button's count badge: shown when something in the team folder is new or changed.</summary>
+    public bool HasChanges => ChangedCount > 0;
+
     public string ButtonTip => !IsConfigured
         ? "Share connections, queries and snippets with your team through a shared folder"
         : FolderMissing
@@ -108,6 +111,7 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
     private void NotifyButton()
     {
         OnPropertyChanged(nameof(ButtonText));
+        OnPropertyChanged(nameof(HasChanges));
         OnPropertyChanged(nameof(ButtonTip));
     }
 

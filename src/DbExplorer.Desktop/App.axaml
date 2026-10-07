@@ -44,6 +44,18 @@
           <SolidColorBrush x:Key="AppPlanWarmBrush">#FFEF6C00</SolidColorBrush>
           <SolidColorBrush x:Key="AppPlanCoolBrush">#FF78909C</SolidColorBrush>
           <SolidColorBrush x:Key="AppPlanWarningBrush">#FFB26A00</SolidColorBrush>
+          <!-- App bar (main window toolbar) -->
+          <SolidColorBrush x:Key="AppBarBackgroundBrush">#FFF7F8FA</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBorderBrush">#1F000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolHoverBrush">#12000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolPressedBrush">#21000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppKeycapBrush">#0F000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusConnectedBrush">#FF1F9D55</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusBusyBrush">#FFD98E04</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusIdleBrush">#FF9AA0A6</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerBrush">#FFC62828</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerHoverBrush">#1AC62828</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -79,6 +91,17 @@
           <SolidColorBrush x:Key="AppPlanWarmBrush">#FFF5A55A</SolidColorBrush>
           <SolidColorBrush x:Key="AppPlanCoolBrush">#FF8FA4AE</SolidColorBrush>
           <SolidColorBrush x:Key="AppPlanWarningBrush">#FFE2C35C</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarBackgroundBrush">#FF17181B</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBrush">#FF222327</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBorderBrush">#1FFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolHoverBrush">#1AFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolPressedBrush">#2BFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppKeycapBrush">#17FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusConnectedBrush">#FF3FCB74</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusBusyBrush">#FFF2B33D</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusIdleBrush">#FF80868B</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerBrush">#FFF27878</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerHoverBrush">#26F27878</SolidColorBrush>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

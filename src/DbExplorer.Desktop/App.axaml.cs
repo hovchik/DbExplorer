@@ -20,7 +20,9 @@ public partial class App : Avalonia.Application
 {
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
-    public override void OnFrameworkInitializationCompleted()
+    /// <summary>The app's services: application layer, the engines and the view models. The render harness
+    /// (tools/DbExplorer.UiRender) reuses this and swaps in a temporary <see cref="AppPaths"/> root.</summary>
+    public static IServiceCollection ConfigureServices()
     {
         var services = new ServiceCollection()
             .AddDbExplorerApplication()
@@ -52,62 +54,78 @@ public partial class App : Avalonia.Application
         services.AddSingleton<LabViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<TeamViewModel>();
+        return services;
+    }
 
-        var provider = services.BuildServiceProvider();
+    /// <summary>The main window with its view model, wired as the dialogs' owner.</summary>
+    public static MainWindow CreateMainWindow(IServiceProvider provider)
+    {
+        var vm = provider.GetRequiredService<MainWindowViewModel>();
+        vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
+        var window = new MainWindow { DataContext = vm };
+        provider.GetRequiredService<DialogService>().Owner = window;
+        return window;
+    }
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        // Without a desktop lifetime (the render harness) the host builds the services itself.
+        if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
+        var provider = ConfigureServices().BuildServiceProvider();
 
         var settings = provider.GetRequiredService<AppSettingsService>();
         ApplyTheme(settings.Theme);
         settings.ThemeChanged += ApplyTheme;
 
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        var window = CreateMainWindow(provider);
+        var vm = (MainWindowViewModel)window.DataContext!;
+        desktop.MainWindow = window;
+
+        // An exception no command caught (a failed button handler, a lost connection mid-refresh) is logged and
+        // shown in the status bar instead of closing the window and losing the user's open tabs.
+        Dispatcher.UIThread.UnhandledException += (_, e) =>
         {
-            var vm = provider.GetRequiredService<MainWindowViewModel>();
-            vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
-            var window = new MainWindow { DataContext = vm };
-            provider.GetRequiredService<DialogService>().Owner = window;
-            desktop.MainWindow = window;
+            ErrorLog.Write("ui", e.Exception);
+            e.Handled = true;
+            vm.StatusText = $"Unexpected error: {e.Exception.GetBaseException().Message} (details in {ErrorLog.FilePath})";
+        };
 
-            // An exception no command caught (a failed button handler, a lost connection mid-refresh) is logged and
-            // shown in the status bar instead of closing the window and losing the user's open tabs.
-            Dispatcher.UIThread.UnhandledException += (_, e) =>
+        var shutdownStarted = false;
+        desktop.ShutdownRequested += async (_, e) =>
+        {
+            if (shutdownStarted) return;
+            shutdownStarted = true;
+            e.Cancel = true;
+            try
             {
-                ErrorLog.Write("ui", e.Exception);
-                e.Handled = true;
-                vm.StatusText = $"Unexpected error: {e.Exception.GetBaseException().Message} (details in {ErrorLog.FilePath})";
-            };
-
-            var shutdownStarted = false;
-            desktop.ShutdownRequested += async (_, e) =>
+                // Rolling back open transactions talks to the server; an unreachable one must not keep the window open.
+                var cleanup = CleanupAsync();
+                if (await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromSeconds(10))) != cleanup)
+                    ErrorLog.Write("shutdown", new TimeoutException("Cleanup did not finish within 10 s; closing anyway."));
+                else await cleanup;
+            }
+            catch (Exception ex)
             {
-                if (shutdownStarted) return;
-                shutdownStarted = true;
-                e.Cancel = true;
-                try
-                {
-                    // Rolling back open transactions talks to the server; an unreachable one must not keep the window open.
-                    var cleanup = CleanupAsync();
-                    if (await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromSeconds(10))) != cleanup)
-                        ErrorLog.Write("shutdown", new TimeoutException("Cleanup did not finish within 10 s; closing anyway."));
-                    else await cleanup;
-                }
-                catch (Exception ex)
-                {
-                    ErrorLog.Write("shutdown", ex);
-                }
-                finally
-                {
-                    desktop.Shutdown();
-                }
+                ErrorLog.Write("shutdown", ex);
+            }
+            finally
+            {
+                desktop.Shutdown();
+            }
 
-                async Task CleanupAsync()
-                {
-                    await vm.ShutdownAsync();
-                    await provider.DisposeAsync();
-                }
-            };
+            async Task CleanupAsync()
+            {
+                await vm.ShutdownAsync();
+                await provider.DisposeAsync();
+            }
+        };
 
-            _ = vm.InitializeAsync();
-        }
+        _ = vm.InitializeAsync();
 
         base.OnFrameworkInitializationCompleted();
     }

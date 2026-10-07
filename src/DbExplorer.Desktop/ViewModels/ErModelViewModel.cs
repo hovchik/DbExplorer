@@ -818,11 +818,11 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
             Status = $"Comparing the model with {database}…";
             var snapshot = await SnapshotOf(session, database);
             var provider = session.Provider.ProviderKey;
-            var matches = ErModelScriptBuilder.Matches(Model, snapshot, provider);
+            var matches = ErModelScriptBuilder.Matches(Model, snapshot, provider, database);
             var constraints = await ReadConstraintsAsync(session, matches.Values.ToList(), "Reading the current tables");
             if (!ReferenceEquals(session, _session)) return;
             var model = Model;
-            var result = await Task.Run(() => ErModelScriptBuilder.Build(model, snapshot, provider, constraints));
+            var result = await Task.Run(() => ErModelScriptBuilder.Build(model, snapshot, provider, constraints, database));
             _generated = result;
             _generatedFor = database;
             Script = result.Script;
@@ -918,7 +918,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
                     Same(o.Schema, t.Table.Schema(session.Provider.ProviderKey)) && Same(o.Name, t.Table.Name))))
                 .Where(t => t.Object is not null).ToList();
             var constraints = await ReadConstraintsAsync(session, found.Select(f => f.Object!).ToList(), "Reading the changed tables");
-            var model = Model;
+            // The tables the script did not touch move to the target database with the model.
+            var model = ErModelScriptBuilder.ForDatabase(Model, session.Provider.ProviderKey, database);
             foreach (var (id, obj) in found)
                 model = ErModelReader.Rebase(model, id, ErModelReader.Table(obj!, snapshot, session.Provider.ProviderKey, database ?? "", constraints));
             SetModel(model with { Database = database ?? model.Database }, undoable: false);

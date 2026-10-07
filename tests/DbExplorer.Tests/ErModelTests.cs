@@ -266,6 +266,50 @@ public class ErModelTests
         Assert.Contains("IF SCHEMA_ID(N'sales') IS NULL", script.Script);
     }
 
+    /// <summary>A MySQL database: customers ← orders. Schema and database are the same name there.</summary>
+    private static MetadataSnapshot MySqlShop(string database, bool withOrders = true)
+    {
+        DbObject Table(string name) => new() { Database = database, Schema = database, Name = name, Type = DbObjectType.Table };
+        DbColumn Column(string table, string name, int ordinal, bool pk = false) => new()
+        {
+            Database = database, Schema = database, Table = table, Name = name, Ordinal = ordinal, DataType = "int", BaseType = "int", IsPrimaryKey = pk
+        };
+        return new MetadataSnapshot
+        {
+            Objects = withOrders ? [Table("customers"), Table("orders")] : [Table("customers")],
+            Columns = withOrders
+                ? [Column("customers", "id", 1, pk: true), Column("orders", "id", 1, pk: true), Column("orders", "customer_id", 2)]
+                : [Column("customers", "id", 1, pk: true)],
+            Modules = [],
+            ForeignKeys = withOrders
+                ? [new DbForeignKey
+                {
+                    Name = "fk_orders_customers", Database = database, Schema = database, Table = "orders", Columns = "customer_id",
+                    ReferencedSchema = database, ReferencedTable = "customers", ReferencedColumns = "id"
+                }]
+                : [],
+            Indexes = [],
+            RefreshedAt = DateTimeOffset.Now
+        };
+    }
+
+    [Fact]
+    public void MySql_script_for_another_database_writes_into_that_database_not_the_one_the_model_was_read_from()
+    {
+        var model = ErModelReader.Read(MySqlShop("prod"), SqlDialect.MySqlKey, "prod", schema: null);
+
+        var same = ErModelScriptBuilder.Build(model, MySqlShop("staging"), SqlDialect.MySqlKey, targetDatabase: "staging");
+        Assert.False(same.HasChanges, same.Script);
+
+        var script = ErModelScriptBuilder.Build(model, MySqlShop("staging", withOrders: false), SqlDialect.MySqlKey, targetDatabase: "staging");
+        Assert.Equal(1, script.Created);
+        Assert.Equal(1, script.Unchanged);
+        Assert.Contains("CREATE TABLE `staging`.`orders`", script.Script);
+        Assert.Contains("REFERENCES `staging`.`customers` (`id`)", script.Script);
+        Assert.DoesNotContain("`prod`", script.Script);
+        Assert.DoesNotContain("CREATE DATABASE", script.Script);
+    }
+
     [Fact]
     public void Postgres_script_has_no_batch_separators_and_warns_about_types_of_another_engine()
     {

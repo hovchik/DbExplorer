@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using DbExplorer.Application.Connections;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
@@ -48,6 +50,21 @@ public interface IDialogService
 
     /// <summary>Puts text on the clipboard.</summary>
     Task CopyTextAsync(string text);
+
+    /// <summary>Picks connections to export and an optional export password; null when cancelled.</summary>
+    Task<ConnectionExportRequest?> PromptConnectionExportAsync(IReadOnlyList<ConnectionProfile> profiles);
+
+    /// <summary>Asks for a connections file's export password; null when cancelled.</summary>
+    Task<ImportPasswordAnswer?> PromptImportPasswordAsync(string fileName, string? error);
+
+    /// <summary>Asks what to do with imported connections whose names already exist; null when cancelled.</summary>
+    Task<ImportConflictChoice?> PromptImportConflictAsync(IReadOnlyList<string> names);
+
+    /// <summary>Lets the user pick where to save a text file and writes it; the file's name, or null when cancelled.</summary>
+    Task<string?> SaveTextFileAsync(string title, string suggestedName, string extension, string typeName, string content);
+
+    /// <summary>Lets the user pick a text file and reads it; null when cancelled.</summary>
+    Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName);
 }
 
 public sealed class DialogService(ProviderRegistry registry) : IDialogService
@@ -117,6 +134,63 @@ public sealed class DialogService(ProviderRegistry registry) : IDialogService
     {
         if (Owner is null) return null;
         return await new TextPromptWindow(title, message, label, initial, watermark).ShowDialog<string?>(Owner);
+    }
+
+    public async Task<ConnectionExportRequest?> PromptConnectionExportAsync(IReadOnlyList<ConnectionProfile> profiles)
+    {
+        if (Owner is null) return null;
+        return await new ExportConnectionsWindow(profiles).ShowDialog<ConnectionExportRequest?>(Owner);
+    }
+
+    public async Task<ImportPasswordAnswer?> PromptImportPasswordAsync(string fileName, string? error)
+    {
+        if (Owner is null) return null;
+        return await new ImportPasswordWindow(fileName, error).ShowDialog<ImportPasswordAnswer?>(Owner);
+    }
+
+    public async Task<ImportConflictChoice?> PromptImportConflictAsync(IReadOnlyList<string> names)
+    {
+        if (Owner is null) return null;
+        return await new ImportConflictWindow(names).ShowDialog<ImportConflictChoice?>(Owner);
+    }
+
+    public async Task<string?> SaveTextFileAsync(string title, string suggestedName, string extension, string typeName, string content)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggestedName + "." + extension,
+            DefaultExtension = extension,
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = ["*." + extension] }]
+        });
+        if (file is null) return null;
+
+        await using var stream = await file.OpenWriteAsync();
+        stream.SetLength(0);
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(content);
+        return file.Name;
+    }
+
+    public async Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            FileTypeFilter =
+            [
+                new FilePickerFileType(typeName) { Patterns = ["*." + extension, "*.json"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] }
+            ]
+        });
+        if (files.Count == 0) return null;
+
+        await using var stream = await files[0].OpenReadAsync();
+        using var reader = new StreamReader(stream);
+        return (files[0].Name, await reader.ReadToEndAsync());
     }
 
     public async Task CopyTextAsync(string text)

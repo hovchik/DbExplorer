@@ -28,6 +28,14 @@
           <Button Classes="icon" Content="＋" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}" />
           <Button Classes="icon" Content="✎" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}" />
           <Button Classes="icon" Content="🗑" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}" />
+          <Button Classes="icon" Content="⇅" ToolTip.Tip="Import or export connections">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Import connections…" Command="{Binding ImportConnectionsCommand}" />
+                <MenuItem Header="Export connections…" Command="{Binding ExportConnectionsCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

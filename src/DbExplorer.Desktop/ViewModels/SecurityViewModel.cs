@@ -92,7 +92,9 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
 
     public void Attach(DatabaseSession? session)
     {
+        if (_session is not null) _session.DatabasesChanged -= OnDatabasesChanged;
         _session = session;
+        if (_session is not null) _session.DatabasesChanged += OnDatabasesChanged;
         _draft = null;
         _draftDatabase = null;
         Principals.Clear();
@@ -125,7 +127,7 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     {
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (!ReferenceEquals(session, _session)) return;
             var selected = SelectedDatabase;
             Databases = Merge(names, session.Snapshot.Databases, [session.Profile.Database]);
@@ -135,6 +137,11 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
         {
             // Without the server list the picker still offers the databases already in the catalog.
         }
+    }
+
+    private void OnDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (_session is { } session) _ = LoadServerDatabasesAsync(session);
     }
 
     partial void OnSelectedDatabaseChanged(string? value) => _ = LoadAsync();

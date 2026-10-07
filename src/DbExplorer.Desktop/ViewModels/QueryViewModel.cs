@@ -128,9 +128,17 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             if (_transaction is not null) _ = EndTransactionAsync(commit: false, reason: "connection changed");
         }
         if (session is null) ReleaseValueCache();
-        if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged -= OnSnapshotChanged;
+            _session.DatabasesChanged -= OnDatabasesChanged;
+        }
         _session = session;
-        if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged += OnSnapshotChanged;
+            _session.DatabasesChanged += OnDatabasesChanged;
+        }
         ResultSets = [];
         Messages.Clear();
         Status = "";
@@ -212,6 +220,15 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         RebuildCompletion();
     }
 
+    /// <summary>The server's database list changed (Refresh metadata, CREATE / DROP DATABASE): re-read it. The tab stays
+    /// in its database; one that is gone stays selected with the "not found" warning.</summary>
+    private void OnDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (_session is not { } session) return;
+        _ = LoadServerDatabasesAsync(session, CurrentDatabase, remembered: true);
+        if (_allDatabases.Count > 0) _ = LoadDatabasesAsync();
+    }
+
     /// <summary>The picker matches its selection exactly, so the current name takes the list's spelling ("sales" → "Sales").</summary>
     partial void OnAvailableDatabasesChanged(IReadOnlyList<string> value)
     {
@@ -225,7 +242,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     {
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (!ReferenceEquals(session, _session)) return;
             var missing = preferredDatabase is { Length: > 0 } && string.Equals(CurrentDatabase, preferredDatabase, StringComparison.OrdinalIgnoreCase) &&
                           !names.Contains(preferredDatabase, StringComparer.OrdinalIgnoreCase);
@@ -409,12 +426,14 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         DatabaseListStatus = "Loading databases…";
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (!ReferenceEquals(session, _session)) return;
             var current = TargetDatabase ?? session.Profile.Database;
+            // A re-read (after Refresh metadata or CREATE DATABASE) keeps the ticks already made.
+            var ticked = _allDatabases.Where(d => d.IsSelected).Select(d => d.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             SetDatabases(names.Select(n => new DatabaseChoice(n)
             {
-                IsSelected = string.Equals(n, current, StringComparison.OrdinalIgnoreCase)
+                IsSelected = _allDatabases.Count > 0 ? ticked.Contains(n) : string.Equals(n, current, StringComparison.OrdinalIgnoreCase)
             }).ToList());
             DatabaseListStatus = $"{names.Count:N0} database(s) on the server";
         }
@@ -561,6 +580,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             IsRunning = false;
             var elapsed = _runClock.Elapsed;
             StopElapsedClock();
+            // Even a script that failed later (or was cancelled) may already have created or dropped a database.
+            if (DatabaseListChanges.Affects(sql, session.Provider.ProviderKey)) session.InvalidateDatabases();
             if (!_isRefreshRun && ReferenceEquals(session, _session)) RunFinished?.Invoke(this, elapsed, outcome);
         }
     }

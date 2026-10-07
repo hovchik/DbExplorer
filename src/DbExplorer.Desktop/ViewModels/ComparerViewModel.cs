@@ -541,6 +541,29 @@ public partial class ComparerViewModel(
 
     partial void OnRightProfileChanged(ConnectionProfile? value) => ConnectRightCommand.NotifyCanExecuteChanged();
 
+    partial void OnLeftSessionChanged(DatabaseSession? oldValue, DatabaseSession? newValue)
+    {
+        if (oldValue is not null) oldValue.DatabasesChanged -= OnLeftDatabasesChanged;
+        if (newValue is not null) newValue.DatabasesChanged += OnLeftDatabasesChanged;
+    }
+
+    partial void OnRightSessionChanged(DatabaseSession? oldValue, DatabaseSession? newValue)
+    {
+        if (oldValue is not null) oldValue.DatabasesChanged -= OnRightDatabasesChanged;
+        if (newValue is not null) newValue.DatabasesChanged += OnRightDatabasesChanged;
+    }
+
+    /// <summary>A side's server gained or lost a database (Refresh metadata, CREATE DATABASE in a Query tab).</summary>
+    private void OnLeftDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (LeftSession is { } session) _ = LoadServerDatabasesAsync(isLeft: true, session);
+    }
+
+    private void OnRightDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (RightSession is { } session) _ = LoadServerDatabasesAsync(isLeft: false, session);
+    }
+
     partial void OnLeftSessionChanged(DatabaseSession? value)
     {
         _leftScope = null;
@@ -726,7 +749,7 @@ public partial class ComparerViewModel(
     {
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (session != (isLeft ? LeftSession : RightSession)) return;
             SetDatabases(isLeft, MergeNames(names, isLeft ? LeftDatabases : RightDatabases, [session.Profile.Database]));
         }
@@ -796,6 +819,7 @@ public partial class ComparerViewModel(
         try
         {
             await ObjectCopyService.CreateDatabaseAsync(right, name, ct);
+            right.InvalidateDatabases(); // the other pickers on this connection list it too
             if (right != RightSession) return;
             SetDatabases(isLeft: false, MergeNames(RightDatabases, [name]));
             SelectedRightDatabase = RightDatabases.First(d => string.Equals(d, name, StringComparison.OrdinalIgnoreCase));

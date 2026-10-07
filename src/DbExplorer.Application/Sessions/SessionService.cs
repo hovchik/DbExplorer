@@ -146,5 +146,7 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
             (await metadata.LoadAsync(session.Profile, session.Provider, forceRefresh: true, ct, progress).ConfigureAwait(false)).Warm(), ct)
             .WaitAsync(ct);
         session.ReplaceSnapshot(snapshot);
+        // The catalog may not cover every database (an empty one has no objects), so the pickers re-read the server's list.
+        session.InvalidateDatabases();
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
 using DbExplorer.Core.Models;
@@ -191,4 +192,46 @@ public class ResultEditingTests
         Assert.Equal("2024-01-01", ResultEditSql.EditText(new DateTime(2024, 1, 1)));
         Assert.Equal("", ResultEditSql.EditText(null));
     }
+
+    private static void InCulture(string name, Action action)
+    {
+        var saved = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name);
+        try { action(); }
+        finally { CultureInfo.CurrentCulture = saved; }
+    }
+
+    [Fact]
+    public void A_decimal_comma_is_read_in_the_users_culture() => InCulture("de-DE", () =>
+    {
+        Assert.Equal(1.5m, ResultEditSql.ParseValue("1,5", 1m, null));
+        Assert.Equal(1.5, ResultEditSql.ParseValue("1,5", 1.0, null));
+        Assert.Equal(1.5f, ResultEditSql.ParseValue("1,5", 1f, null));
+        Assert.Equal(1234.5m, ResultEditSql.ParseValue("1.234,5", 1m, null));
+        Assert.Equal(1.5m, ResultEditSql.ParseValue("1,5", null, new DbColumn { BaseType = "decimal" }));
+        // The editor's own (invariant) text still reads back the same.
+        Assert.Equal(12.5m, ResultEditSql.ParseValue(ResultEditSql.EditText(12.5m), 1m, null));
+        Assert.Equal(0.1, ResultEditSql.ParseValue(ResultEditSql.EditText(0.1), 1.0, null));
+    });
+
+    [Fact]
+    public void Group_separators_are_only_read_in_the_users_culture() => InCulture("en-US", () =>
+    {
+        Assert.Equal(1234.5m, ResultEditSql.ParseValue("1,234.5", 1m, null));
+        Assert.Equal(1.5m, ResultEditSql.ParseValue("1.5", 1m, null));
+    });
+
+    [Fact]
+    public void Dates_are_iso_or_in_the_users_culture() => InCulture("en-GB", () =>
+    {
+        Assert.Equal(new DateTime(2025, 4, 3), ResultEditSql.ParseValue("03/04/2025", DateTime.Now, null));
+        Assert.Equal(new DateOnly(2025, 4, 3), ResultEditSql.ParseValue("03/04/2025", new DateOnly(2000, 1, 1), null));
+        Assert.Equal(new DateTime(2025, 3, 4), ResultEditSql.ParseValue("2025-03-04", DateTime.Now, null));
+        Assert.Equal(new DateTime(2025, 3, 4, 10, 11, 12, 123), ResultEditSql.ParseValue("2025-03-04T10:11:12.123", DateTime.Now, null));
+        Assert.Equal(new DateTime(2025, 3, 4, 10, 11, 12), ResultEditSql.ParseValue("2025-03-04 10:11:12", DateTime.Now, null));
+        Assert.Equal(new DateTimeOffset(2025, 3, 4, 10, 0, 0, TimeSpan.FromHours(2)),
+            ResultEditSql.ParseValue("2025-03-04 10:00:00+02:00", DateTimeOffset.Now, null));
+        var value = new DateTime(2025, 3, 4, 5, 6, 7, 890);
+        Assert.Equal(value, ResultEditSql.ParseValue(ResultEditSql.EditText(value), DateTime.Now, null));
+    });
 }

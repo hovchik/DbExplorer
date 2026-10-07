@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using DbExplorer.Application.Export;
 using DbExplorer.Core.Models;
 
@@ -231,7 +232,8 @@ public static class ResultEditSql
 
     /// <summary>
     /// Typed text back as a value of the cell's type — the type of the value it replaces, or, for a NULL cell, the column's
-    /// type (text is left to the server to convert). Numbers and dates are read invariantly first, then in the user's culture.
+    /// type (text is left to the server to convert). Numbers are read invariantly first (without group separators), then in
+    /// the user's culture, which comes first for a decimal comma; dates are read invariantly only in ISO-8601 form.
     /// </summary>
     /// <exception cref="FormatException">The text is not a value of that type.</exception>
     public static object? ParseValue(string text, object? original, DbColumn? column)
@@ -245,6 +247,28 @@ public static class ResultEditSql
         bool TryBoth<T>(Func<IFormatProvider, (bool, T)> parse, out T result)
         {
             var (ok, value) = parse(inv);
+            if (!ok) (ok, value) = parse(cur);
+            result = value;
+            return ok;
+        }
+
+        // Invariant reading never takes ',' as a group separator (de-DE "1,5" is not 15), and text with the user's decimal
+        // comma and no '.' is read in their culture first.
+        var curDecimal = cur.NumberFormat.NumberDecimalSeparator;
+        var userDecimal = curDecimal != "." && trimmed.Contains(curDecimal, StringComparison.Ordinal) && !trimmed.Contains('.');
+        bool TryNumber<T>(NumberStyles styles, TryParseNumber<T> parse, out T result)
+        {
+            var invariantStyles = styles & ~NumberStyles.AllowThousands;
+            if (userDecimal) return parse(trimmed, styles, cur, out result) || parse(trimmed, invariantStyles, inv, out result);
+            return parse(trimmed, invariantStyles, inv, out result) || parse(trimmed, styles, cur, out result);
+        }
+
+        // ISO-8601 dates (2025-03-04, 2025-03-04T10:00:00.123, with a space or an offset) invariantly; anything else, such
+        // as 03/04/2025, only in the user's culture, so en-GB reads it as 3 April.
+        var iso = IsoDate.IsMatch(trimmed);
+        bool TryDate<T>(Func<IFormatProvider, (bool, T)> parse, out T result)
+        {
+            var (ok, value) = iso ? parse(inv) : (false, default!);
             if (!ok) (ok, value) = parse(cur);
             result = value;
             return ok;
@@ -267,15 +291,15 @@ public static class ResultEditSql
             _ when type == typeof(uint) => uint.TryParse(trimmed, NumberStyles.Integer, inv, out var v) ? v : null,
             _ when type == typeof(long) => long.TryParse(trimmed, NumberStyles.Integer, inv, out var v) ? v : null,
             _ when type == typeof(ulong) => ulong.TryParse(trimmed, NumberStyles.Integer, inv, out var v) ? v : null,
-            _ when type == typeof(decimal) => TryBoth(p => (decimal.TryParse(trimmed, NumberStyles.Number | NumberStyles.AllowExponent, p, out var v), v), out var d) ? d : null,
-            _ when type == typeof(double) => TryBoth(p => (double.TryParse(trimmed, NumberStyles.Float | NumberStyles.AllowThousands, p, out var v), v), out var d) ? d : null,
-            _ when type == typeof(float) => TryBoth(p => (float.TryParse(trimmed, NumberStyles.Float | NumberStyles.AllowThousands, p, out var v), v), out var f) ? f : null,
+            _ when type == typeof(decimal) => TryNumber<decimal>(NumberStyles.Number | NumberStyles.AllowExponent, decimal.TryParse, out var d) ? d : null,
+            _ when type == typeof(double) => TryNumber<double>(NumberStyles.Float | NumberStyles.AllowThousands, double.TryParse, out var d) ? d : null,
+            _ when type == typeof(float) => TryNumber<float>(NumberStyles.Float | NumberStyles.AllowThousands, float.TryParse, out var f) ? f : null,
             _ when type == typeof(Guid) => Guid.TryParse(trimmed, out var g) ? g : null,
-            _ when type == typeof(DateTime) => TryBoth(p => (DateTime.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var dt)
+            _ when type == typeof(DateTime) => TryDate(p => (DateTime.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var dt)
                 ? DateTime.SpecifyKind(dt, original is DateTime o ? o.Kind : DateTimeKind.Unspecified)
                 : null,
-            _ when type == typeof(DateTimeOffset) => TryBoth(p => (DateTimeOffset.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var dto) ? dto : null,
-            _ when type == typeof(DateOnly) => TryBoth(p => (DateOnly.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var d) ? d : null,
+            _ when type == typeof(DateTimeOffset) => TryDate(p => (DateTimeOffset.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var dto) ? dto : null,
+            _ when type == typeof(DateOnly) => TryDate(p => (DateOnly.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var d) ? d : null,
             _ when type == typeof(TimeOnly) => TryBoth(p => (TimeOnly.TryParse(trimmed, p, DateTimeStyles.None, out var v), v), out var t) ? t : null,
             _ when type == typeof(TimeSpan) => TryBoth(p => (TimeSpan.TryParse(trimmed, p, out var v), v), out var ts) ? ts : null,
             _ when type == typeof(byte[]) => ParseHex(trimmed),
@@ -283,6 +307,11 @@ public static class ResultEditSql
         };
         return parsed ?? throw new FormatException($"'{Shorten(text)}' is not a valid {FriendlyName(type)}.");
     }
+
+    private delegate bool TryParseNumber<T>(string s, NumberStyles styles, IFormatProvider? provider, out T result);
+
+    /// <summary>Text starting with an ISO-8601 date: yyyy-MM-dd, alone or followed by a time after 'T' or a space.</summary>
+    private static readonly Regex IsoDate = new(@"^\d{4}-\d{1,2}-\d{1,2}(?:$|[T ]\d)", RegexOptions.Compiled);
 
     /// <summary>The CLR type to parse a NULL cell's text as, from the column's declared type; null for text and anything
     /// the server is better at converting (dates, JSON, enums…).</summary>

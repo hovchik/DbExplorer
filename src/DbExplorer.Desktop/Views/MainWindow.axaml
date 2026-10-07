@@ -47,6 +47,7 @@
               </MenuFlyout>
             </Button.Flyout>
           </Button>
+          <Button Content="{Binding Team.ButtonText}" ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}" />
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -96,6 +97,9 @@
       </TabItem>
       <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
         <views:TableDesignerView DataContext="{Binding TableDesigner}" />
+      </TabItem>
+      <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
+        <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
       </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />

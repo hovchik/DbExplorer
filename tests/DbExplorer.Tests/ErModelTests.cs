@@ -311,6 +311,23 @@ public class ErModelTests
     }
 
     [Fact]
+    public void MySql_foreign_keys_that_go_away_are_dropped_before_any_table_changes()
+    {
+        const string My = SqlDialect.MySqlKey;
+        var model = ErModelReader.Read(MySqlShop("prod"), My, "prod", schema: null);
+        var customers = T(model, "prod", "customers");
+        var orders = T(model, "prod", "orders");
+        model = model.Update(orders.Id, orders.Design with { ForeignKeys = [] });
+        model = model.Update(customers.Id, customers.Design.WithColumn("id", c => c with { Type = "bigint" }));
+
+        var script = ErModelScriptBuilder.Build(model, MySqlShop("prod"), My).Script;
+
+        var drop = script.IndexOf("ALTER TABLE `prod`.`orders` DROP FOREIGN KEY `fk_orders_customers`;", StringComparison.Ordinal);
+        var change = script.IndexOf("ALTER TABLE `prod`.`customers` MODIFY COLUMN `id` bigint", StringComparison.Ordinal);
+        Assert.True(drop >= 0 && change > drop, script);
+    }
+
+    [Fact]
     public void Postgres_script_has_no_batch_separators_and_warns_about_types_of_another_engine()
     {
         var model = ErModel.Empty(Ss).Add(Drawn("public", "invoices", Key("id"), Col("total", "money")));

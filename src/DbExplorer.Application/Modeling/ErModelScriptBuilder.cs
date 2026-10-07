@@ -153,14 +153,14 @@ public static class ErModelScriptBuilder
             var design = plan.Table.Design;
             var newTable = d.Table(TableScriptBuilder.SchemaOf(design, providerKey), TableScriptBuilder.NameOf(design));
             var oldTable = d.Table(TableScriptBuilder.SchemaOf(original, providerKey), original.Name.Trim());
-            var drops = original.ForeignKeys.ToDictionary(f => $"ALTER TABLE {newTable} DROP CONSTRAINT {d.Quote(f.Name)};", f => f.Name);
+            var drops = original.ForeignKeys.ToDictionary(f => TableAlterScriptBuilder.DropForeignKey(providerKey, newTable, f.Name), f => f.Name);
 
             var steps = new List<string>();
             foreach (var step in TableAlterScriptBuilder.Steps(original, design, providerKey))
             {
                 // Moved out: keys go before any table changes (a key blocks changing the column it references), and are
                 // added after all of them (the column or table a key references may be added further down).
-                if (drops.TryGetValue(step, out var name)) dropKeys.Add($"ALTER TABLE {oldTable} DROP CONSTRAINT {d.Quote(name)};");
+                if (drops.TryGetValue(step, out var name)) dropKeys.Add(TableAlterScriptBuilder.DropForeignKey(providerKey, oldTable, name));
                 else if (step.StartsWith("ALTER TABLE ", StringComparison.Ordinal) && step.Contains(" ADD CONSTRAINT ", StringComparison.Ordinal) &&
                          step.Contains(" FOREIGN KEY (", StringComparison.Ordinal)) addKeys.Add(step);
                 else steps.Add(step);

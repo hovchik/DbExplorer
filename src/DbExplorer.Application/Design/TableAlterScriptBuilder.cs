@@ -68,10 +68,7 @@ public static class TableAlterScriptBuilder
         foreach (var fk in original.ForeignKeys)
         {
             var after = edited.ForeignKeys.FirstOrDefault(e => TableDesign.Same(e.Name.Trim(), fk.Name));
-            if (after is null || addKeys.Contains(after))
-                steps.Add(mySql
-                    ? $"ALTER TABLE {table} DROP FOREIGN KEY {d.Quote(fk.Name)};"
-                    : $"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(fk.Name)};");
+            if (after is null || addKeys.Contains(after)) steps.Add(DropForeignKey(providerKey, table, fk.Name));
         }
 
         var addIndexes = new List<IndexDesign>();
@@ -213,6 +210,15 @@ public static class TableAlterScriptBuilder
     /// <summary>True when nothing would change on the server.</summary>
     public static bool IsUnchanged(TableDesign original, TableDesign edited, string providerKey) =>
         Steps(original, edited, providerKey).Count == 0;
+
+    /// <summary>The statement that drops a foreign key of <paramref name="table"/> (already quoted).</summary>
+    public static string DropForeignKey(string providerKey, string table, string name)
+    {
+        var d = SqlDialect.For(providerKey);
+        return providerKey == SqlDialect.MySqlKey
+            ? $"ALTER TABLE {table} DROP FOREIGN KEY {d.Quote(name)};"
+            : $"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(name)};";
+    }
 
     private static string MySqlModify(SqlDialect d, string table, string quotedName, ColumnDesign column, ColumnDesign before)
     {

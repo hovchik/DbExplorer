@@ -1,0 +1,143 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DbExplorer.Desktop.Views.TeamWindow"
+        Title="Team sharing"
+        Width="780" Height="640" MinWidth="560" MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <!-- One row of a shared list: NEW / UPDATED badge, name, when it changed, and the row's actions (set per list). -->
+    <DataTemplate x:Key="BadgeTemplate">
+      <Border CornerRadius="3" Padding="5,1" VerticalAlignment="Center" HorizontalAlignment="Left" IsVisible="{Binding IsChanged}"
+              Background="{DynamicResource AccentButtonBackground}">
+        <TextBlock Text="{Binding Badge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource AccentButtonForeground}" />
+      </Border>
+    </DataTemplate>
+  </Window.Resources>
+
+  <DockPanel Margin="16">
+    <!-- Folder, name and team password -->
+    <StackPanel DockPanel.Dock="Top" Spacing="8">
+      <TextBlock Classes="section" Text="Team folder" />
+      <TextBlock Classes="hint" TextWrapping="Wrap"
+                 Text="Pick a folder your team already shares: OneDrive, Dropbox, Google Drive, a network share, or a folder in a git repository. Connections, queries and snippets are kept there as plain files, and DB Explorer watches it for changes. Nothing is overwritten that a teammate changed since you last looked: both versions are kept." />
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding FolderText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   FontWeight="SemiBold" ToolTip.Tip="{Binding FolderText}" />
+        <Button Grid.Column="1" Margin="8,0,0,0" Content="Choose folder…" Classes="accent" Click="OnChooseFolder" />
+        <Button Grid.Column="2" Margin="8,0,0,0" Content="Stop sharing" Command="{Binding StopSharingCommand}" IsVisible="{Binding IsConfigured}"
+                ToolTip.Tip="Stop watching the folder. Nothing in it is deleted, and connections you took stay." />
+      </Grid>
+      <TextBlock Foreground="IndianRed" TextWrapping="Wrap" IsVisible="{Binding FolderMissing}"
+                 Text="The folder is not reachable right now (offline share, or the sync app is not running). It is checked again automatically." />
+
+      <Grid ColumnDefinitions="Auto,200" IsVisible="{Binding IsConfigured}">
+        <TextBlock Grid.Column="0" Text="Your name on kept-both copies" VerticalAlignment="Center" />
+        <TextBox Grid.Column="1" Margin="8,0,0,0" Text="{Binding MemberName}" />
+      </Grid>
+
+      <StackPanel Spacing="6" IsVisible="{Binding IsConfigured}">
+        <TextBlock Classes="hint" Text="{Binding PasswordStatus}" TextWrapping="Wrap" />
+        <WrapPanel Classes="toolbar">
+          <TextBox Width="220" PasswordChar="•" Text="{Binding PasswordInput}" Watermark="Team password" />
+          <CheckBox Content="Remember on this computer" IsChecked="{Binding RememberPassword}" IsVisible="{Binding CanRememberPassword}" />
+          <Button Content="Set password" Command="{Binding SavePasswordCommand}"
+                  ToolTip.Tip="Agree on one password with your team (not in the shared folder). Shared connection passwords are encrypted with it (AES-256)." />
+          <Button Content="Forget" Command="{Binding ForgetPasswordCommand}" IsVisible="{Binding HasTeamPassword}" />
+        </WrapPanel>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Status and closing buttons -->
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+      <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+        <TextBlock Classes="hint" Text="{Binding RemovedText}" IsVisible="{Binding HasRemoved}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Margin="8,0,0,0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+        <Button Content="Mark all as seen" Command="{Binding MarkAllSeenCommand}" IsEnabled="{Binding IsConfigured}" />
+        <Button Content="Refresh" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsConfigured}" />
+        <Button Content="Close" IsCancel="True" Click="OnClose" />
+      </StackPanel>
+    </Grid>
+
+    <TabControl Margin="0,10,0,0" IsEnabled="{Binding IsConfigured}">
+      <TabItem Header="Connections">
+        <DockPanel>
+          <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+            <Button x:Name="ShareConnectionsButton" Content="Share connections ▾" Click="OnShareConnections" />
+            <CheckBox Content="Include passwords (encrypted with the team password)" IsChecked="{Binding IncludePasswords}"
+                      IsEnabled="{Binding HasTeamPassword}" />
+            <Button Content="Add all new to my connections" Command="{Binding PullAllCommand}" />
+          </WrapPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,6,0,0"
+                     Text="A connection you took is updated in place when the team changes it, unless you edited it too: then both are kept. Your own passwords stay when the shared one has none." />
+          <ListBox ItemsSource="{Binding Connections}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="72,*,Auto,Auto,Auto">
+                  <ContentControl Grid.Column="0" Content="{Binding}" ContentTemplate="{StaticResource BadgeTemplate}" />
+                  <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Margin="8,0,0,0" Classes="hint" Text="{Binding Modified}" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Margin="8,0,0,0" Classes="compact" Content="{Binding PullText}"
+                          Command="{Binding $parent[Window].DataContext.PullCommand}" CommandParameter="{Binding}" />
+                  <Button Grid.Column="4" Margin="8,0,0,0" Classes="compact" Content="Remove" ToolTip.Tip="Remove from the team folder"
+                          Command="{Binding $parent[Window].DataContext.RemoveCommand}" CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Queries">
+        <DockPanel>
+          <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+            <Button Content="Share current query tab…" Command="{Binding ShareCurrentQueryCommand}" />
+          </WrapPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,6,0,0"
+                     Text="Saved as .sql files in the queries folder; use / in the name for sub-folders. Open puts a copy in a new Query tab." />
+          <ListBox ItemsSource="{Binding Queries}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="72,*,Auto,Auto,Auto">
+                  <ContentControl Grid.Column="0" Content="{Binding}" ContentTemplate="{StaticResource BadgeTemplate}" />
+                  <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Margin="8,0,0,0" Classes="hint" Text="{Binding Modified}" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Margin="8,0,0,0" Classes="compact" Content="Open"
+                          Command="{Binding $parent[Window].DataContext.OpenCommand}" CommandParameter="{Binding}" />
+                  <Button Grid.Column="4" Margin="8,0,0,0" Classes="compact" Content="Remove" ToolTip.Tip="Remove from the team folder"
+                          Command="{Binding $parent[Window].DataContext.RemoveCommand}" CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Snippets">
+        <DockPanel>
+          <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+            <Button x:Name="ShareSnippetButton" Content="Share a snippet ▾" Click="OnShareSnippet" />
+          </WrapPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,6,0,0"
+                     Text="Team snippets show in every query tab's Snippets menu and in Ctrl+Space, next to your own." />
+          <ListBox ItemsSource="{Binding SharedSnippets}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="72,*,Auto,Auto,Auto">
+                  <ContentControl Grid.Column="0" Content="{Binding}" ContentTemplate="{StaticResource BadgeTemplate}" />
+                  <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Margin="8,0,0,0" Classes="hint" Text="{Binding Modified}" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Margin="8,0,0,0" Classes="compact" Content="Open"
+                          Command="{Binding $parent[Window].DataContext.OpenCommand}" CommandParameter="{Binding}" />
+                  <Button Grid.Column="4" Margin="8,0,0,0" Classes="compact" Content="Remove" ToolTip.Tip="Remove from the team folder"
+                          Command="{Binding $parent[Window].DataContext.RemoveCommand}" CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

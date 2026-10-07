@@ -38,6 +38,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<DiagramViewModel>();
         services.AddSingleton<TableDesignerViewModel>();
         services.AddSingleton<ErModelViewModel>();
+        services.AddSingleton<QueryBuilderViewModel>();
         services.AddTransient<QueryViewModel>();
         services.AddSingleton<Func<QueryViewModel>>(sp => sp.GetRequiredService<QueryViewModel>);
         services.AddSingleton<QueryWorkspaceViewModel>();
@@ -47,6 +48,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<RelationshipsViewModel>();
         services.AddSingleton<LabViewModel>();
         services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<TeamViewModel>();
 
         var provider = services.BuildServiceProvider();
 
@@ -57,6 +59,7 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var vm = provider.GetRequiredService<MainWindowViewModel>();
+            vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
             var window = new MainWindow { DataContext = vm };
             provider.GetRequiredService<DialogService>().Owner = window;
             desktop.MainWindow = window;

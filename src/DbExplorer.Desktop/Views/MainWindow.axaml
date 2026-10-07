@@ -47,6 +47,7 @@
               </MenuFlyout>
             </Button.Flyout>
           </Button>
+          <Button Content="{Binding Team.ButtonText}" ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}" />
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -99,6 +100,9 @@
       </TabItem>
       <TabItem Header="ER model" ToolTip.Tip="Draw tables and relationships, or read them from a database, and generate the DDL">
         <views:ErModelView DataContext="{Binding ErModel}" />
+      </TabItem>
+      <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
+        <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
       </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />

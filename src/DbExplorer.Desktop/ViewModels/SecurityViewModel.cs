@@ -20,6 +20,8 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     private const int TimeoutSeconds = 60;
     private DatabaseSession? _session;
     private SecurityDraft? _draft;
+    /// <summary>The database <see cref="_draft"/> was read for: its database-level edits belong to that database only.</summary>
+    private string? _draftDatabase;
     private int _loadVersion;
     private Dictionary<string, Securable> _targets = new(StringComparer.OrdinalIgnoreCase);
 
@@ -92,6 +94,7 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     {
         _session = session;
         _draft = null;
+        _draftDatabase = null;
         Principals.Clear();
         Pending.Clear();
         SelectedPrincipal = null;
@@ -151,7 +154,8 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     private Task RefreshAsync() => LoadAsync();
 
     /// <summary>Reads the catalog of the selected database. Pending edits carry over; the ones that no longer fit
-    /// (the role they add is gone, the grant exists now) are dropped and the status says how many.</summary>
+    /// (the role they add is gone, the grant exists now) are dropped and the status says how many. Edits inside the
+    /// previous database (its users, roles and permissions) don't carry over to another database.</summary>
     private async Task LoadAsync()
     {
         if (_session is not { } session) return;
@@ -159,6 +163,7 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
         if (session.Provider.ProviderKey == SqlDialect.MySqlKey)
         {
             Status = SecurityCatalogLoader.MySqlNotSupported;
+            IsBusy = false;
             return;
         }
         var database = SelectedDatabase;
@@ -173,9 +178,13 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
             if (version != _loadVersion || !ReferenceEquals(session, _session)) return;
 
             var previous = _draft?.Changes.ToList() ?? [];
+            var otherDatabase = _draft is not null && !string.Equals(_draftDatabase, database, StringComparison.OrdinalIgnoreCase);
+            var left = otherDatabase ? previous.Count(IsDatabaseLevel) : 0;
+            if (otherDatabase) previous = previous.Where(c => !IsDatabaseLevel(c)).ToList();
             var draft = new SecurityDraft(catalog);
             var dropped = previous.Count(change => draft.Add(change) is not null);
             _draft = draft;
+            _draftDatabase = database;
 
             // Securables that already carry permissions, including PostgreSQL routines with their argument types.
             foreach (var g in catalog.Grants) targets.TryAdd(g.On.Display, g.On);
@@ -195,6 +204,7 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
                     : $"{logins:N0} role(s) that can log in and {roles:N0} other role(s)") +
                 $", {catalog.Grants.Count:N0} permission(s)." +
                 (dropped > 0 ? $" {dropped} pending change(s) no longer applied and were dropped." : "") +
+                (left > 0 ? $" {left} pending change(s) inside the previous database were dropped." : "") +
                 (IsReadOnly ? " Read-only connection: changes can be scripted, not applied." : "");
         }
         catch (Exception ex)
@@ -206,6 +216,20 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
             if (version == _loadVersion) IsBusy = false;
         }
     }
+
+    /// <summary>An edit inside the selected database (a database user or role, membership or permission there), as
+    /// opposed to one on the server (a login, a server role or, on PostgreSQL, any role).</summary>
+    private static bool IsDatabaseLevel(SecurityChange change) => change switch
+    {
+        CreateLoginChange c => c.CreateUser,
+        CreateUserChange => true,
+        CreateRoleChange c => c.Scope == SecurityScope.Database,
+        DropPrincipalChange c => c.Principal.Scope == SecurityScope.Database,
+        SetPasswordChange c => c.Principal.Scope == SecurityScope.Database,
+        SetLoginEnabledChange c => c.Principal.Scope == SecurityScope.Database,
+        MembershipChange c => c.Scope == SecurityScope.Database,
+        _ => true // permissions are on the database, its schemas or its objects
+    };
 
     /// <summary>What permissions can be granted on: the database, its schemas and its objects, by display name.</summary>
     private async Task<Dictionary<string, Securable>> LoadTargetsAsync(DatabaseSession session, string? database)
@@ -493,11 +517,14 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     [RelayCommand]
     private async Task ApplyAsync()
     {
-        if (_session is not { } session || _draft is not { } draft || draft.Changes.Count == 0) return;
+        if (IsBusy || _session is not { } session || _draft is not { } draft || draft.Changes.Count == 0) return;
+        // Exactly these edits run; anything added meanwhile stays pending.
+        var applied = draft.Changes.ToList();
+        var database = SelectedDatabase;
         SecurityScript script;
         try
         {
-            script = draft.Script(SelectedDatabase);
+            script = draft.Script(database);
         }
         catch (ArgumentException ex)
         {
@@ -511,9 +538,9 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
         }
 
         var production = session.Profile.IsProduction;
-        var where = string.IsNullOrEmpty(SelectedDatabase) ? session.Profile.DisplayName : $"{session.Profile.DisplayName} / {SelectedDatabase}";
+        var where = string.IsNullOrEmpty(database) ? session.Profile.DisplayName : $"{session.Profile.DisplayName} / {database}";
         var ok = await dialogs.ConfirmAsync(
-            $"Apply {draft.Changes.Count} security change(s) on {where}? The script below runs in one transaction; if any statement fails, nothing changes.",
+            $"Apply {applied.Count} security change(s) on {where}? The script below runs in one transaction; if any statement fails, nothing changes.",
             "Apply", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script.Display);
         if (!ok) return;
@@ -522,7 +549,7 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
         Status = "Applying security changes…";
         try
         {
-            await SecurityScriptRunner.RunAsync(session.Provider, SelectedDatabase, script, TimeoutSeconds);
+            await SecurityScriptRunner.RunAsync(session.Provider, database, script, TimeoutSeconds);
         }
         catch (Exception ex)
         {
@@ -532,11 +559,10 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
             return;
         }
 
-        var count = draft.Changes.Count;
-        draft.Clear();
+        if (ReferenceEquals(_draft, draft)) draft.RemoveAll(applied);
         NotifyPending();
         await LoadAsync();
-        Status = $"Applied {count} change(s). " + Status;
+        Status = $"Applied {applied.Count} change(s). " + Status;
     }
 
     private void NotifyPending()

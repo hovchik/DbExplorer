@@ -204,6 +204,10 @@ public sealed class SecurityDraft(SecurityCatalog catalog)
 
     public void Clear() => _changes.Clear();
 
+    /// <summary>Takes out exactly these edits (the ones a script just ran), keeping any added since.</summary>
+    public void RemoveAll(IReadOnlyCollection<SecurityChange> changes) =>
+        _changes.RemoveAll(c => changes.Any(done => ReferenceEquals(done, c)));
+
     public SecurityScript Script(string? database) => SecurityScriptBuilder.Build(_changes, Catalog.ProviderKey, database);
 
     /// <summary>Whether a SQL Server login can sign in now (or a PostgreSQL role has LOGIN), counting pending edits.</summary>

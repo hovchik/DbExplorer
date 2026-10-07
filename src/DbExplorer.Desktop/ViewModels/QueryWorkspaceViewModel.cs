@@ -48,8 +48,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         {
             var snapshot = string.Join("\u0001", Documents.Select(d => d.Title + "\u0002" + d.Sql + "\u0002" + d.CurrentDatabase));
             if (snapshot == _lastSaved) return;
-            _lastSaved = snapshot;
-            await SaveTabsAsync();
+            // Remembered only once written, so a failed save is tried again on the next tick.
+            if (await SaveTabsAsync()) _lastSaved = snapshot;
         };
         _autosave.Start();
     }
@@ -207,6 +207,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
                     : $"{doc.Title} has unsaved changes. Close it anyway?",
                 "Close without saving"))
             return false;
+        if (ResultEditing.HasEdits(doc.ResultSets) &&
+            !await _dialogs.ConfirmAsync(
+                $"The results of {doc.Title} have changes that are not committed yet (edited, new or deleted rows). Close it and discard them?",
+                "Discard and close"))
+            return false;
         if (doc.HasOpenTransaction &&
             !await _dialogs.ConfirmAsync($"{doc.Title} has an open transaction. Closing rolls it back. Continue?", "Roll back and close"))
             return false;
@@ -304,7 +309,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             await doc.EndTransactionAsync(commit: false, reason: "application closed");
     }
 
-    public async Task SaveTabsAsync()
+    /// <returns>False when the tab list could not be written.</returns>
+    public async Task<bool> SaveTabsAsync()
     {
         try
         {
@@ -314,10 +320,12 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
                 d.Databases.SaveTo(state, d.CurrentDatabase);
                 return state;
             }));
+            return true;
         }
         catch
         {
             // Best-effort: losing the tab list is not worth an error dialog.
+            return false;
         }
     }
 }

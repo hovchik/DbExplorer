@@ -24,6 +24,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
     private Task<IReadOnlyList<string>>? _databases;
 
     private readonly ConnectionProfile _profile;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _connectionStrings = new(StringComparer.Ordinal);
     private readonly string _metaConnectionString;
     private readonly string _searchConnectionString;
 
@@ -34,8 +35,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
     {
         _profile = profile;
         _allDatabases = string.IsNullOrWhiteSpace(profile.Database);
-        _metaConnectionString = SqlServerSql.BuildConnectionString(profile, SqlServerSql.MetaAppName);
-        _searchConnectionString = SqlServerSql.BuildConnectionString(profile, SqlServerSql.SearchAppName);
+        _metaConnectionString = ConnectionString(SqlServerSql.MetaAppName);
+        _searchConnectionString = ConnectionString(SqlServerSql.SearchAppName);
     }
 
     public string ProviderKey => SqlServerProviderFactory.ProviderKey;
@@ -176,7 +177,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
     {
         var cn = new SqlConnection(string.IsNullOrEmpty(database) || !_allDatabases
             ? _searchConnectionString
-            : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, database));
+            : ConnectionString(SqlServerSql.SearchAppName, database));
         try
         {
             await cn.OpenAsync(ct);
@@ -240,7 +241,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
         await using var cn = new SqlConnection(
             string.IsNullOrEmpty(table.Database) || !_allDatabases
                 ? _searchConnectionString
-                : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, table.Database));
+                : ConnectionString(SqlServerSql.SearchAppName, table.Database));
         await cn.OpenAsync(ct);
         await using var cmd = cn.CreateCommand();
         cmd.CommandText = sql;
@@ -249,7 +250,12 @@ public sealed class SqlServerProvider : IDatabaseProvider
         if (usesText)
             cmd.Parameters.Add(new SqlParameter("@p", SqlDbType.NVarChar, 4000) { Value = SqlServerSql.BuildPattern(term.Text, term.Mode) });
         if (usesNumber)
-            cmd.Parameters.Add(new SqlParameter("@n", SqlDbType.Decimal) { Precision = 38, Scale = 10, Value = term.Number!.Value });
+        {
+            // decimal(38, its own scale): any System.Decimal (at most 29 digits) fits, which decimal(38, 10) did not
+            // above 10^28, so a long number failed every table.
+            var number = term.Number!.Value;
+            cmd.Parameters.Add(new SqlParameter("@n", SqlDbType.Decimal) { Precision = 38, Scale = number.Scale, Value = number });
+        }
         if (usesGuid)
             cmd.Parameters.Add(new SqlParameter("@g", SqlDbType.UniqueIdentifier) { Value = term.Uuid!.Value });
 
@@ -284,7 +290,28 @@ public sealed class SqlServerProvider : IDatabaseProvider
         return results;
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    /// <summary>
+    /// Closes the idle pooled connections this provider opened (one pool per connection string): they would otherwise
+    /// outlive the session, and an SSH tunnel closed after the provider would leave them pointing at nothing. Connections
+    /// still in use are dropped when they return to the pool.
+    /// </summary>
+    public ValueTask DisposeAsync()
+    {
+        foreach (var connectionString in _connectionStrings.Keys)
+        {
+            using var cn = new SqlConnection(connectionString);
+            SqlConnection.ClearPool(cn);
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>A connection string of this provider; each one is remembered so its pool can be cleared on dispose.</summary>
+    private string ConnectionString(string applicationName, string? databaseOverride = null, bool forceReadWrite = false)
+    {
+        var connectionString = SqlServerSql.BuildConnectionString(_profile, applicationName, databaseOverride, forceReadWrite);
+        _connectionStrings.TryAdd(connectionString, 0);
+        return connectionString;
+    }
 
     public async Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
     {
@@ -299,8 +326,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
         ReadOnlyScript? readOnly = null)
     {
         var sw = Stopwatch.StartNew();
-        var connectionString = SqlServerSql.BuildConnectionString(
-            _profile, SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true);
+        var connectionString = ConnectionString(
+            SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true);
 
         var messages = new List<string>();
         await using var cn = new SqlConnection(connectionString);
@@ -422,8 +449,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
     {
         var sw = Stopwatch.StartNew();
         var database = string.IsNullOrEmpty(routine.Database) ? _profile.Database : routine.Database;
-        var connectionString = SqlServerSql.BuildConnectionString(
-            _profile, SqlServerSql.ScriptAppName, database, forceReadWrite: true);
+        var connectionString = ConnectionString(
+            SqlServerSql.ScriptAppName, database, forceReadWrite: true);
 
         await using var cn = new SqlConnection(connectionString);
         var messages = new List<string>();
@@ -453,12 +480,14 @@ public sealed class SqlServerProvider : IDatabaseProvider
         var outputParams = new Dictionary<string, SqlParameter>();
         foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue))
         {
-            var sqlParam = new SqlParameter(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+            var value = arguments.GetValueOrDefault(p.Name);
+            // A procedure parameter left empty that has a default is not sent, so the default applies.
+            if (!isFunction && value is null && p.HasDefault) continue;
+            var sqlParam = new SqlParameter(p.Name, value ?? DBNull.Value);
             if (p.Direction == DbParameterDirection.Output || p.Direction == DbParameterDirection.InputOutput)
             {
-                sqlParam.Direction = p.Direction == DbParameterDirection.Output
-                    ? ParameterDirection.Output
-                    : ParameterDirection.InputOutput;
+                // T-SQL OUTPUT parameters are always input/output: Output alone would never send the value given.
+                sqlParam.Direction = ParameterDirection.InputOutput;
                 sqlParam.Size = 4000;
                 outputParams[p.Name] = sqlParam;
             }
@@ -518,8 +547,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)
     {
-        var cn = new SqlConnection(SqlServerSql.BuildConnectionString(
-            _profile, SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true));
+        var cn = new SqlConnection(ConnectionString(
+            SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true));
         try
         {
             await cn.OpenAsync(ct);
@@ -552,14 +581,32 @@ public sealed class SqlServerProvider : IDatabaseProvider
     {
         var connectionString = string.IsNullOrEmpty(database) || string.Equals(database, _profile.Database, StringComparison.OrdinalIgnoreCase)
             ? _searchConnectionString
-            : SqlServerSql.BuildConnectionString(_profile, SqlServerSql.SearchAppName, database);
+            : ConnectionString(SqlServerSql.SearchAppName, database);
         await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = cn.CreateCommand();
         cmd.CommandText = SqlServerSql.SessionPrefix(options.LockTimeoutMs) + sql;
         cmd.CommandTimeout = options.QueryTimeoutSeconds;
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        return await ReadFirstResultSetAsync(reader, maxRows, ct);
+        var reader = await cmd.ExecuteReaderAsync(ct);
+        QueryResultSet? result = null;
+        try
+        {
+            result = await ReadFirstResultSetAsync(reader, maxRows, ct);
+            // Closing the reader would otherwise read (and drop) every remaining row: cancel the rest on the server.
+            if (result.IsTruncated) cmd.Cancel();
+        }
+        finally
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch (SqlException) when (result is { IsTruncated: true })
+            {
+                // The cancellation just sent; the connection stays usable.
+            }
+        }
+        return result;
     }
 
     /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>
@@ -589,13 +636,13 @@ public sealed class SqlServerProvider : IDatabaseProvider
         // The primary (read-write intent): a readable secondary does not count the primary's writes.
         var db = string.IsNullOrEmpty(database) ? _profile.Database : database;
         var rows = await QueryWithConnectionStringAsync<TableChangeCounter>(SqlServerDiagnostics.ChangeCounters, null,
-            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, db, forceReadWrite: true), ct);
+            ConnectionString(SqlServerSql.MetaAppName, db, forceReadWrite: true), ct);
         return rows.Select(r => r with { Database = db }).ToList();
     }
 
     public Task<string?> GetChangeMarkerAsync(string? database, CancellationToken ct = default) =>
         ScalarWithConnectionStringAsync<string?>(SqlServerDiagnostics.ChangeMarker, null,
-            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName,
+            ConnectionString(SqlServerSql.MetaAppName,
                 string.IsNullOrEmpty(database) ? _profile.Database : database, forceReadWrite: true), ct);
 
     public string? ChangedSincePredicate(IReadOnlyList<DbColumn> columns, string marker) =>
@@ -728,11 +775,11 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     private Task<IReadOnlyList<T>> QueryInDatabaseAsync<T>(string sql, object? param, string? database, CancellationToken ct) =>
         QueryWithConnectionStringAsync<T>(sql, param,
-            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, database), ct);
+            ConnectionString(SqlServerSql.MetaAppName, database), ct);
 
     private Task<T?> ScalarInDatabaseAsync<T>(string sql, object? param, string? database, CancellationToken ct) =>
         ScalarWithConnectionStringAsync<T>(sql, param,
-            SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, database), ct);
+            ConnectionString(SqlServerSql.MetaAppName, database), ct);
 
     private static async Task<IReadOnlyList<T>> QueryWithConnectionStringAsync<T>(
         string sql, object? param, string connectionString, CancellationToken ct)
@@ -774,13 +821,16 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each:
-    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.</summary>
+    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.
+    /// The shared read runs without any caller's token (one caller giving up must not fail the others); each caller
+    /// stops waiting on its own token.</summary>
     private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
     {
         lock (_databasesLock)
         {
-            if (_databases is { IsCompleted: false } inFlight) return inFlight;
-            return _databases = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
+            if (_databases is not { IsCompleted: false })
+                _databases = GatedAsync(() => GetAccessibleDatabasesAsync(CancellationToken.None), CancellationToken.None);
+            return _databases.WaitAsync(ct);
         }
     }
 
@@ -808,7 +858,7 @@ public sealed class SqlServerProvider : IDatabaseProvider
         {
             try
             {
-                var cs = SqlServerSql.BuildConnectionString(_profile, SqlServerSql.MetaAppName, db);
+                var cs = ConnectionString(SqlServerSql.MetaAppName, db);
                 var rows = await GatedAsync(() => QueryWithConnectionStringAsync<T>(sql, null, cs, token), token).ConfigureAwait(false);
                 foreach (var row in rows) results.Add(tag(row, db));
             }

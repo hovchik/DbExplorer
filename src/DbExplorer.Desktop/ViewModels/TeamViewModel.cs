@@ -35,6 +35,8 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
     private readonly SnippetLibrary _snippets;
     private readonly IDialogService _dialogs;
     private TeamFolderWatcher? _watcher;
+    private int _watchVersion;
+    private bool _disposed;
     private TeamSnapshot _snapshot = TeamSnapshot.Empty;
     private int _scanVersion;
 
@@ -112,7 +114,7 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
     /// <summary>Starts watching the saved team folder, if any.</summary>
     public void Start()
     {
-        Watch();
+        _ = WatchAsync();
         _ = RefreshAsync();
     }
 
@@ -121,17 +123,35 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
         _sync.SetFolder(path);
         OnPropertyChanged(nameof(IsConfigured));
         OnPropertyChanged(nameof(FolderText));
-        Watch();
+        _ = WatchAsync();
         Status = path is null ? "Stopped sharing. Nothing in the folder was deleted." : $"Sharing through {_sync.FolderPath}";
         _ = RefreshAsync();
     }
 
-    private void Watch()
+    private async Task WatchAsync()
     {
+        var version = ++_watchVersion;
         _watcher?.Dispose();
         _watcher = null;
         if (_sync.FolderPath is not { } path) return;
-        _watcher = new TeamFolderWatcher(path);
+        TeamFolderWatcher watcher;
+        try
+        {
+            // Starting the watcher reads the whole folder; an unreachable network share must not hold up the UI.
+            watcher = await Task.Run(() => new TeamFolderWatcher(path));
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("team folder watcher", ex);
+            return;
+        }
+        // Another folder was picked (or the window closed) while this one started.
+        if (version != _watchVersion || _disposed)
+        {
+            watcher.Dispose();
+            return;
+        }
+        _watcher = watcher;
         _watcher.Changed += () => Dispatcher.UIThread.Post(() => _ = RefreshAsync());
     }
 
@@ -238,9 +258,10 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
             if (result.Added.Count > 0) parts.Add("added " + string.Join(", ", result.Added));
             if (result.Updated.Count > 0) parts.Add("updated " + string.Join(", ", result.Updated));
             if (result.KeptBoth.Count > 0) parts.Add("kept both, added " + string.Join(", ", result.KeptBoth));
-            if (parts.Count == 0) parts.Add("already up to date");
+            if (parts.Count == 0) parts.Add(result.Failed.Count > 0 ? "nothing added" : "already up to date");
             Status = "Connections: " + string.Join("; ", parts) +
-                     (result.PasswordsLeftOut ? ". Passwords were left out (set the right team password to get them); you are asked on connect." : ".");
+                     (result.PasswordsLeftOut ? ". Passwords were left out (set the right team password to get them); you are asked on connect." : ".") +
+                     (result.Failed.Count > 0 ? " Could not read " + string.Join(", ", result.Failed) + "; try again later." : "");
         }
         catch (Exception ex)
         {
@@ -354,5 +375,9 @@ public partial class TeamViewModel : ViewModelBase, IDisposable
         return string.Join(" ", parts);
     }
 
-    public void Dispose() => _watcher?.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _watcher?.Dispose();
+    }
 }

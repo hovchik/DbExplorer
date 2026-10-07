@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
@@ -168,9 +169,14 @@ public partial class MainWindowViewModel : ViewModelBase
         _ => ""
     };
 
+    /// <summary>"1.2.0" (from -p:Version), without the "+commit" suffix the SDK appends.</summary>
+    public static string AppVersion { get; } =
+        (typeof(MainWindowViewModel).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+         ?? typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString(3) ?? "").Split('+')[0];
+
     public string WindowTitle => Session is { } s
-        ? $"DB Explorer — {s.Profile}"
-        : "DB Explorer";
+        ? $"DB Explorer {AppVersion} — {s.Profile}"
+        : $"DB Explorer {AppVersion}";
 
     public async Task InitializeAsync()
     {
@@ -191,6 +197,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public async Task ShutdownAsync()
     {
         await Step(Query.SaveTabsAsync);
+        await Step(() => { ErModel.FlushAutosave(); return Task.CompletedTask; });
         await Step(Query.RollbackOpenTransactionsAsync);
         foreach (var tab in _tabs) await Step(() => { tab.Attach(null); return Task.CompletedTask; });
         await Step(() => Comparer.DisposeIndependentSessionsAsync().AsTask());
@@ -256,10 +263,23 @@ public partial class MainWindowViewModel : ViewModelBase
         var edited = await _dialogs.EditConnectionAsync(current.Clone(), "Edit connection", ConnectionFolders.All(Profiles));
         if (edited is null) return;
 
-        var index = Profiles.IndexOf(current);
+        // A Team pull can rebuild the list while the dialog is open: find the connection again.
+        var index = IndexOfProfile(current.Id);
+        if (index < 0)
+        {
+            StatusText = $"{current} is no longer in the saved connections; the edit was not saved.";
+            return;
+        }
         Profiles[index] = edited;
         SortProfiles(edited);
         await SaveProfilesAsync();
+    }
+
+    private int IndexOfProfile(Guid id)
+    {
+        for (var i = 0; i < Profiles.Count; i++)
+            if (Profiles[i].Id == id) return i;
+        return -1;
     }
 
     /// <summary>Keeps the list grouped by folder, then by name, and selects <paramref name="select"/>.</summary>
@@ -375,10 +395,15 @@ public partial class MainWindowViewModel : ViewModelBase
             // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");
             if (withPassword is null) return;
-            var index = Profiles.IndexOf(profile);
-            Profiles[index] = withPassword;
-            SelectedProfile = profile = withPassword;
-            await SaveProfilesAsync();
+            // A Team pull can rebuild the list while the dialog is open: find the connection again.
+            var index = IndexOfProfile(profile.Id);
+            profile = withPassword;
+            if (index >= 0)
+            {
+                Profiles[index] = withPassword;
+                SelectedProfile = withPassword;
+                await SaveProfilesAsync();
+            }
         }
 
         var ct = BeginLoad();

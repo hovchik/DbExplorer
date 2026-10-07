@@ -36,63 +36,73 @@ public sealed class QueryTabState
     public bool? AutoTitle { get; set; }
 }
 
-/// <summary>Persists saved scripts and run history to disk, similar to <c>ConnectionStore</c>.</summary>
+/// <summary>
+/// Persists saved scripts and run history to disk, similar to <c>ConnectionStore</c>. Reads and writes go one at a
+/// time (two tabs can finish a run together), and a damaged file reads as empty rather than failing every time.
+/// </summary>
 public sealed class ScriptStore(AppPaths paths)
 {
     private const int MaxHistory = 200;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
     private string ScriptsFile => Path.Combine(paths.Root, "scripts.json");
     private string HistoryFile => Path.Combine(paths.Root, "script-history.json");
     private string TabsFile => Path.Combine(paths.Root, "query-tabs.json");
 
-    public async Task<List<QueryTabState>> LoadTabsAsync(CancellationToken ct = default)
+    public Task<List<QueryTabState>> LoadTabsAsync(CancellationToken ct = default) =>
+        Locked(() => ReadAsync<QueryTabState>(TabsFile, ct), ct);
+
+    public Task SaveTabsAsync(IEnumerable<QueryTabState> tabs, CancellationToken ct = default) =>
+        Locked(async () =>
+        {
+            Directory.CreateDirectory(paths.Root);
+            await AtomicFile.WriteJsonAsync(TabsFile, tabs.ToList(), Json, ct);
+            return true;
+        }, ct);
+
+    public Task<List<SavedScript>> LoadScriptsAsync(CancellationToken ct = default) =>
+        Locked(() => ReadAsync<SavedScript>(ScriptsFile, ct), ct);
+
+    public Task SaveScriptsAsync(IEnumerable<SavedScript> scripts, CancellationToken ct = default) =>
+        Locked(async () =>
+        {
+            await AtomicFile.WriteJsonAsync(ScriptsFile, scripts.ToList(), Json, ct);
+            return true;
+        }, ct);
+
+    public Task<List<ScriptHistoryEntry>> LoadHistoryAsync(CancellationToken ct = default) =>
+        Locked(() => ReadAsync<ScriptHistoryEntry>(HistoryFile, ct), ct);
+
+    public Task AppendHistoryAsync(ScriptHistoryEntry entry, CancellationToken ct = default) =>
+        Locked(async () =>
+        {
+            var history = await ReadAsync<ScriptHistoryEntry>(HistoryFile, ct);
+            history.Insert(0, entry);
+            if (history.Count > MaxHistory) history.RemoveRange(MaxHistory, history.Count - MaxHistory);
+            await AtomicFile.WriteJsonAsync(HistoryFile, history, Json, ct);
+            return true;
+        }, ct);
+
+    private async Task<T> Locked<T>(Func<Task<T>> action, CancellationToken ct)
     {
-        if (!File.Exists(TabsFile)) return [];
-        await using var fs = File.OpenRead(TabsFile);
-        return await JsonSerializer.DeserializeAsync<List<QueryTabState>>(fs, Json, ct) ?? [];
+        await _gate.WaitAsync(ct);
+        try { return await action(); }
+        finally { _gate.Release(); }
     }
 
-    public async Task SaveTabsAsync(IEnumerable<QueryTabState> tabs, CancellationToken ct = default)
+    private static async Task<List<T>> ReadAsync<T>(string file, CancellationToken ct)
     {
-        Directory.CreateDirectory(paths.Root);
-        var tmp = TabsFile + ".tmp";
-        await using (var fs = File.Create(tmp))
-            await JsonSerializer.SerializeAsync(fs, tabs.ToList(), Json, ct);
-        File.Move(tmp, TabsFile, overwrite: true);
-    }
-
-    public async Task<List<SavedScript>> LoadScriptsAsync(CancellationToken ct = default)
-    {
-        if (!File.Exists(ScriptsFile)) return [];
-        await using var fs = File.OpenRead(ScriptsFile);
-        return await JsonSerializer.DeserializeAsync<List<SavedScript>>(fs, Json, ct) ?? [];
-    }
-
-    public async Task SaveScriptsAsync(IEnumerable<SavedScript> scripts, CancellationToken ct = default)
-    {
-        var tmp = ScriptsFile + ".tmp";
-        await using (var fs = File.Create(tmp))
-            await JsonSerializer.SerializeAsync(fs, scripts.ToList(), Json, ct);
-        File.Move(tmp, ScriptsFile, overwrite: true);
-    }
-
-    public async Task<List<ScriptHistoryEntry>> LoadHistoryAsync(CancellationToken ct = default)
-    {
-        if (!File.Exists(HistoryFile)) return [];
-        await using var fs = File.OpenRead(HistoryFile);
-        return await JsonSerializer.DeserializeAsync<List<ScriptHistoryEntry>>(fs, Json, ct) ?? [];
-    }
-
-    public async Task AppendHistoryAsync(ScriptHistoryEntry entry, CancellationToken ct = default)
-    {
-        var history = await LoadHistoryAsync(ct);
-        history.Insert(0, entry);
-        if (history.Count > MaxHistory) history.RemoveRange(MaxHistory, history.Count - MaxHistory);
-
-        var tmp = HistoryFile + ".tmp";
-        await using (var fs = File.Create(tmp))
-            await JsonSerializer.SerializeAsync(fs, history, Json, ct);
-        File.Move(tmp, HistoryFile, overwrite: true);
+        if (!File.Exists(file)) return [];
+        try
+        {
+            await using var fs = File.OpenRead(file);
+            return await JsonSerializer.DeserializeAsync<List<T>>(fs, Json, ct) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 }

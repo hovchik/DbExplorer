@@ -6,6 +6,7 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>DbExplorer</AssemblyName>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />

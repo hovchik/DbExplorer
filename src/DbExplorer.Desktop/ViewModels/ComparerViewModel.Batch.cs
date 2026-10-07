@@ -116,11 +116,13 @@ public partial class ComparerViewModel
             return;
         }
 
+        var mySql = right.Provider.ProviderKey == SqlDialect.MySqlKey;
         var counts = string.Join(", ", items.GroupBy(i => i.SelectedAction!.Action)
             .Select(g => $"{g.Count()} × {ObjectCopyService.Humanize(g.Key).ToLowerInvariant()}"));
         var message = $"Copy {items.Count} object(s) to {right.Profile.DisplayName}" +
                       (string.IsNullOrEmpty(SelectedRightDatabase) ? "" : $" · {SelectedRightDatabase}") +
-                      $":\n{counts}.\n\nEach object runs " + (CopySingleTransaction ? "in its own transaction." : "step by step without a transaction.") +
+                      $":\n{counts}.\n\nEach object runs " + (!CopySingleTransaction ? "step by step without a transaction."
+                          : mySql ? "in its own transaction, but MySQL commits each schema change as it goes." : "in its own transaction.") +
                       (BatchContinueOnError ? " An object that fails is reported and the batch goes on." : " The batch stops at the first failure.");
         var confirmed = right.Profile.IsProduction
             ? await dialogs.ConfirmAsync(message + "\n\nThe right side is PRODUCTION.", "Run on production",
@@ -193,7 +195,8 @@ public partial class ComparerViewModel
                 catch (OperationCanceledException)
                 {
                     item.Status = "Cancelled";
-                    item.Details = CopySingleTransaction ? "Rolled back." : "Steps before the cancel stay applied.";
+                    item.Details = !CopySingleTransaction ? "Steps before the cancel stay applied."
+                        : mySql ? "Row changes since the last schema change rolled back; schema changes stay." : "Rolled back.";
                     throw;
                 }
                 catch (Exception ex)

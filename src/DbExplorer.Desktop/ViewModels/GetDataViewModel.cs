@@ -131,6 +131,9 @@ public partial class GetDataViewModel : ViewModelBase
         _ = _dialogs.ShowGetDataAsync(_service, session, ResultEditSql.ReferencedTable(reference), condition, description);
     }
 
+    /// <summary>The rows have edits, new or deleted rows that were not committed; the window asks before closing.</summary>
+    public bool HasUncommittedEdits => ResultEditing.HasEdits(ResultSets);
+
     private async Task<bool> ConfirmDiscardEditsAsync() =>
         !ResultEditing.HasEdits(ResultSets) || _dialogs is null ||
         await _dialogs.ConfirmAsync("The rows have changes that are not committed yet (edited, new or deleted rows). Reload and discard them?", "Discard and reload");

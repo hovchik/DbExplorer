@@ -59,6 +59,38 @@ public class CopyExecutionTests
     }
 
     [Fact]
+    public async Task On_MySQL_a_failure_in_a_transaction_only_marks_row_steps_after_the_last_schema_step_rolled_back()
+    {
+        var script = new FakeScriptSession { FailOn = "INSERT c" };
+        var updates = new List<CopyStepUpdate>();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(script, true, updates, SqlDialect.MySqlKey,
+            [("INSERT a", CopyStepKind.Insert), ("CREATE TABLE b", CopyStepKind.Structure), ("INSERT b", CopyStepKind.Insert),
+             ("INSERT c", CopyStepKind.Insert), ("CREATE INDEX c", CopyStepKind.Constraint)]));
+
+        Assert.DoesNotContain("everything was rolled back", error.Message);
+        var final = FinalStates(updates);
+        Assert.Equal(CopyStepState.Done, final[0].State);
+        Assert.Equal(CopyStepState.Done, final[1].State);
+        Assert.Equal(CopyStepState.RolledBack, final[2].State);
+        Assert.Equal(CopyStepState.Failed, final[3].State);
+        Assert.Equal(CopyStepState.NotRun, final[4].State);
+    }
+
+    [Fact]
+    public async Task On_MySQL_a_failing_schema_step_leaves_every_earlier_step_applied()
+    {
+        var script = new FakeScriptSession { FailOn = "CREATE INDEX a" };
+        var updates = new List<CopyStepUpdate>();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(script, true, updates, SqlDialect.MySqlKey,
+            [("CREATE TABLE a", CopyStepKind.Structure), ("INSERT a", CopyStepKind.Insert), ("CREATE INDEX a", CopyStepKind.Constraint)]));
+
+        var final = FinalStates(updates);
+        Assert.Equal(CopyStepState.Done, final[0].State);
+        Assert.Equal(CopyStepState.Done, final[1].State);
+        Assert.Equal(CopyStepState.Failed, final[2].State);
+    }
+
+    [Fact]
     public void Create_database_statement_is_quoted_per_engine()
     {
         Assert.Equal("CREATE DATABASE [QR]]Register];", SqlDialect.SqlServer.CreateDatabase("QR]Register"));
@@ -89,7 +121,11 @@ public class CopyExecutionTests
         return updates;
     }
 
-    private static async Task RunAsync(FakeScriptSession script, bool singleTransaction, List<CopyStepUpdate> updates, params string[] sql)
+    private static Task RunAsync(FakeScriptSession script, bool singleTransaction, List<CopyStepUpdate> updates, params string[] sql) =>
+        RunAsync(script, singleTransaction, updates, SqlDialect.SqlServerKey, sql.Select(s => (s, CopyStepKind.Structure)).ToArray());
+
+    private static async Task RunAsync(FakeScriptSession script, bool singleTransaction, List<CopyStepUpdate> updates,
+        string providerKey, (string Sql, CopyStepKind Kind)[] steps)
     {
         var session = new DatabaseSession(new ConnectionProfile(), null!, FakeProvider.Create(script, out _), "1", Empty());
         var plan = new CopyPlan
@@ -101,8 +137,8 @@ public class CopyExecutionTests
             },
             Action = CopyAction.CreateObject,
             Options = new CopyOptions { SingleTransaction = singleTransaction },
-            TargetProviderKey = SqlDialect.SqlServerKey,
-            Steps = sql.Select(s => new CopyStep(s, CopyStepKind.Structure, s)).ToList()
+            TargetProviderKey = providerKey,
+            Steps = steps.Select(s => new CopyStep(s.Sql, s.Kind, s.Sql)).ToList()
         };
 
         var service = new ObjectCopyService(new DefinitionService(), new QueryExecutionService());

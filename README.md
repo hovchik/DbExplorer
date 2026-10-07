@@ -1,7 +1,8 @@
 # DB Explorer
 
 A cross-platform desktop app (.NET 8 + Avalonia) for exploring databases without disturbing them.
-SQL Server is the primary engine; PostgreSQL and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
+SQL Server is the primary engine; PostgreSQL (12+) and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
+Connections can go through an **SSH tunnel** (password or private key; the server's host key is pinned on first use).
 
 ## Features
 
@@ -12,15 +13,15 @@ SQL Server is the primary engine; PostgreSQL and MySQL / MariaDB (MySQL 8+, Mari
 | **Search data** | Finds a value in every text column (LIKE / ILIKE), numeric column (exact) and GUID/UUID column across all tables, with the primary key of each matching row. Double-click a result to open the whole record, *Go to table* to jump to it in Objects. *Relations & combined data* draws the tables the value was found in (across databases), every table directly related to them and the tables linking them (up to 3 foreign-key hops); it loads each table's found rows, the rows of every related table that belong to them (parents they reference, children referencing them), and a combined result that LEFT JOINs it all along the foreign keys; every query can be opened in the Query tab. |
 | **Query** | Ad-hoc scripts with a per-tab **Database** picker (statements run there and the editor suggests every table, view, function and column of that database only), context-aware completion (aliases, `db.schema.`, `schema.` and `alias.` qualifiers, Ctrl+Space), cancel, and **Run on multiple databases**: the same script on every selected database, results stacked with a `Database` column. A **row limit** (default 10,000, 0 = none) keeps huge tables cheap: a script that only reads stops each result set on the server one row past the limit (see *Large databases* below). **Several carets**: Ctrl+Alt+Click adds a caret, Alt+J selects the word and then adds its next occurrence, Ctrl+Alt+Shift+J takes every occurrence; typing, Backspace and Delete apply at all of them in one undo step, Esc goes back to one. Alt+drag or Alt+Shift+arrows select a box of text. |
 | **Diagram** | ER diagram built from the cached foreign keys (no server round-trip): around one table (N hops) or a whole schema. Copy as Mermaid, save as PNG. |
-| **Table designer** | Create a new table in any database of the server (type-to-filter picker): schema, name, columns (type, size, nullable, key, identity, default), foreign keys to existing tables and indexes, with the CREATE TABLE script for the engine updated as you type. **Suggestions** update live too: what would fail (name taken, duplicate columns, a foreign key to nothing), likely mistakes (no primary key, a column like `CustomerId` without its foreign key or with the wrong type, dates or ids kept as text, money in `float`, `varchar` without a length, `decimal` without decimals, unindexed foreign keys) and consistency with the rest of the database (snake_case or PascalCase, plural names, key naming, audit columns such as `CreatedAt`, `nvarchar`). Each one applies with a click, or *Apply all*. Nothing runs until **Execute**, which shows the exact script, asks (typing `PRODUCTION` on production) and runs it in one transaction; *Open in Query tab* hands the script over instead. |
+| **Table designer** | Create a new table in any database of the server (type-to-filter picker), or change an existing one (Objects › right-click a table › *Change in Table designer…*, the script becomes ALTER TABLE): schema, name, columns (type, size, nullable, key, identity, default), foreign keys to existing tables and indexes, with the CREATE TABLE script for the engine updated as you type. **Suggestions** update live too: what would fail (name taken, duplicate columns, a foreign key to nothing), likely mistakes (no primary key, a column like `CustomerId` without its foreign key or with the wrong type, dates or ids kept as text, money in `float`, `varchar` without a length, `decimal` without decimals, unindexed foreign keys) and consistency with the rest of the database (snake_case or PascalCase, plural names, key naming, audit columns such as `CreatedAt`, `nvarchar`). Each one applies with a click, or *Apply all*. Nothing runs until **Execute**, which shows the exact script, asks (typing `PRODUCTION` on production) and runs it in one transaction; *Open in Query tab* hands the script over instead. |
 | **ER model** | Draw tables and relationships on a canvas, or read the tables of a database (all schemas or one) to model changes to them. Drag a title to move a table; drag a column onto another table's column to make it a foreign key, or onto its title to reference its primary key; Shift-drag a title onto another table to add the key column too; double-click empty space for a new table. The selected table is edited with the Table designer's columns, keys, indexes and suggestions. **Generate DDL** compares the model with a chosen database and writes CREATE TABLE for new tables and ALTER TABLE for changed ones (renames included), dropping and adding foreign keys around them so the order always works; tables the model does not have are never dropped. **Run** shows the script, asks (typing `PRODUCTION` on production) and runs it in one transaction. Undo/redo, autosaved between sessions, and Save/Open as `.dbxmodel` files. Works without a connection. |
 | **Query builder** | Build a SELECT without typing: drag tables and views from the list onto a canvas (or double-click them) and they join on their foreign keys (accepted inferred relationships too; failing that, a column named like the other table's key). Drag a column onto another table's column to join by hand, click a join's label to select it, change it to Left/Right/Full in the joins list. Click columns to tick them into a grid of aliases, aggregates (any aggregate groups by the other output columns), sorts and filters (`> 100`, `LIKE 'A%'`, `IS NULL`, `IN (1, 2)` or a bare value; aggregated filters go to HAVING), plus DISTINCT and TOP/LIMIT. The SQL for the engine updates live; *Open in Query tab* hands it over. One way: the builder writes SQL, it does not read it back. |
 | **Indexes** | Key and included columns, filters, size, rows, usage (seeks/scans/updates), fragmentation (SQL Server, optional). |
 | **Locks** | Current locks, waiting sessions, the blocker's SQL, auto-refresh, and a **blocking tree** (head blocker → blocked sessions, cycle-safe). |
 | **Activity** | **Running now**: executing requests (and SQL Server sessions sleeping inside an open transaction) with elapsed/CPU/reads/waits/blocker. **Top queries**: most expensive cached statements by CPU, duration, reads or executions (plan cache on SQL Server, `pg_stat_statements` on PostgreSQL). |
 | **Comparer** | Two connections side by side (environment badges, swap sides, cancel with Esc). **Overview** compares every table, view, routine and trigger of both databases from the cached metadata (instant, no server load) and lists what differs or exists on one side only; double-click for details. **Schema** diffs definitions line by line or by content, optionally ignoring case/whitespace, with *only changes* folding, F8 / Shift+F8 change navigation and a similarity score. **Structure** compares a table's columns (type, nullability, key, position), indexes and foreign keys, recognising renamed indexes. **Data** matches rows by primary key with filters per status and key, per-column difference counts (click to filter), ignored columns, case/padding-insensitive text, value-based numeric and binary equality, and warnings for duplicate keys, row-limit truncation and columns missing on one side. Schema and data results export as a self-contained HTML or Markdown report. |
-
 | **Lab** *(experimental)* | **Change recorder**: press Start, do something in your application, press Stop — lists every table whose insert/update/delete counters moved (`sys.dm_db_index_operational_stats` / `pg_stat_user_tables`) and the rows involved: an exact before/after diff for tables snapshotted at Start (tables up to 2,000 rows by default), otherwise the rows written since Start (PostgreSQL `xmin`, SQL Server `rowversion` columns), otherwise counts only. **Schema history**: every catalog read from the server is stored locally as a version when something changed (definitions de-duplicated by hash), so you can compare any two versions or see one object's revisions — no DDL triggers or audit on the server. **Inferred relationships**: foreign keys the schema does not declare, proposed from column names and types (`Orders.CustomerId → Customers.Id`, `order_lines.product_id → products.id`), checked against 2,000 sampled values, and — once accepted — used by the Diagram (dashed), Relations and JOIN suggestions. Accepted ones live in a local file, never in the database. |
+| **Security** | Logins, users and roles of the server or database (PostgreSQL and SQL Server): their memberships and permissions, granted and revoked with a click and kept as pending changes until **Apply**, which shows the script (passwords masked; PostgreSQL passwords are sent as SCRAM verifiers), asks (typing `PRODUCTION` on production) and runs it in one transaction. MySQL / MariaDB accounts are not covered yet; the tab says so. |
 
 **AI assistant in the Query tab** (*✨ AI ▾*, shown once an Anthropic API key is set under *Tools ▾ › Set up the AI assistant*): **Write SQL** from a sentence, **Explain** the selection / statement at the caret, and **Fix error** for the tab's last failed run, using Claude with your own key. The assistant knows the tab's database: the names and types of its tables, views, columns, keys and routines go with each question (tables named in the question first, about 120 KB at most). Row data, row counts and routine bodies are never sent. Proposed SQL appears in the panel and goes into the editor only when you press *Insert*; it is never run automatically.
 
@@ -60,7 +61,7 @@ dotnet run --project src/DbExplorer.Desktop
 dotnet test
 ```
 
-Integration tests for the Lab features run against real servers when these are set (otherwise they are skipped); each creates and drops a `dbx_lab_test` database:
+Integration tests run against real servers when these are set (otherwise they are skipped); each creates and drops its own test database:
 
 ```bash
 DBEXPLORER_TEST_PG="localhost;5432;postgres;<password>" \
@@ -68,6 +69,9 @@ DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" \
 DBEXPLORER_TEST_MYSQL="localhost;3306;root;<password>" \
 DBEXPLORER_TEST_MARIADB="localhost;3307;root;<password>" dotnet test
 ```
+
+The SSH tunnel tests also need `DBEXPLORER_TEST_SSH="host;port;user;password;keyFile;keyPassphrase"` of an SSH server that allows
+TCP forwarding (with `DBEXPLORER_TEST_PG` as that server reaches PostgreSQL).
 
 Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as the startup project.
 
@@ -89,9 +93,37 @@ dotnet publish src/DbExplorer.Desktop -c Release -r linux-x64 --self-contained -
 dotnet publish src/DbExplorer.Desktop -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
 ```
 
-Each user's connections, metadata cache and query tabs live in their own app data folder (see *Metadata cache* below).
-Errors that nothing else handled are written to `DbExplorer/logs/errors.log` in that folder instead of closing the app;
-ask for that file when someone reports a problem.
+Each user's data lives in their own app data folder: `%LOCALAPPDATA%\DbExplorer` on Windows,
+`~/.local/share/DbExplorer` on Linux, `~/Library/Application Support/DbExplorer` on macOS. Neither upgrades nor uninstalling
+touch it; delete the folder to reset the app or remove everything it saved.
+
+| File | What it holds |
+|---|---|
+| `connections.json` | Saved connections (passwords only when *Save password* is ticked, DPAPI-encrypted, Windows only) |
+| `ssh-known-hosts.json` | Pinned SSH host keys |
+| `settings.json` | Theme, editor zoom / word wrap, experimental-feature switches and other preferences |
+| `assistant.json` | AI assistant key (DPAPI-encrypted) and model |
+| `query-tabs.json`, `scripts.json`, `script-history.json`, `snippets.json` | Open Query tabs, saved scripts, run history, snippets |
+| `team-sync.json` | The team folder and what you have already seen from it |
+| `er-model.dbxmodel` | The ER model tab's autosave |
+| `cache/` | Metadata snapshots (SQLite), schema history and accepted inferred relationships per connection |
+| `logs/errors.log` | Errors that nothing else handled (instead of closing the app); ask for it when someone reports a problem |
+
+Windows is the supported platform for this release. The Linux and macOS builds above run, but they are unsigned folders (no
+`.app` bundle) and don't save passwords or the AI assistant key between runs.
+
+## Keyboard shortcuts
+
+| Where | Keys |
+|---|---|
+| Anywhere | Ctrl+K or Ctrl+P command palette |
+| Query tabs | Ctrl+N new, Ctrl+O open, Ctrl+S save (Ctrl+Shift+S save as), Ctrl+W close, Ctrl+PgUp / Ctrl+PgDn switch, Ctrl+Shift+PgUp / PgDn move |
+| Running | F5 or Ctrl+E run the script (or the selection), Ctrl+Enter run the statement at the caret, Ctrl+L estimated plan, Ctrl+Shift+L actual plan |
+| Editing | Ctrl+Space completion, Ctrl+Shift+F format, Ctrl+/ comment, Ctrl+D duplicate line, Alt+Up / Alt+Down move lines, Ctrl+Shift+U / Ctrl+Alt+U upper / lower case, Ctrl+G go to line, Ctrl+H replace, F12 go to definition, Alt+Enter quick fixes, F8 next warning |
+| Several carets | Ctrl+Alt+Click add a caret, Alt+J next occurrence, Ctrl+Alt+Shift+J all occurrences, Alt+drag or Alt+Shift+arrows box selection, Esc back to one |
+| View | Ctrl+wheel or Ctrl+= / Ctrl+- / Ctrl+0 zoom, Alt+Z word wrap, Ctrl+Shift+Up / Down resize editor and results |
+| Result grids | Ctrl+C copy (Ctrl+Shift+C with header), F2 edit or open the cell's text, Ctrl+S commit edits, Alt+Insert add row, Ctrl+Delete delete rows |
+| Routine debugger | F9 breakpoint, F5 start / continue, F10 step over, F11 step into, Shift+F11 step out, Shift+F5 stop |
 
 ## Architecture
 
@@ -104,7 +136,7 @@ src/
   DbExplorer.Providers.MySql       Dapper + MySqlConnector (MySQL 8+, MariaDB 10.6+)
   DbExplorer.Desktop               Avalonia UI, MVVM (CommunityToolkit.Mvvm), DI composition root
 tests/
-  DbExplorer.Tests                 xUnit tests for pure logic (no database needed)
+  DbExplorer.Tests                 xUnit tests: logic without a database, plus integration tests against real servers
 ```
 
 Dependencies point inward: providers and the UI depend on Core; the UI depends on Application; Application never references a concrete provider.
@@ -151,23 +183,25 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 
 SQL Server: `CONNECT`, `VIEW DEFINITION` (to see code), `SELECT` on the tables to search or profile, `VIEW DATABASE STATE` (index usage and fragmentation) and `VIEW SERVER STATE` (locks, activity, top queries). Without the last two, the Indexes tab falls back to catalog-only data and the Locks/Activity tabs show the permission error.
 
-PostgreSQL: `CONNECT` and `SELECT`; `pg_read_all_stats` or superuser to see other users' queries in the Locks and Activity tabs. *Top queries* needs the `pg_stat_statements` extension (`shared_preload_libraries = 'pg_stat_statements'`, then `CREATE EXTENSION pg_stat_statements;`). The routine debugger needs pldebugger on the server (`postgresql-NN-pldebugger` on Debian/Ubuntu, StackBuilder on Windows), `shared_preload_libraries = 'plugin_debugger'` and `CREATE EXTENSION pldbgapi;` in the database.
+PostgreSQL (12 or later): `CONNECT` and `SELECT`; `pg_read_all_stats` or superuser to see other users' queries in the Locks and Activity tabs. *Top queries* needs the `pg_stat_statements` extension (`shared_preload_libraries = 'pg_stat_statements'`, then `CREATE EXTENSION pg_stat_statements;`). The routine debugger needs pldebugger on the server (`postgresql-NN-pldebugger` on Debian/Ubuntu, StackBuilder on Windows), `shared_preload_libraries = 'plugin_debugger'` and `CREATE EXTENSION pldbgapi;` in the database.
 
-## Adding another engine (e.g. MySQL, Oracle)
+MySQL / MariaDB: `SELECT` on the schemas to browse and search, `SHOW VIEW` (and `SHOW_ROUTINE` on MySQL 8.0.20+) to see code, `PROCESS` to see other sessions in Locks and Activity, and `SELECT` on `performance_schema` for top queries, change counters and index usage (MariaDB needs `performance_schema = ON` in its configuration).
 
-1. Create `src/DbExplorer.Providers.MySql` referencing `DbExplorer.Core`.
+## Adding another engine (e.g. Oracle, SQLite)
+
+1. Create `src/DbExplorer.Providers.Oracle` referencing `DbExplorer.Core` (the MySQL provider is the most recent example to copy).
 2. Implement `IDatabaseProviderFactory` (key, display name, default port, `ListDatabasesAsync`) and `IDatabaseProvider` (catalog queries, `IsSearchable`, `SearchTableAsync`, activity/top-query DMVs, `ProfileTableAsync`/`GetTopValuesAsync`). Follow the rules in the interface comment: read-only, lock timeouts, statement timeouts.
-3. Add an `AddMySqlProvider()` extension and call it in `App.axaml.cs` next to `AddSqlServerProvider()`.
+3. Add an `AddOracleProvider()` extension and call it in `App.axaml.cs` next to `AddSqlServerProvider()`.
 
 Nothing else changes: the connection dialog, tabs, caches and searches pick the new engine up through DI.
 
 ## Security
 
-Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect. A damaged `connections.json` is moved aside (`connections.json.corrupt-<time>`) rather than overwritten.
+Connections are stored in `connections.json` in the app data folder (including their environment tag). Passwords are saved only when *Save password* is checked, and only on Windows, encrypted with DPAPI for the current user. On macOS/Linux the app asks for the password on connect. SSH passwords and key passphrases are handled the same way. A damaged `connections.json` is moved aside (`connections.json.corrupt-<time>`) rather than overwritten.
 
 The AI assistant's API key is kept in `assistant.json`, encrypted with DPAPI for the current Windows user; on macOS/Linux it lasts until the app closes. It is sent only to `api.anthropic.com`.
 
-*Encrypt (TLS)* with *Trust certificate* off validates the server certificate and host name on both engines (PostgreSQL `SslMode=VerifyFull`); with *Trust certificate* on, the connection is encrypted but any certificate is accepted (`TrustServerCertificate=True` / `SslMode=Require`). For servers reached over untrusted networks, turn *Encrypt* on and *Trust certificate* off.
+*Encrypt (TLS)* with *Trust certificate* off validates the server certificate and host name on every engine (PostgreSQL `SslMode=VerifyFull`); with *Trust certificate* on, the connection is encrypted but any certificate is accepted (`TrustServerCertificate=True` / `SslMode=Require`). For servers reached over untrusted networks, turn *Encrypt* on and *Trust certificate* off.
 
 ## Known limitations
 
@@ -176,3 +210,7 @@ The AI assistant's API key is kept in `assistant.json`, encrypted with DPAPI for
 - The Query tab's *Run on multiple databases* confirms once for the whole batch; each database runs independently and a failure on one does not stop the others.
 - The routine debugger steps through PL/pgSQL only (SQL and C functions run without stopping) and stops on entry to the routine it starts. pldebugger gives up a wait when a server signal interrupts it (for example a `DROP DATABASE` elsewhere on the server); the window then reports a lost link, stops the call and rolls it back.
 - Table scripts in the Objects tab are generated from catalog metadata (columns + primary key), not full DDL.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The libraries the app ships with are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

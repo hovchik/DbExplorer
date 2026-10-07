@@ -12,6 +12,7 @@ public partial class MetadataSearchViewModel(
     MetadataSearchService service, DefinitionService definitions, IDialogService dialogs) : ViewModelBase, ISessionAware
 {
     private const int MaxResults = 5000;
+    private const string IdleStatus = "Searches names and source code in the local metadata snapshot — no load on the server.";
 
     private DatabaseSession? _session;
     private CancellationTokenSource? _cts;
@@ -26,13 +27,14 @@ public partial class MetadataSearchViewModel(
     [ObservableProperty] private bool _useRegex;
     [ObservableProperty] private IReadOnlyList<MetadataSearchResult> _results = [];
     [ObservableProperty] private MetadataSearchResult? _selectedResult;
-    [ObservableProperty] private string _status = "Searches names and source code in the local metadata snapshot — no load on the server.";
+    [ObservableProperty] private string _status = IdleStatus;
 
     public void Attach(DatabaseSession? session)
     {
         _cts?.Cancel();
         _session = session;
         Results = [];
+        Status = IdleStatus;
     }
 
     [RelayCommand]

@@ -113,8 +113,9 @@ internal static class SqlServerQueries
                    ELSE '' END AS [DataType],
                CASE
                    WHEN p.parameter_id = 0 THEN 3 -- ReturnValue
-                   WHEN p.is_output = 1 THEN 2    -- Output (also covers InputOutput; SQL Server has no separate flag)
+                   WHEN p.is_output = 1 THEN 1    -- InputOutput: an OUTPUT parameter also takes the value passed in
                    ELSE 0 END AS [Direction],
+               -- Known for CLR routines only: T-SQL parameter defaults are not kept in the catalog (always 0).
                p.has_default_value AS [HasDefault],
                p.parameter_id AS [Ordinal]
         FROM sys.parameters p
@@ -180,6 +181,7 @@ internal static class SqlServerQueries
                    i.type_desc AS [Type],
                    i.is_unique AS [IsUnique],
                    i.is_primary_key AS [IsPrimaryKey],
+                   CAST(CASE WHEN i.is_unique_constraint = 1 OR i.is_primary_key = 1 THEN 1 ELSE 0 END AS bit) AS [IsConstraint],
                    i.is_disabled AS [IsDisabled],
                    STUFF((
                        SELECT ', ' + c.name + CASE WHEN ic.is_descending_key = 1 THEN ' DESC' ELSE '' END

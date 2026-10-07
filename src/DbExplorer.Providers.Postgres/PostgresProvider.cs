@@ -509,18 +509,11 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             : null;
         var dataSource = scopedDataSource ?? _dataSource;
 
-        var isProcedure = routine.Type == DbObjectType.Procedure;
-        var inputParams = parameters.Where(p => p.Direction != DbParameterDirection.Output).ToList();
-        var argList = string.Join(", ", inputParams.Select(p => "@" + p.Name));
-        var sql = isProcedure
-            ? $"CALL {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});"
-            : $"SELECT * FROM {PostgresSql.QuoteFullName(routine.Schema, routine.Name)}({argList});";
+        var (sql, values) = BuildRoutineCall(routine, parameters, arguments);
 
         await using var cn = await dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sql, cn) { CommandTimeout = timeoutSeconds };
-
-        foreach (var p in inputParams)
-            cmd.Parameters.AddWithValue(p.Name, arguments.GetValueOrDefault(p.Name) ?? DBNull.Value);
+        foreach (var value in values) cmd.Parameters.Add(value);
 
         var resultSets = new List<QueryResultSet>();
         var rowsAffected = 0;
@@ -556,6 +549,49 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             Messages = [],
             Elapsed = sw.Elapsed
         };
+    }
+
+    /// <summary>
+    /// The statement that runs a routine from the Run dialog, like <see cref="PostgresDebugger.BuildCall"/>: each argument
+    /// is a positional placeholder cast to the declared type (text from the dialog goes as an untyped literal, so anything
+    /// psql would accept works), so the call resolves to that routine and not to a missing f(text). OUT parameters of a
+    /// procedure are passed as typed NULLs (PostgreSQL 14+ lists them in CALL); a function returns them instead.
+    /// </summary>
+    private static (string Sql, IReadOnlyList<NpgsqlParameter> Values) BuildRoutineCall(
+        DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments)
+    {
+        var isProcedure = routine.Type == DbObjectType.Procedure;
+        var values = new List<NpgsqlParameter>();
+        var parts = new List<string>();
+        foreach (var p in parameters.Where(p => p.Direction != DbParameterDirection.ReturnValue).OrderBy(p => p.Ordinal))
+        {
+            var variadic = p.DataType.StartsWith("VARIADIC ", StringComparison.OrdinalIgnoreCase);
+            var type = variadic ? p.DataType["VARIADIC ".Length..] : p.DataType;
+            string expression;
+            if (p.Direction == DbParameterDirection.Output)
+            {
+                if (!isProcedure) continue;
+                expression = $"NULL::{type}";
+            }
+            else if (arguments.GetValueOrDefault(p.Name) is not { } value)
+            {
+                expression = $"NULL::{type}";
+            }
+            else
+            {
+                values.Add(value is string text
+                    ? new NpgsqlParameter { Value = text, NpgsqlDbType = NpgsqlDbType.Unknown }
+                    : new NpgsqlParameter { Value = value });
+                expression = $"${values.Count}::{type}";
+            }
+            parts.Add(variadic ? "VARIADIC " + expression : expression);
+        }
+
+        var name = PostgresSql.QuoteFullName(routine.Schema, routine.Name);
+        var sql = isProcedure
+            ? $"CALL {name}({string.Join(", ", parts)});"
+            : $"SELECT * FROM {name}({string.Join(", ", parts)});";
+        return (sql, values);
     }
 
     public async Task<IScriptSession> BeginScriptSessionAsync(string? database, bool transactional, CancellationToken ct = default)
@@ -598,9 +634,48 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     {
         await using var scope = await OpenReadOnlyAsync(database, options, ct, anyDatabase: true);
         await using var cmd = new NpgsqlCommand(sql, scope.Connection, scope.Transaction) { CommandTimeout = options.QueryTimeoutSeconds + 5 };
-        var resultSets = new List<QueryResultSet>();
-        await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
-        return resultSets.FirstOrDefault() ?? new QueryResultSet();
+        var reader = await cmd.ExecuteReaderAsync(ct);
+        QueryResultSet? result = null;
+        try
+        {
+            result = await ReadFirstResultSetAsync(reader, maxRows, ct);
+            // Closing the reader would otherwise read (and drop) every remaining row: cancel the rest on the server.
+            if (result.IsTruncated) cmd.Cancel();
+        }
+        finally
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch (PostgresException ex) when (result is { IsTruncated: true } && ex.SqlState == PostgresErrorCodes.QueryCanceled)
+            {
+                // The cancellation just sent; the scope's rollback ends the aborted transaction.
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>
+    private static async Task<QueryResultSet> ReadFirstResultSetAsync(NpgsqlDataReader reader, int maxRows, CancellationToken ct)
+    {
+        while (reader.FieldCount == 0 && await reader.NextResultAsync(ct)) { }
+        if (reader.FieldCount == 0) return new QueryResultSet();
+        var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+        var rows = new List<IReadOnlyList<object?>>();
+        var truncated = false;
+        while (await reader.ReadAsync(ct))
+        {
+            if (rows.Count >= maxRows) { truncated = true; break; }
+            var row = new object?[reader.FieldCount];
+            for (var i = 0; i < row.Length; i++) row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            rows.Add(row);
+        }
+        return new QueryResultSet
+        {
+            Columns = columns, Rows = rows, IsTruncated = truncated,
+            TotalRowCount = rows.Count + (truncated ? 1 : 0), TotalRowCountIsExact = !truncated
+        };
     }
 
     public async Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default)
@@ -743,8 +818,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     /// <summary>Lists every database the current login can access, used only when no database was selected at connect time.</summary>
     private async Task<IReadOnlyList<string>> GetAccessibleDatabasesAsync(CancellationToken ct)
     {
-        var db = string.IsNullOrWhiteSpace(_profile.Database) ? "postgres" : _profile.Database;
-        return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, db, ct);
+        return await QueryInDatabaseAsync<string>(PostgresQueries.Databases, null, _profile.Database, ct);
     }
 
     /// <summary>Runs one catalog read once a slot in <see cref="_catalogGate"/> is free.</summary>
@@ -762,13 +836,16 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     }
 
     /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each:
-    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.</summary>
+    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.
+    /// The shared read runs without any caller's token (one caller giving up must not fail the others); each caller
+    /// stops waiting on its own token.</summary>
     private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
     {
         lock (_databasesLock)
         {
-            if (_databases is { IsCompleted: false } inFlight) return inFlight;
-            return _databases = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
+            if (_databases is not { IsCompleted: false })
+                _databases = GatedAsync(() => GetAccessibleDatabasesAsync(CancellationToken.None), CancellationToken.None);
+            return _databases.WaitAsync(ct);
         }
     }
 

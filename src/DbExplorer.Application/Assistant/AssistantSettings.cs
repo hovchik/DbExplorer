@@ -75,7 +75,7 @@ public sealed class AssistantSettings
                 Model = Model == DefaultModel ? null : Model,
                 ProtectedApiKey = _apiKey is not null && _protector.IsSupported ? _protector.Protect(_apiKey) : null
             };
-            File.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
+            AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
         }
         catch
         {

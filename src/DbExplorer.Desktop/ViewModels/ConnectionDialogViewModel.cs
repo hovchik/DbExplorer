@@ -80,10 +80,13 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private string _sshKeyPath;
     [ObservableProperty] private string _sshPassphrase;
 
+    /// <summary>The other radio button of the pair. Only a check is applied: a radio button its group unchecks
+    /// writes false too, and flipping the state on that fed the other button's check back into the group,
+    /// leaving the two buttons toggling each other endlessly the moment the SSH tab opened.</summary>
     public bool SshUsePassword
     {
         get => !SshUseKey;
-        set => SshUseKey = !value;
+        set { if (value) SshUseKey = false; }
     }
 
     /// <summary>Shown on the General tab while a tunnel is on: Host and Port are then as the SSH server sees them.</summary>
@@ -193,7 +196,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     private void Save()
     {
         if (string.IsNullOrWhiteSpace(Host)) { Message = "Host is required."; return; }
-        if (!string.IsNullOrWhiteSpace(Port) && !int.TryParse(Port, out _)) { Message = "Port must be a number."; return; }
+        if (!string.IsNullOrWhiteSpace(Port) && !(int.TryParse(Port, out var port) && port is > 0 and <= 65535))
+        { Message = "Port must be a number from 1 to 65535 (or empty for the default)."; return; }
         if (UseSsh)
         {
             if (string.IsNullOrWhiteSpace(SshHost)) { Message = "SSH: enter the SSH server."; return; }

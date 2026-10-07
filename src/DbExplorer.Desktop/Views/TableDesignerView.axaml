@@ -42,14 +42,20 @@
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
 
-    <Grid ColumnDefinitions="*,6,400" MinHeight="0">
+    <Grid MinHeight="0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="5*" />
+        <ColumnDefinition Width="6" />
+        <!-- About 400 px at 1400 px; shrinks with the window so the editor keeps its room -->
+        <ColumnDefinition Width="2*" MinWidth="240" MaxWidth="440" />
+      </Grid.ColumnDefinitions>
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="14" Margin="0,4,8,8">
 
           <!-- Columns -->
           <StackPanel Spacing="4">
             <TextBlock Classes="section" Text="{Binding ModeText}" />
-            <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding IsAltering}"
+            <TextBlock Classes="hint" TextWrapping="Wrap" MaxWidth="780" HorizontalAlignment="Left" IsVisible="{Binding IsAltering}"
                        Text="Edit columns, keys and indexes; the script below holds only the ALTER statements for what changed. New columns are added at the end." />
             <Grid Classes="header" ColumnDefinitions="200,170,80,52,52,64,170,Auto" Margin="0,0,0,2">
               <TextBlock Grid.Column="0" Text="Name" />

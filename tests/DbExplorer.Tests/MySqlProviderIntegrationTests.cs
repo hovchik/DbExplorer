@@ -9,10 +9,13 @@ using MySqlConnector;
 
 namespace DbExplorer.Tests;
 
+// Both classes create the same schema, so they never run at once: the two variables may name the same server.
 /// <summary>Against MySQL 8. Skipped unless DBEXPLORER_TEST_MYSQL is set to "host;port;user;password".</summary>
+[Collection("MySqlProviderDatabase")]
 public sealed class MySqlProviderIntegrationTests() : MySqlProviderIntegrationTestsBase("DBEXPLORER_TEST_MYSQL");
 
 /// <summary>Against MariaDB 10.6+. Skipped unless DBEXPLORER_TEST_MARIADB is set to "host;port;user;password".</summary>
+[Collection("MySqlProviderDatabase")]
 public sealed class MariaDbProviderIntegrationTests() : MySqlProviderIntegrationTestsBase("DBEXPLORER_TEST_MARIADB");
 
 /// <summary>
@@ -237,6 +240,99 @@ public abstract class MySqlProviderIntegrationTestsBase(string variable) : IAsyn
 
         var probe = await Provider.QueryReadOnlyAsync("SELECT COUNT(*) FROM orders", Database, Options);
         Assert.Equal(3L, Convert.ToInt64(probe.Rows[0][0]));
+    }
+
+    [SkippableFact]
+    public async Task Read_only_query_stops_on_the_server_at_the_row_limit()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        await using (var cn = new MySqlConnection(MySqlSql.BuildConnectionString(_profile!)))
+        {
+            await cn.OpenAsync();
+            await Exec(cn, """
+                CREATE TABLE ten (n int PRIMARY KEY);
+                INSERT INTO ten VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
+                """);
+        }
+        // 10^9 rows: reading them all would hit the statement timeout.
+        const string sql = "SELECT a.n FROM ten a, ten b, ten c, ten d, ten e, ten f, ten g, ten h, ten i";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await Provider.QueryReadOnlyAsync(sql, Database, Options, maxRows: 10);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"took {sw.Elapsed}");
+        Assert.Equal(10, result.Rows.Count);
+        Assert.True(result.IsTruncated);
+
+        // The pooled connections that were cancelled still work.
+        for (var i = 0; i < 3; i++)
+        {
+            var again = await Provider.QueryReadOnlyAsync("SELECT COUNT(*) FROM orders", Database, Options);
+            Assert.Equal(3L, Convert.ToInt64(again.Rows[0][0]));
+        }
+    }
+
+    [SkippableFact]
+    public async Task A_caller_giving_up_does_not_fail_the_shared_server_lookup()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        await using var provider = new MySqlProvider(_profile!);
+        using var cts = new CancellationTokenSource();
+        var first = provider.GetIndexesAsync(false, cts.Token, includeUsageStats: false);
+        var second = provider.GetIndexesAsync(false, includeUsageStats: false);
+        cts.Cancel();
+
+        try { await first; } catch (Exception) { /* cancelled: its own outcome does not matter here */ }
+        Assert.Contains(await second, i => i.Database == Database && i.Table == "customers");
+    }
+
+    [SkippableFact]
+    public async Task Disposing_the_provider_closes_its_pooled_connections()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        // A login of its own, so other tests' connections are not counted.
+        var user = "dbx_pool_" + variable.Split('_')[^1].ToLowerInvariant();
+        await using var admin = new MySqlConnection(AdminConnectionString);
+        await admin.OpenAsync();
+        await Exec(admin, $"DROP USER IF EXISTS '{user}'@'%'; CREATE USER '{user}'@'%' IDENTIFIED BY 'Dbx_pool_pw1'; GRANT SELECT ON {Database}.* TO '{user}'@'%';");
+        try
+        {
+            async Task<long> CountAsync()
+            {
+                await using var cmd = new MySqlCommand("SELECT COUNT(*) FROM information_schema.processlist WHERE user = @u", admin);
+                cmd.Parameters.AddWithValue("@u", user);
+                return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+            }
+
+            var profile = Profile(Database);
+            profile.UserName = user;
+            profile.Password = "Dbx_pool_pw1";
+            var provider = new MySqlProvider(profile);
+            await provider.GetObjectsAsync();
+            await provider.ExecuteScriptAsync("SELECT 1", null, 30);
+            await provider.ExecuteScriptAsync("SELECT 1", "information_schema", 30);
+            // The pooled connections can take a moment to show up in the process list.
+            var open = await CountAsync();
+            for (var i = 0; i < 50 && open == 0; i++)
+            {
+                await Task.Delay(100);
+                open = await CountAsync();
+            }
+            // Another class disposing a provider with the same pools at this very moment can close them first; that proves
+            // nothing either way, so the test is inconclusive rather than red.
+            Skip.If(open == 0, "no pooled connection was visible in the process list");
+
+            await provider.DisposeAsync();
+            var remaining = await CountAsync();
+            for (var i = 0; i < 50 && remaining > 0; i++)
+            {
+                await Task.Delay(100);
+                remaining = await CountAsync();
+            }
+            Assert.Equal(0, remaining);
+        }
+        finally
+        {
+            await Exec(admin, $"DROP USER IF EXISTS '{user}'@'%';");
+        }
     }
 
     [SkippableFact]

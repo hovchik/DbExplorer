@@ -163,7 +163,7 @@ public static class ErDiagramBuilder
     /// <summary>Changes table flags without moving anything, keeping the edges pointing at the new instances.</summary>
     private static ErDiagram Mark(ErDiagram diagram, Func<ErTable, ErTable> change)
     {
-        var map = diagram.Tables.ToDictionary(t => t, change, ReferenceEqualityComparer.Instance);
+        var map = diagram.Tables.ToDictionary<ErTable, ErTable, ErTable>(t => t, change, ReferenceEqualityComparer.Instance);
         return diagram with
         {
             Tables = diagram.Tables.Select(t => map[t]).ToList(),

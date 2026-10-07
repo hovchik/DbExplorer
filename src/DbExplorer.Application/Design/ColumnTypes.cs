@@ -218,6 +218,21 @@ public static class ColumnTypes
         return $"Every existing value must convert from {before.FullType} to {after.FullType}; one that does not makes the change fail.";
     }
 
+    /// <summary>
+    /// True when PostgreSQL converts <paramref name="from"/> to <paramref name="to"/> by itself in ALTER COLUMN … TYPE
+    /// (an assignment or implicit cast), so no USING is needed. Without USING a value that does not fit fails the change
+    /// ("value too long"), where an explicit <c>::type</c> would silently cut it. Anything converts to text; numbers
+    /// convert among themselves; a date to a timestamp and back; a timestamp to a time.
+    /// </summary>
+    public static bool PostgresConvertsByItself(TypeFamily from, TypeFamily to)
+    {
+        if (from == to || to is TypeFamily.Text or TypeFamily.LargeText) return true;
+        var numbers = new[] { TypeFamily.Integer, TypeFamily.Decimal, TypeFamily.Float };
+        if (numbers.Contains(from) && numbers.Contains(to)) return true;
+        return from is TypeFamily.Date && to is TypeFamily.DateTime ||
+               from is TypeFamily.DateTime && to is TypeFamily.Date or TypeFamily.Time;
+    }
+
     /// <summary>Characters a text or binary type holds; int.MaxValue for max, text and a varchar without a length.</summary>
     private static int Length(ColumnDesign column)
     {

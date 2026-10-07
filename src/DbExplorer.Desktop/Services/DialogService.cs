@@ -3,6 +3,7 @@ using Avalonia.Platform.Storage;
 using DbExplorer.Application.Assistant;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Connections.Ssh;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Query;
@@ -114,23 +115,26 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     {
         var vm = new RoutineExecutionViewModel();
         var window = new RoutineExecutionWindow { DataContext = vm };
-        if (session.Profile.ReadOnly && routine.Type == DbObjectType.Procedure)
+        // SQL Server functions can't have side effects; procedures can, and so can PostgreSQL and MySQL functions.
+        var canWrite = routine.Type == DbObjectType.Procedure || session.Provider.ProviderKey != SqlDialect.SqlServerKey;
+        var what = routine.Type == DbObjectType.Procedure ? "Stored procedures" : "Functions on this engine";
+        if (session.Profile.ReadOnly && canWrite)
         {
             vm.ConfirmBeforeRun = async () =>
             {
                 var dialog = new ConfirmWindow(
-                    ReadOnlyGuard.Refusal(session.Profile, routine.FullName) + "\n\nStored procedures can modify data, so they do not run on read-only connections.",
+                    ReadOnlyGuard.Refusal(session.Profile, routine.FullName) + $"\n\n{what} can modify data, so they do not run on read-only connections.",
                     "OK");
                 await dialog.ShowDialog<bool>(window);
                 return false;
             };
         }
-        else if (session.Profile.IsProduction && routine.Type == DbObjectType.Procedure)
+        else if (session.Profile.IsProduction && canWrite)
         {
             vm.ConfirmBeforeRun = async () =>
             {
                 var dialog = new ConfirmWindow(
-                    $"Stored procedures can modify data. Run {routine.FullName} on PRODUCTION?",
+                    $"{what} can modify data. Run {routine.FullName} on PRODUCTION?",
                     "Run on production", requiredText: "PRODUCTION", banner: $"PRODUCTION · {session.Profile.DisplayName}");
                 return await dialog.ShowDialog<bool>(window);
             };

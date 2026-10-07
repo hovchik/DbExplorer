@@ -42,6 +42,8 @@ public static class ConnectionTransfer
     public const string FileExtension = "dbxconnections";
 
     private const int Iterations = 310_000;
+    private const int MinIterations = 1_000;
+    private const int MaxIterations = 10_000_000;
     private const int SaltSize = 16;
     private const int NonceSize = 12;
     private const int TagSize = 16;
@@ -112,6 +114,10 @@ public static class ConnectionTransfer
             throw new InvalidDataException("The file's passwords are encrypted in a way this version of DB Explorer does not know.");
         if (document.Passwords is { } q && (q.Iterations <= 0 || string.IsNullOrEmpty(q.Salt) || string.IsNullOrEmpty(q.Check)))
             throw new InvalidDataException("The file's password section is damaged.");
+        // The file chooses the work factor: an absurd one would hang the import (or be too weak to trust).
+        if (document.Passwords is { } r && r.Iterations is < MinIterations or > MaxIterations)
+            throw new InvalidDataException(
+                $"The file's passwords use {r.Iterations:N0} key iterations; DB Explorer accepts {MinIterations:N0} to {MaxIterations:N0}.");
 
         return new ConnectionExportFile(document);
     }

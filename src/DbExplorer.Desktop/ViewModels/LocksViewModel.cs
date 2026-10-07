@@ -31,7 +31,12 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private IReadOnlyList<DbLock> _locks = [];
     [ObservableProperty] private DbLock? _selectedLock;
     [ObservableProperty] private bool _showTree;
-    [ObservableProperty] private IReadOnlyList<BlockingNode> _blockingTree = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBlockingTree))]
+    private IReadOnlyList<BlockingNode> _blockingTree = [];
+
+    /// <summary>For the view: the tree is often an array, which has no Count for a binding to read.</summary>
+    public bool HasBlockingTree => BlockingTree.Count > 0;
     [ObservableProperty] private BlockingNode? _selectedNode;
     [ObservableProperty] private string? _selectedSql;
 
@@ -142,6 +147,8 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
     {
         _session = session;
         AutoRefresh = false;
+        // A refresh of the previous session may still be running; its result is dropped and must not block this one.
+        _refreshing = false;
         _all = [];
         Locks = [];
         BlockingTree = [];
@@ -162,25 +169,28 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
 
     private bool CanRefresh => _session is not null;
 
-    [RelayCommand(CanExecute = nameof(CanRefresh))]
+    [RelayCommand(CanExecute = nameof(CanRefresh), AllowConcurrentExecutions = true)]
     private async Task RefreshAsync()
     {
-        if (_session is null || _refreshing) return;
+        if (_session is not { } session || _refreshing) return;
         _refreshing = true;
         try
         {
-            _all = await _session.Provider.GetLocksAsync();
+            var all = await session.Provider.GetLocksAsync();
+            if (!ReferenceEquals(session, _session)) return;
+            _all = all;
             ApplyFilter();
             Record(_all);
         }
         catch (Exception ex)
         {
+            if (!ReferenceEquals(session, _session)) return;
             Status = "Error: " + ex.Message;
             AutoRefresh = false;
         }
         finally
         {
-            _refreshing = false;
+            if (ReferenceEquals(session, _session)) _refreshing = false;
         }
     }
 

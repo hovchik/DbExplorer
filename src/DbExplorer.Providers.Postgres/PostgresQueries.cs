@@ -96,20 +96,31 @@ internal static class PostgresQueries
     public static readonly string ModuleDefinition =
         $"""SELECT m."Definition" FROM ({Modules}) m WHERE m."Schema" = @schema AND m."Name" = @name;""";
 
+    /// <summary>
+    /// The parameters of one routine. An overloaded name has several routines: the first one (lowest oid) is described,
+    /// so its parameters are never mixed with another overload's. Types come from format_type, so they can be cast to;
+    /// unnamed parameters are called $1, $2… after their position; a VARIADIC one carries the word in its type.
+    /// </summary>
     public const string RoutineParameters = """
-        SELECT r.routine_schema AS "Schema",
-               r.routine_name AS "RoutineName",
-               COALESCE(p.parameter_name, '') AS "Name",
-               p.data_type AS "DataType",
-               CASE p.parameter_mode
-                   WHEN 'IN' THEN 0 WHEN 'INOUT' THEN 1 WHEN 'OUT' THEN 2 ELSE 0 END AS "Direction",
-               (p.parameter_default IS NOT NULL) AS "HasDefault",
-               p.ordinal_position AS "Ordinal"
-        FROM information_schema.routines r
-        JOIN information_schema.parameters p
-            ON p.specific_schema = r.specific_schema AND p.specific_name = r.specific_name
-        WHERE r.routine_schema = @schema AND r.routine_name = @name
-        ORDER BY p.ordinal_position;
+        SELECT a."Schema", a."RoutineName", a."Name", a."DataType", a."Direction",
+               (a."Direction" <> 2 AND count(*) FILTER (WHERE a."Direction" <> 2) OVER (ORDER BY a."Ordinal" DESC) <= a.defaults)
+                   AS "HasDefault",
+               a."Ordinal"
+        FROM (
+            SELECT n.nspname AS "Schema",
+                   p.proname AS "RoutineName",
+                   COALESCE(NULLIF(p.proargnames[u.i], ''), '$' || u.i) AS "Name",
+                   CASE WHEN p.proargmodes[u.i] = 'v' THEN 'VARIADIC ' ELSE '' END || format_type(u.t, NULL) AS "DataType",
+                   CASE p.proargmodes[u.i] WHEN 'b' THEN 1 WHEN 'o' THEN 2 WHEN 't' THEN 2 ELSE 0 END AS "Direction",
+                   p.pronargdefaults AS defaults,
+                   u.i::int AS "Ordinal"
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            CROSS JOIN LATERAL unnest(COALESCE(p.proallargtypes, p.proargtypes::oid[])) WITH ORDINALITY u(t, i)
+            WHERE p.oid = (SELECT p2.oid FROM pg_proc p2 JOIN pg_namespace n2 ON n2.oid = p2.pronamespace
+                           WHERE n2.nspname = @schema AND p2.proname = @name ORDER BY p2.oid LIMIT 1)
+        ) a
+        ORDER BY a."Ordinal";
         """;
 
     // Generated columns keep their expression in pg_attrdef too; those are not defaults.
@@ -144,6 +155,8 @@ internal static class PostgresQueries
                am.amname::text AS "Type",
                i.indisunique AS "IsUnique",
                i.indisprimary AS "IsPrimaryKey",
+               EXISTS (SELECT 1 FROM pg_constraint con
+                        WHERE con.conindid = i.indexrelid AND con.contype IN ('u', 'p', 'x')) AS "IsConstraint",
                NOT i.indisvalid AS "IsDisabled",
                (SELECT string_agg(pg_get_indexdef(i.indexrelid, k, true), ', ' ORDER BY k)
                   FROM generate_series(1, i.indnkeyatts::int) AS k) AS "Columns",

@@ -59,7 +59,7 @@ public static class TableDesignLoader
                 keptIndexes.Add(index.Name);
                 continue;
             }
-            indexes.Add(new IndexDesign { Name = index.Name, Columns = parts.Select(p => names.First(n => TableDesign.Same(n, p))).ToList(), IsUnique = index.IsUnique });
+            indexes.Add(new IndexDesign { Name = index.Name, Columns = parts.Select(p => names.First(n => TableDesign.Same(n, p))).ToList(), IsUnique = index.IsUnique, IsConstraint = index.IsConstraint });
         }
 
         var design = new TableDesign

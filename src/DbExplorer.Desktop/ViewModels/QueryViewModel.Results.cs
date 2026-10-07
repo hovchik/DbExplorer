@@ -29,14 +29,20 @@ public partial class QueryViewModel
         }
     }
 
-    private ResultSetView WithSource(ResultSetView view, ResultSource? source) =>
-        source is null ? view : view with { Source = source, CommitEdits = CommitEditsAsync, OpenReference = OpenReference };
+    /// <param name="session">The connection the rows were read from: edits are saved there or not at all.</param>
+    private ResultSetView WithSource(DatabaseSession session, ResultSetView view, ResultSource? source) =>
+        source is null ? view : view with
+        {
+            Source = source,
+            CommitEdits = (v, rows) => CommitEditsAsync(session, v, rows),
+            OpenReference = OpenReference
+        };
 
-    private async Task<string> CommitEditsAsync(ResultSetView view, IReadOnlyList<ResultRow> rows)
+    private async Task<string> CommitEditsAsync(DatabaseSession session, ResultSetView view, IReadOnlyList<ResultRow> rows)
     {
-        if (_session is not { } session || view.Source is not { } source)
-            throw new InvalidOperationException("The tab is no longer connected.");
-        if (IsRunning) throw new InvalidOperationException("Wait for the running statement to finish.");
+        if (!ReferenceEquals(session, _session) || view.Source is not { } source)
+            throw new InvalidOperationException("The tab is no longer connected to the connection these rows were read from.");
+        if (IsRunning || _executing) throw new InvalidOperationException("Wait for the running statement to finish.");
 
         IsRunning = true;
         try

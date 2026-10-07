@@ -61,6 +61,16 @@ public class SqlAssistantTests : IDisposable
         Assert.DoesNotContain("Customers", schema);
     }
 
+    [Fact]
+    public void Schema_that_fits_is_the_same_whichever_tables_the_question_names()
+    {
+        var plain = SchemaContextBuilder.Build(TestSnapshots.Shop(), database: null, focusText: null);
+
+        Assert.Equal(plain, SchemaContextBuilder.Build(TestSnapshots.Shop(), database: null, focusText: "count the products"));
+        Assert.Equal(plain, SchemaContextBuilder.Build(TestSnapshots.Shop(), database: null, focusText: "SELECT * FROM dbo.Customers"));
+        Assert.DoesNotContain("more objects not listed", plain);
+    }
+
     // ----- Prompts and answers -----
 
     [Fact]
@@ -90,11 +100,11 @@ public class SqlAssistantTests : IDisposable
 
         await assistant.ExplainAsync(context, "SELECT * FROM dbo.Audit", CancellationToken.None);
         var explain = model.System;
-        await assistant.FixAsync(context, "SELECT * FROM dbo.Audit", "boom", CancellationToken.None);
+        await assistant.FixAsync(context, "SELECT * FROM dbo.Customers", "boom", CancellationToken.None);
 
         Assert.Contains("PostgreSQL", explain);
         Assert.Contains("boom", model.Question);
-        // Ordering by mentioned names is the same here (both mention Audit), so the prompt is byte-identical.
+        // The whole schema fits, so naming other tables does not reorder it: the prompt is byte-identical.
         Assert.Equal(explain, model.System);
     }
 

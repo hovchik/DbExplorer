@@ -41,12 +41,15 @@ public sealed class MySqlProvider : IDatabaseProvider
     /// <summary>What the server is: MariaDB reports "10.11.6-MariaDB-…" as its version.</summary>
     internal sealed record ServerInfo(bool MariaDb, Version Version);
 
+    /// <summary>Read once and kept; a failed read is tried again. The shared read runs without any caller's token (one
+    /// caller giving up must not fail the others); each caller stops waiting on its own token.</summary>
     internal Task<ServerInfo> GetServerAsync(CancellationToken ct)
     {
         lock (_serverLock)
         {
-            if (_server is { IsFaulted: false, IsCanceled: false } known) return known;
-            return _server = ReadServerAsync(ct);
+            if (_server is not { IsFaulted: false, IsCanceled: false })
+                _server = ReadServerAsync(CancellationToken.None);
+            return _server.WaitAsync(ct);
         }
     }
 
@@ -349,7 +352,19 @@ public sealed class MySqlProvider : IDatabaseProvider
         _ => Convert.ToString(value, CultureInfo.InvariantCulture)
     };
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    /// <summary>
+    /// Closes the idle pooled connections this provider opened (one pool per connection string): they would otherwise
+    /// outlive the session, and an SSH tunnel closed after the provider would leave them pointing at nothing. Connections
+    /// still in use are dropped when they return to the pool.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var connectionString in _connectionStrings.Values)
+        {
+            await using var cn = new MySqlConnection(connectionString);
+            await MySqlConnection.ClearPoolAsync(cn);
+        }
+    }
 
     public async Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
     {
@@ -620,9 +635,48 @@ public sealed class MySqlProvider : IDatabaseProvider
     {
         await using var scope = await OpenReadOnlyAsync(database, options, ct);
         await using var cmd = new MySqlCommand(sql, scope.Connection, scope.Transaction) { CommandTimeout = options.QueryTimeoutSeconds + 5 };
-        var resultSets = new List<QueryResultSet>();
-        await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
-        return resultSets.FirstOrDefault() ?? new QueryResultSet();
+        var reader = await cmd.ExecuteReaderAsync(ct);
+        QueryResultSet? result = null;
+        try
+        {
+            result = await ReadFirstResultSetAsync(reader, maxRows, ct);
+            // Closing the reader would otherwise read (and drop) every remaining row: cancel the rest on the server.
+            if (result.IsTruncated) cmd.Cancel();
+        }
+        finally
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch (MySqlException ex) when (result is { IsTruncated: true } && ex.ErrorCode == MySqlErrorCode.QueryInterrupted)
+            {
+                // The cancellation just sent (KILL QUERY); the connection stays usable.
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The first result set with at most <paramref name="maxRows"/> rows; stops reading there.</summary>
+    private static async Task<QueryResultSet> ReadFirstResultSetAsync(MySqlDataReader reader, int maxRows, CancellationToken ct)
+    {
+        while (reader.FieldCount == 0 && await reader.NextResultAsync(ct)) { }
+        if (reader.FieldCount == 0) return new QueryResultSet();
+        var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+        var rows = new List<IReadOnlyList<object?>>();
+        var truncated = false;
+        while (await reader.ReadAsync(ct))
+        {
+            if (rows.Count >= maxRows) { truncated = true; break; }
+            var row = new object?[reader.FieldCount];
+            for (var i = 0; i < row.Length; i++) row[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            rows.Add(row);
+        }
+        return new QueryResultSet
+        {
+            Columns = columns, Rows = rows, IsTruncated = truncated,
+            TotalRowCount = rows.Count + (truncated ? 1 : 0), TotalRowCountIsExact = !truncated
+        };
     }
 
     public async Task<IReadOnlyList<TableChangeCounter>> GetTableChangeCountersAsync(string? database, CancellationToken ct = default)

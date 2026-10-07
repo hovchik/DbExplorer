@@ -168,17 +168,100 @@ public sealed class TeamSyncTests : IDisposable
         mine.Password = "bobs own";        // typed on first connect: not an edit
         mine.SavePassword = true;
 
-        shop.Host = "db2.local";
+        shop.Database = "app2";
         alice.ShareConnection(shop, includePasswords: false);
         Assert.Equal(TeamItemStatus.Updated, Item(bob, "Shop").Status);
         var second = bob.PullConnections([Item(bob, "Shop")], [mine]);
 
         var updated = Assert.Single(second.Profiles);
         Assert.Equal(["Shop"], second.Updated);
-        Assert.Equal("db2.local", updated.Host);
+        Assert.Equal("app2", updated.Database);
         Assert.Equal("bobs own", updated.Password);
         Assert.True(updated.SavePassword);
         Assert.Equal(0, bob.Scan().ChangedCount);
+    }
+
+    [Theory]
+    [InlineData("host")]
+    [InlineData("port")]
+    [InlineData("user")]
+    [InlineData("ssh host")]
+    [InlineData("ssh user")]
+    public void Shared_update_pointing_elsewhere_drops_the_local_passwords(string change)
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        var shop = Profile("Shop");
+        shop.Ssh.Enabled = true;
+        shop.Ssh.Host = "bastion.local";
+        shop.Ssh.UserName = "tunnel";
+        alice.ShareConnection(shop, includePasswords: false);
+        var mine = Assert.Single(bob.PullConnections([Item(bob, "Shop")], []).Profiles);
+        mine.Password = "bobs own";
+        mine.SavePassword = true;
+        mine.Ssh.Password = "ssh secret";
+        mine.Ssh.Passphrase = "key secret";
+
+        switch (change)
+        {
+            case "host": shop.Host = "evil.example"; break;
+            case "port": shop.Port = 15432; break;
+            case "user": shop.UserName = "someone"; break;
+            case "ssh host": shop.Ssh.Host = "evil.example"; break;
+            case "ssh user": shop.Ssh.UserName = "someone"; break;
+        }
+        alice.ShareConnection(shop, includePasswords: false);
+        var updated = Assert.Single(bob.PullConnections([Item(bob, "Shop")], [mine]).Profiles);
+
+        Assert.Null(updated.Password);
+        Assert.Null(updated.Ssh.Password);
+        Assert.Null(updated.Ssh.Passphrase);
+    }
+
+    [Fact]
+    public void Shared_update_to_the_same_server_keeps_the_local_ssh_passwords()
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        var shop = Profile("Shop");
+        shop.Ssh.Enabled = true;
+        shop.Ssh.Host = "bastion.local";
+        shop.Ssh.UserName = "tunnel";
+        alice.ShareConnection(shop, includePasswords: false);
+        var mine = Assert.Single(bob.PullConnections([Item(bob, "Shop")], []).Profiles);
+        mine.Password = "bobs own";
+        mine.Ssh.Password = "ssh secret";
+
+        shop.Database = "other";
+        alice.ShareConnection(shop, includePasswords: false);
+        var updated = Assert.Single(bob.PullConnections([Item(bob, "Shop")], [mine]).Profiles);
+
+        Assert.Equal("other", updated.Database);
+        Assert.Equal("bobs own", updated.Password);
+        Assert.Equal("ssh secret", updated.Ssh.Password);
+    }
+
+    [Fact]
+    public void A_file_that_cannot_be_read_is_skipped_and_stays_new()
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        alice.ShareConnection(Profile("Archive"), includePasswords: false);
+        alice.ShareConnection(Profile("Shop"), includePasswords: false);
+        var archive = Path.Combine(TeamRoot, "connections", "Archive.dbxconnections");
+        var good = File.ReadAllText(archive);
+        File.WriteAllText(archive, "{ not json");
+
+        var result = bob.PullConnections(bob.Scan().Items, []);
+
+        Assert.Equal(["Shop"], result.Added);
+        Assert.Equal("Shop", Assert.Single(result.Profiles).Name);
+        Assert.StartsWith("Archive", Assert.Single(result.Failed));
+        Assert.Equal(TeamItemStatus.New, Item(bob, "Archive").Status);
+        Assert.Equal(TeamItemStatus.Seen, Item(bob, "Shop").Status);
+
+        File.WriteAllText(archive, good);      // the sync tool caught up
+        Assert.Contains("Archive", bob.PullConnections([Item(bob, "Archive")], result.Profiles).Added);
     }
 
     [Fact]
@@ -383,7 +466,7 @@ public sealed class TeamSyncTests : IDisposable
     private sealed class ReversibleProtector : ISecretProtector
     {
         public bool IsSupported => true;
-        public string Protect(string plainText) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(plainText).Reverse().ToArray());
-        public string? Unprotect(string protectedText) => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(protectedText).Reverse().ToArray());
+        public string Protect(string plainText) => Convert.ToBase64String(Enumerable.Reverse(System.Text.Encoding.UTF8.GetBytes(plainText)).ToArray());
+        public string? Unprotect(string protectedText) => System.Text.Encoding.UTF8.GetString(Enumerable.Reverse(Convert.FromBase64String(protectedText)).ToArray());
     }
 }

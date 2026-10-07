@@ -339,6 +339,35 @@ public class DryRunTests
         Assert.Equal("SELECT * FROM [sales].[OrderLines] WHERE ([OrderId] = 1 AND [LineNo] = 2) OR ([OrderId] = 1 AND [LineNo] = 3)",
             DryRunService.AfterSelect(SqlDialect.SqlServer, table, ["OrderId", "LineNo"], before));
     }
+
+    [Fact]
+    public void After_select_writes_a_key_in_its_column_type()
+    {
+        var table = new DbObject { Schema = "dbo", Name = "Log", Type = DbObjectType.Table };
+        var before = new QueryResultSet { Columns = ["At"], Rows = [[new DateTime(2025, 3, 4, 10, 11, 12, 997)]] };
+        Assert.Equal("SELECT * FROM [dbo].[Log] WHERE ([At] = '2025-03-04T10:11:12.997')",
+            DryRunService.AfterSelect(SqlDialect.SqlServer, table, ["At"], before, ["datetime"]));
+    }
+
+    [Theory]
+    [InlineData("BEGIN; UPDATE t SET a = 1; COMMIT;", "BEGIN")]
+    [InlineData("UPDATE t SET a = 1;\nCOMMIT", "COMMIT")]
+    [InlineData("UPDATE t SET a = 1\nGO\nROLLBACK TRANSACTION", "ROLLBACK TRANSACTION")]
+    [InlineData("START TRANSACTION; DELETE FROM t", "START TRANSACTION")]
+    public void Refuses_scripts_with_transaction_statements(string script, string keyword)
+    {
+        var refused = DryRunService.RefuseTransactionControl(DryRunService.SplitScript(script));
+        Assert.NotNull(refused);
+        Assert.Contains($"can't include {keyword} ", refused.Error);
+        Assert.Contains("rolls back", refused.Error);
+    }
+
+    [Theory]
+    [InlineData("UPDATE t SET a = 1; DELETE FROM t WHERE note = 'commit'")]
+    [InlineData("IF 1 = 1\nBEGIN\n  UPDATE t SET a = 1\nEND")]
+    [InlineData("SAVEPOINT a; UPDATE t SET a = 1")]
+    public void Runs_scripts_without_transaction_statements(string script) =>
+        Assert.Null(DryRunService.RefuseTransactionControl(DryRunService.SplitScript(script)));
 }
 
 public class WhyNotTests

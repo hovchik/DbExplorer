@@ -19,8 +19,7 @@ public sealed class PostgresProviderFactory : IDatabaseProviderFactory
 
     public async Task<IReadOnlyList<string>> ListDatabasesAsync(ConnectionProfile profile, CancellationToken ct = default)
     {
-        var db = string.IsNullOrWhiteSpace(profile.Database) ? "postgres" : profile.Database;
-        await using var cn = new NpgsqlConnection(PostgresSql.BuildConnectionString(profile, db));
+        await using var cn = new NpgsqlConnection(PostgresSql.BuildConnectionString(profile));
         await cn.OpenAsync(ct);
         var rows = await cn.QueryAsync<string>(new CommandDefinition(
             PostgresQueries.Databases, commandTimeout: 30, cancellationToken: ct));

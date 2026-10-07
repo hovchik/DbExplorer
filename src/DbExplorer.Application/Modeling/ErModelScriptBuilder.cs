@@ -43,10 +43,37 @@ public static class ErModelScriptBuilder
 {
     public const string NothingToDo = "-- The database already matches the model. Nothing to run.\n";
 
+    /// <summary>
+    /// The model aimed at another database. Where the schema is the database (MySQL), a table read from <c>prod</c> keeps
+    /// <c>prod</c> as its schema, so a script for <c>staging</c> would create and change tables in <c>prod</c>: the
+    /// model's own database (and an empty schema) is replaced by <paramref name="database"/> in every table, baseline
+    /// and foreign key. Other schemas, and every other engine, are left as they are.
+    /// </summary>
+    public static ErModel ForDatabase(ErModel model, string providerKey, string? database)
+    {
+        if (!SqlDialect.SchemaIsDatabase(providerKey) || string.IsNullOrEmpty(database) || TableDesign.Same(model.Database, database))
+            return model;
+        var source = model.Database;
+        string Map(string schema) => string.IsNullOrWhiteSpace(schema) || TableDesign.Same(schema.Trim(), source) ? database : schema;
+        TableDesign Retarget(TableDesign design) => design with
+        {
+            Database = database,
+            Schema = Map(design.Schema),
+            ForeignKeys = design.ForeignKeys.Select(f => f with { ReferencedSchema = Map(f.ReferencedSchema) }).ToList()
+        };
+        return model with
+        {
+            Database = database,
+            Tables = model.Tables.Select(t => t with { Design = Retarget(t.Design), Baseline = t.Baseline is null ? null : Retarget(t.Baseline) }).ToList()
+        };
+    }
+
     /// <summary>The model tables that exist in <paramref name="target"/>: their current definition (with column defaults,
     /// read from the server) is what the ALTER script starts from.</summary>
-    public static IReadOnlyDictionary<string, DbObject> Matches(ErModel model, MetadataSnapshot target, string providerKey)
+    /// <param name="targetDatabase">The database the script is for; see <see cref="ForDatabase"/>.</param>
+    public static IReadOnlyDictionary<string, DbObject> Matches(ErModel model, MetadataSnapshot target, string providerKey, string? targetDatabase = null)
     {
+        model = ForDatabase(model, providerKey, targetDatabase);
         var result = new Dictionary<string, DbObject>();
         DbObject? Find(string schema, string name) => target.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table &&
             TableDesign.Same(o.Schema, schema) && TableDesign.Same(o.Name, name.Trim()));
@@ -62,9 +89,12 @@ public static class ErModelScriptBuilder
 
     /// <param name="target">The catalog of the database the script is for.</param>
     /// <param name="constraints">Column defaults of the <see cref="Matches"/> tables; missing ones count as none.</param>
+    /// <param name="targetDatabase">The database the script is for; see <see cref="ForDatabase"/>.</param>
     public static ModelScript Build(
-        ErModel model, MetadataSnapshot target, string providerKey, IReadOnlyDictionary<DbObject, DbTableConstraints>? constraints = null)
+        ErModel model, MetadataSnapshot target, string providerKey, IReadOnlyDictionary<DbObject, DbTableConstraints>? constraints = null,
+        string? targetDatabase = null)
     {
+        model = ForDatabase(model, providerKey, targetDatabase);
         var d = SqlDialect.For(providerKey);
         var matches = Matches(model, target, providerKey);
         var errors = new List<string>();
@@ -123,14 +153,14 @@ public static class ErModelScriptBuilder
             var design = plan.Table.Design;
             var newTable = d.Table(TableScriptBuilder.SchemaOf(design, providerKey), TableScriptBuilder.NameOf(design));
             var oldTable = d.Table(TableScriptBuilder.SchemaOf(original, providerKey), original.Name.Trim());
-            var drops = original.ForeignKeys.ToDictionary(f => $"ALTER TABLE {newTable} DROP CONSTRAINT {d.Quote(f.Name)};", f => f.Name);
+            var drops = original.ForeignKeys.ToDictionary(f => TableAlterScriptBuilder.DropForeignKey(providerKey, newTable, f.Name), f => f.Name);
 
             var steps = new List<string>();
             foreach (var step in TableAlterScriptBuilder.Steps(original, design, providerKey))
             {
                 // Moved out: keys go before any table changes (a key blocks changing the column it references), and are
                 // added after all of them (the column or table a key references may be added further down).
-                if (drops.TryGetValue(step, out var name)) dropKeys.Add($"ALTER TABLE {oldTable} DROP CONSTRAINT {d.Quote(name)};");
+                if (drops.TryGetValue(step, out var name)) dropKeys.Add(TableAlterScriptBuilder.DropForeignKey(providerKey, oldTable, name));
                 else if (step.StartsWith("ALTER TABLE ", StringComparison.Ordinal) && step.Contains(" ADD CONSTRAINT ", StringComparison.Ordinal) &&
                          step.Contains(" FOREIGN KEY (", StringComparison.Ordinal)) addKeys.Add(step);
                 else steps.Add(step);

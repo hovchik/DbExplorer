@@ -39,6 +39,10 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     private string? _editKey;
     private bool _loadingEditor;
     private CancellationTokenSource? _autosave;
+    private readonly object _autosaveGate = new();
+
+    /// <summary>The model text the pending autosave will write; null once it is on disk.</summary>
+    private string? _unsaved;
 
     [ObservableProperty] private ErModel _model;
     [ObservableProperty] private ErDiagram _diagram = ErDiagram.Empty;
@@ -184,9 +188,12 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     private async Task LoadSchemasAsync()
     {
         if (_session is not { } session) return;
+        var database = SourceDatabase;
         try
         {
-            var snapshot = await SnapshotOf(session, SourceDatabase);
+            var snapshot = await SnapshotOf(session, database);
+            // Another database picked (or another session) meanwhile: its own load fills the list.
+            if (!ReferenceEquals(session, _session) || !string.Equals(database, SourceDatabase, StringComparison.Ordinal)) return;
             var schemas = snapshot.Objects.Where(o => o.Type == DbObjectType.Table).Select(o => o.Schema)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
             Schemas = [AllSchemas, .. schemas];
@@ -194,7 +201,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         catch (Exception ex)
         {
-            Status = $"Could not read the tables of {SourceDatabase}: {ex.Message}";
+            if (ReferenceEquals(session, _session) && string.Equals(database, SourceDatabase, StringComparison.Ordinal))
+                Status = $"Could not read the tables of {database}: {ex.Message}";
         }
     }
 
@@ -345,14 +353,13 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         _autosave?.Cancel();
         var cts = _autosave = new CancellationTokenSource();
         var text = ErModelFile.Write(Model);
+        lock (_autosaveGate) _unsaved = text;
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(800, cts.Token);
-                var temp = _autosavePath + ".tmp";
-                await File.WriteAllTextAsync(temp, text, cts.Token);
-                File.Move(temp, _autosavePath, overwrite: true);
+                WriteAutosave(text);
             }
             catch (OperationCanceledException)
             {
@@ -362,6 +369,36 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
                 ErrorLog.Write("er model autosave", ex);
             }
         });
+    }
+
+    /// <summary>Writes the pending autosave now instead of after the delay (the app is closing).</summary>
+    public void FlushAutosave()
+    {
+        _autosave?.Cancel();
+        string? text;
+        lock (_autosaveGate) text = _unsaved;
+        if (text is null) return;
+        try
+        {
+            WriteAutosave(text);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("er model autosave", ex);
+        }
+    }
+
+    /// <summary>Writes <paramref name="text"/> unless a newer model was scheduled since or it is already written.</summary>
+    private void WriteAutosave(string text)
+    {
+        lock (_autosaveGate)
+        {
+            if (!ReferenceEquals(text, _unsaved)) return;
+            var temp = _autosavePath + ".tmp";
+            File.WriteAllText(temp, text);
+            File.Move(temp, _autosavePath, overwrite: true);
+            _unsaved = null;
+        }
     }
 
     // ----- Model commands -----
@@ -818,11 +855,11 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
             Status = $"Comparing the model with {database}…";
             var snapshot = await SnapshotOf(session, database);
             var provider = session.Provider.ProviderKey;
-            var matches = ErModelScriptBuilder.Matches(Model, snapshot, provider);
+            var matches = ErModelScriptBuilder.Matches(Model, snapshot, provider, database);
             var constraints = await ReadConstraintsAsync(session, matches.Values.ToList(), "Reading the current tables");
             if (!ReferenceEquals(session, _session)) return;
             var model = Model;
-            var result = await Task.Run(() => ErModelScriptBuilder.Build(model, snapshot, provider, constraints));
+            var result = await Task.Run(() => ErModelScriptBuilder.Build(model, snapshot, provider, constraints, database));
             _generated = result;
             _generatedFor = database;
             Script = result.Script;
@@ -874,7 +911,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     partial void OnIsBusyChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
 
     /// <summary>Shows the exact script, asks (typing PRODUCTION on a production connection), runs it in one transaction
-    /// so a failure leaves nothing behind, then reads the changed tables back into the model.</summary>
+    /// so a failure leaves nothing behind (MySQL keeps the statements before a failure), then reads the changed tables
+    /// back into the model.</summary>
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task RunAsync()
     {
@@ -887,8 +925,12 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         var production = session.Profile.IsProduction;
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
+        // MySQL commits each DDL statement on its own, so a failure part way leaves the earlier steps applied.
+        var mySql = session.Provider.ProviderKey == SqlDialect.MySqlKey;
         var ok = await _dialogs.ConfirmAsync(
-            $"Change {where}? {generated.Summary} This runs the script below in one transaction.",
+            $"Change {where}? {generated.Summary} " + (mySql
+                ? "This runs the script below. MySQL applies each statement as it goes, so if one fails the steps before it stay."
+                : "This runs the script below in one transaction."),
             "Run script", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, generated.Script);
         if (!ok) return;
@@ -903,8 +945,26 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         catch (Exception ex)
         {
-            IsBusy = false;
-            Status = "The server did not run the script, nothing was changed: " + ex.Message;
+            if (!mySql)
+            {
+                IsBusy = false;
+                Status = "The server did not run the script, nothing was changed: " + ex.Message;
+                return;
+            }
+            Status = "The script stopped at an error; the statements before it were applied. Reading the catalog again…";
+            try
+            {
+                await _sessions.RefreshDatabaseSnapshotAsync(session, database);
+            }
+            catch (Exception refresh)
+            {
+                ErrorLog.Write("er model refresh", refresh);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+            Status = $"The script stopped at an error on {where}; MySQL kept the statements before it (metadata refreshed): " + ex.Message;
             return;
         }
 
@@ -918,7 +978,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
                     Same(o.Schema, t.Table.Schema(session.Provider.ProviderKey)) && Same(o.Name, t.Table.Name))))
                 .Where(t => t.Object is not null).ToList();
             var constraints = await ReadConstraintsAsync(session, found.Select(f => f.Object!).ToList(), "Reading the changed tables");
-            var model = Model;
+            // The tables the script did not touch move to the target database with the model.
+            var model = ErModelScriptBuilder.ForDatabase(Model, session.Provider.ProviderKey, database);
             foreach (var (id, obj) in found)
                 model = ErModelReader.Rebase(model, id, ErModelReader.Table(obj!, snapshot, session.Provider.ProviderKey, database ?? "", constraints));
             SetModel(model with { Database = database ?? model.Database }, undoable: false);

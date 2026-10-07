@@ -13,11 +13,12 @@ namespace DbExplorer.Application.Metadata;
 /// </summary>
 public sealed class MetadataCache(AppPaths paths)
 {
-    private const string SchemaVersion = "5";
+    private const string SchemaVersion = "6";
 
     /// <summary>Older formats still read (missing details default), so an app update does not force a slow full
-    /// catalog read on the next connect; such snapshots are flagged <see cref="MetadataSnapshot.IsStale"/>.</summary>
-    private const string PreviousSchemaVersion = "4";
+    /// catalog read on the next connect; such snapshots are flagged <see cref="MetadataSnapshot.IsStale"/>.
+    /// 4 has no columns.is_identity, 5 no indexes.is_constraint.</summary>
+    private static readonly string[] PreviousSchemaVersions = ["5", "4"];
 
     public static string CacheKey(ConnectionProfile p)
     {
@@ -63,7 +64,7 @@ public sealed class MetadataCache(AppPaths paths)
         {
             using var cn = Open(file);
             var version = ReadMeta(cn, "version");
-            if (version != SchemaVersion && version != PreviousSchemaVersion) return null;
+            if (version != SchemaVersion && !PreviousSchemaVersions.Contains(version)) return null;
             var stale = version != SchemaVersion;
             var refreshed = ReadMeta(cn, "refreshed_at");
             if (refreshed is null) return null;
@@ -93,7 +94,7 @@ public sealed class MetadataCache(AppPaths paths)
             using (var cmd = cn.CreateCommand())
             {
                 cmd.CommandText = "SELECT database_name, schema_name, table_name, name, data_type, base_type, is_nullable, ordinal, is_computed, is_primary_key" +
-                                  (stale ? ", 0" : ", is_identity") + " FROM columns";
+                                  (version == "4" ? ", 0" : ", is_identity") + " FROM columns";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
@@ -158,7 +159,8 @@ public sealed class MetadataCache(AppPaths paths)
             var indexes = new List<DbIndex>();
             using (var cmd = cn.CreateCommand())
             {
-                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, type, is_unique, is_primary_key, is_disabled, columns, included_columns, filter, row_count, size_bytes FROM indexes";
+                cmd.CommandText = "SELECT database_name, schema_name, table_name, name, type, is_unique, is_primary_key, is_disabled, columns, included_columns, filter, row_count, size_bytes" +
+                                  (stale ? ", 0" : ", is_constraint") + " FROM indexes";
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
                 {
@@ -176,7 +178,8 @@ public sealed class MetadataCache(AppPaths paths)
                         IncludedColumns = r.IsDBNull(9) ? null : r.GetString(9),
                         Filter = r.IsDBNull(10) ? null : r.GetString(10),
                         Rows = r.IsDBNull(11) ? null : r.GetInt64(11),
-                        SizeBytes = r.IsDBNull(12) ? null : r.GetInt64(12)
+                        SizeBytes = r.IsDBNull(12) ? null : r.GetInt64(12),
+                        IsConstraint = r.GetInt64(13) != 0
                     });
                 }
             }
@@ -220,7 +223,8 @@ public sealed class MetadataCache(AppPaths paths)
                                   is_disabled INTEGER NOT NULL);
             CREATE TABLE indexes (database_name TEXT NOT NULL, schema_name TEXT NOT NULL, table_name TEXT NOT NULL, name TEXT NOT NULL,
                                   type TEXT NOT NULL, is_unique INTEGER NOT NULL, is_primary_key INTEGER NOT NULL, is_disabled INTEGER NOT NULL,
-                                  columns TEXT, included_columns TEXT, filter TEXT, row_count INTEGER, size_bytes INTEGER);
+                                  columns TEXT, included_columns TEXT, filter TEXT, row_count INTEGER, size_bytes INTEGER,
+                                  is_constraint INTEGER NOT NULL);
             """);
 
         BulkInsert(cn, tx, "objects", 7, s.Objects, o =>
@@ -244,10 +248,10 @@ public sealed class MetadataCache(AppPaths paths)
             f.Database, f.Schema, f.Table, f.Name, f.Columns, f.ReferencedSchema, f.ReferencedTable, f.ReferencedColumns, f.IsDisabled ? 1 : 0
         ], ct);
 
-        BulkInsert(cn, tx, "indexes", 13, s.Indexes, i =>
+        BulkInsert(cn, tx, "indexes", 14, s.Indexes, i =>
         [
             i.Database, i.Schema, i.Table, i.Name, i.Type, i.IsUnique ? 1 : 0, i.IsPrimaryKey ? 1 : 0, i.IsDisabled ? 1 : 0,
-            i.Columns, i.IncludedColumns, i.Filter, i.Rows, i.SizeBytes
+            i.Columns, i.IncludedColumns, i.Filter, i.Rows, i.SizeBytes, i.IsConstraint ? 1 : 0
         ], ct);
 
         BulkInsert(cn, tx, "meta", 2, new[]

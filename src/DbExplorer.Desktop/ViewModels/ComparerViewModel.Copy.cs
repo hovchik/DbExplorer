@@ -472,7 +472,7 @@ public partial class ComparerViewModel
         }
         catch (OperationCanceledException)
         {
-            CopyStatus = "Cancelled. A single-transaction run is rolled back; step by step, the steps before the cancel stay applied.";
+            CopyStatus = "Cancelled. A single-transaction run is rolled back (on MySQL, schema changes stay); step by step, the steps before the cancel stay applied.";
         }
         catch (Exception ex)
         {
@@ -507,7 +507,10 @@ public partial class ComparerViewModel
         var a = plan.Analysis;
         var where = string.Join(" · ", new[] { right.Profile.DisplayName, a.TargetDatabase, a.TargetFullName }.Where(s => !string.IsNullOrEmpty(s)));
         var message = $"{ObjectCopyService.Humanize(plan.Action)}: {a.Source.FullName} → {where}\n\n{plan.Summary}" +
-                      (plan.Options.SingleTransaction ? "\n\nRuns in one transaction: all or nothing." : "\n\nRuns step by step without a transaction.");
+                      (!plan.Options.SingleTransaction ? "\n\nRuns step by step without a transaction."
+                          : plan.TargetProviderKey == SqlDialect.MySqlKey
+                              ? "\n\nRuns in one transaction, but MySQL commits each schema change as it goes: if a step fails, the schema steps before it stay applied."
+                              : "\n\nRuns in one transaction: all or nothing.");
 
         if (right.Profile.IsProduction)
         {

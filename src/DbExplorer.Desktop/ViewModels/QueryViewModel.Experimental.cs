@@ -203,8 +203,10 @@ public partial class QueryViewModel
                 // Mostly a half-typed statement the planner rejects; say nothing rather than flash errors while typing.
                 estimate = null;
             }
-            catch (OperationCanceledException)
+            catch (Exception)
             {
+                // Cancelled or timed out (not replaced by a newer statement): drop "estimating…" and let the next pause try again.
+                if (_costStatement == key) ClearCostLens();
                 return;
             }
             if (_costStatement != key || !ReferenceEquals(session, _session)) return;

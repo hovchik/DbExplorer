@@ -45,13 +45,20 @@ public static class PostgresSql
         $"SET LOCAL statement_timeout = {Math.Max(0, statementTimeoutMs)}; " +
         $"SET LOCAL lock_timeout = {Math.Max(0, lockTimeoutMs)};";
 
+    /// <summary>
+    /// The database a connection opens when none is named ("all databases"): without one, PostgreSQL would look for a
+    /// database named after the login, which usually does not exist.
+    /// </summary>
+    public const string DefaultDatabase = "postgres";
+
     public static string BuildConnectionString(ConnectionProfile p, string? databaseOverride = null)
     {
+        var database = string.IsNullOrWhiteSpace(databaseOverride) ? p.Database : databaseOverride;
         var b = new NpgsqlConnectionStringBuilder
         {
             Host = p.Host,
             Port = p.Port ?? 5432,
-            Database = databaseOverride ?? p.Database,
+            Database = string.IsNullOrWhiteSpace(database) ? DefaultDatabase : database,
             ApplicationName = "DbExplorer",
             Timeout = 15,
             // "Encrypt" without "Trust certificate" checks the server certificate and host name, like SQL Server does;

@@ -27,7 +27,10 @@ public static class MySqlSql
     public static string QuoteFullName(string schema, string name) =>
         string.IsNullOrEmpty(schema) ? Quote(name) : Quote(schema) + "." + Quote(name);
 
-    /// <summary>A string literal that reads the same whether or not the server treats backslashes as escapes.</summary>
+    /// <summary>
+    /// A string literal for the server's default mode, where a backslash escapes: backslashes are doubled. Under
+    /// NO_BACKSLASH_ESCAPES a value containing a backslash would read back with it doubled.
+    /// </summary>
     public static string Literal(string value) => "'" + value.Replace("\\", "\\\\").Replace("'", "''") + "'";
 
     /// <summary>Escapes LIKE wildcards for <c>ESCAPE '!'</c> (a backslash would depend on NO_BACKSLASH_ESCAPES).</summary>

@@ -48,10 +48,10 @@ public sealed class DryRunService
     {
         var started = DateTimeOffset.Now;
         var dialect = SqlDialect.For(session.Provider.ProviderKey);
-        var statements = SqlScriptTools.SplitStatements(script, splitOnBlankLines: false)
-            .Select(r => SqlAnatomy.Trim(r.Of(script)))
-            .Where(s => s.Length > 0 && !s.Equals("GO", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var statements = SplitScript(script);
+        // A COMMIT in the script would make its changes real; refuse before running anything.
+        if (RefuseTransactionControl(statements) is { } refused)
+            return new DryRunResult([refused], DateTimeOffset.Now - started);
 
         var results = new List<DryRunStatement>();
         await using var tx = await session.Provider.BeginScriptSessionAsync(database, transactional: true, ct);
@@ -70,6 +70,12 @@ public sealed class DryRunService
                 ct.ThrowIfCancellationRequested();
                 progress?.Report($"Dry run: statement {i + 1}/{statements.Count}…");
                 var result = await RunStatementAsync(probe, snapshot, statements[i], maxRows, ct);
+                // SQL Server: a COMMIT / ROLLBACK inside an IF or a block ends the dry run's transaction unseen.
+                if (dialect.ProviderKey == SqlDialect.SqlServerKey && !await InTransactionAsync(tx, timeoutSeconds, ct))
+                {
+                    results.Add(result with { Error = TransactionEndedError });
+                    break;
+                }
                 results.Add(result);
                 if (result.Error is not null) break; // the script would have stopped here too
             }
@@ -80,6 +86,41 @@ public sealed class DryRunService
         }
 
         return new DryRunResult(results, DateTimeOffset.Now - started);
+    }
+
+    /// <summary>The script's statements as the dry run runs them: trimmed, without GO lines.</summary>
+    public static IReadOnlyList<string> SplitScript(string script) =>
+        SqlScriptTools.SplitStatements(script, splitOnBlankLines: false)
+            .Select(r => SqlAnatomy.Trim(r.Of(script)))
+            .Where(s => s.Length > 0 && !s.Equals("GO", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    public const string TransactionEndedError =
+        "The dry run's transaction ended during this statement (a COMMIT or ROLLBACK inside it?), so what ran up to here may have been committed. The dry run stopped.";
+
+    /// <summary>An error for the first statement that starts, commits or rolls back a transaction; null when there is none.</summary>
+    public static DryRunStatement? RefuseTransactionControl(IReadOnlyList<string> statements)
+    {
+        foreach (var sql in statements)
+            if (SqlAnatomy.TransactionControl(sql) is { } keyword)
+                return new DryRunStatement(sql, DmlKind.Other, null, 0, [], null,
+                    $"A dry run can't include {keyword} (or any BEGIN / COMMIT / ROLLBACK): remove the transaction statements. " +
+                    "The dry run already runs everything in a transaction it rolls back. Nothing was run.");
+        return null;
+    }
+
+    /// <summary>Whether the SQL Server session still has the dry run's transaction open.</summary>
+    private static async Task<bool> InTransactionAsync(IScriptSession tx, int timeoutSeconds, CancellationToken ct)
+    {
+        try
+        {
+            var result = await tx.QueryAsync("SELECT @@TRANCOUNT;", timeoutSeconds, 1, ct);
+            return result.ResultSets.FirstOrDefault()?.Rows is [[var count, ..], ..] && Convert.ToInt32(count) > 0;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false; // the driver refuses a command on a transaction that has completed
+        }
     }
 
     private static async Task<DryRunStatement> RunStatementAsync(Probe probe, MetadataSnapshot snapshot, string sql, int maxRows, CancellationToken ct)
@@ -122,7 +163,9 @@ public sealed class DryRunService
                                 before.Columns.Select((c, i) => new ColumnChange(c, r[i], null, false)).ToList())).ToList(),
                             "no primary key: rows before the update only", null);
 
-                    var afterSql = AfterSelect(probe.Dialect, table, keys, before);
+                    var columns = snapshot.ColumnsOf(table.Database, table.Schema, table.Name);
+                    var keyTypes = keys.Select(k => columns.FirstOrDefault(c => c.Name == k)?.BaseType).ToList();
+                    var afterSql = AfterSelect(probe.Dialect, table, keys, before, keyTypes);
                     var after = afterSql is null ? null : await probe.TryQueryAsync(afterSql, maxRows, ct);
                     if (after is null)
                         return new DryRunStatement(sql, kind, tableName, affected, [], "rows after the update could not be read", null);
@@ -170,6 +213,9 @@ public sealed class DryRunService
     private static bool MySqlSafeOther(string sql)
     {
         var word = new string(sql.TrimStart().TakeWhile(char.IsLetter).ToArray());
+        // SET autocommit = 1 commits the open transaction on the spot.
+        if (word.Equals("SET", StringComparison.OrdinalIgnoreCase) && sql.Contains("autocommit", StringComparison.OrdinalIgnoreCase))
+            return false;
         return word.ToUpperInvariant() is "SET" or "SHOW" or "DESCRIBE" or "DESC" or "EXPLAIN" or "DO" or "USE" or "REPLACE" or "VALUES" or "TABLE";
     }
 
@@ -219,13 +265,16 @@ public sealed class DryRunService
         return $"{dml.Prefix}SELECT {top}{columns} FROM {from}" + (dml.Where is null ? "" : $" WHERE {dml.Where}") + limit;
     }
 
-    /// <summary>The same rows read back by primary key after the update.</summary>
-    public static string? AfterSelect(SqlDialect dialect, DbObject table, IReadOnlyList<string> keys, QueryResultSet before)
+    /// <summary>The same rows read back by primary key after the update. <paramref name="keyTypes"/> are the key columns'
+    /// base types, so a value is written in a form its column converts (a SQL Server datetime takes 3 fractional digits).</summary>
+    public static string? AfterSelect(SqlDialect dialect, DbObject table, IReadOnlyList<string> keys, QueryResultSet before,
+        IReadOnlyList<string?>? keyTypes = null)
     {
         var indexes = keys.Select(k => IndexOf(before.Columns, k)).ToList();
         if (indexes.Any(i => i < 0) || before.Rows.Count == 0) return null;
         var predicates = before.Rows.Select(r => "(" + string.Join(" AND ", keys.Select((k, j) =>
-            r[indexes[j]] is null ? $"{dialect.Quote(k)} IS NULL" : $"{dialect.Quote(k)} = {dialect.Literal(r[indexes[j]])}")) + ")");
+            r[indexes[j]] is null ? $"{dialect.Quote(k)} IS NULL"
+                : $"{dialect.Quote(k)} = {dialect.Literal(r[indexes[j]], keyTypes is not null && j < keyTypes.Count ? keyTypes[j] : null)}")) + ")");
         return $"SELECT * FROM {dialect.Table(table.Schema, table.Name)} WHERE {string.Join(" OR ", predicates)}";
     }
 

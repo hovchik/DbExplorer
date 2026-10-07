@@ -84,7 +84,9 @@ public static class TableAlterScriptBuilder
         {
             var after = edited.Indexes.FirstOrDefault(e => TableDesign.Same(e.Name.Trim(), index.Name));
             if (after is null || addIndexes.Contains(after))
-                steps.Add(sqlServer || mySql ? $"DROP INDEX {d.Quote(index.Name)} ON {table};" : $"DROP INDEX {d.Table(schema, index.Name)};");
+                // The index behind a UNIQUE constraint cannot be dropped by itself: the constraint takes it along.
+                steps.Add(index.IsConstraint && !mySql ? $"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(index.Name)};"
+                    : sqlServer || mySql ? $"DROP INDEX {d.Quote(index.Name)} ON {table};" : $"DROP INDEX {d.Table(schema, index.Name)};");
         }
 
         // ----- Primary key -----

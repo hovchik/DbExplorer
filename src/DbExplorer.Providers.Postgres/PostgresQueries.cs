@@ -144,6 +144,8 @@ internal static class PostgresQueries
                am.amname::text AS "Type",
                i.indisunique AS "IsUnique",
                i.indisprimary AS "IsPrimaryKey",
+               EXISTS (SELECT 1 FROM pg_constraint con
+                        WHERE con.conindid = i.indexrelid AND con.contype IN ('u', 'p', 'x')) AS "IsConstraint",
                NOT i.indisvalid AS "IsDisabled",
                (SELECT string_agg(pg_get_indexdef(i.indexrelid, k, true), ', ' ORDER BY k)
                   FROM generate_series(1, i.indnkeyatts::int) AS k) AS "Columns",

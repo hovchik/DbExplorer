@@ -180,6 +180,7 @@ internal static class SqlServerQueries
                    i.type_desc AS [Type],
                    i.is_unique AS [IsUnique],
                    i.is_primary_key AS [IsPrimaryKey],
+                   CAST(CASE WHEN i.is_unique_constraint = 1 OR i.is_primary_key = 1 THEN 1 ELSE 0 END AS bit) AS [IsConstraint],
                    i.is_disabled AS [IsDisabled],
                    STUFF((
                        SELECT ', ' + c.name + CASE WHEN ic.is_descending_key = 1 THEN ' DESC' ELSE '' END

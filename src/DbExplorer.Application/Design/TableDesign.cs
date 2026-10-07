@@ -81,6 +81,9 @@ public sealed record IndexDesign
     public string Name { get; init; } = "";
     public IReadOnlyList<string> Columns { get; init; } = [];
     public bool IsUnique { get; init; }
+
+    /// <summary>Read from a UNIQUE constraint (PostgreSQL, SQL Server): dropped with DROP CONSTRAINT, not DROP INDEX.</summary>
+    public bool IsConstraint { get; init; }
 }
 
 /// <summary>A table as the table designer holds it: everything the CREATE TABLE script is made from, or, next to the

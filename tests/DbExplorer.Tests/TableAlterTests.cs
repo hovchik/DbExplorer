@@ -1,3 +1,4 @@
+using DbExplorer.Application;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Design;
 using DbExplorer.Application.Metadata;
@@ -195,6 +196,67 @@ public class TableAlterTests
         var review = TableDesignAdvisor.Review(edited, DesignContext.Empty(Pg), original);
         Assert.Equal(DesignSeverity.Warning, Find(review, "alter-type:qty").Severity);
         Assert.Equal(DesignSeverity.Tip, Find(review, "alter-not-null:note").Severity);
+    }
+
+    [Theory]
+    [InlineData(Pg, "ALTER TABLE \"sales\".\"Orders\" DROP CONSTRAINT \"UQ_Orders_Date\";")]
+    [InlineData(Ss, "ALTER TABLE [sales].[Orders] DROP CONSTRAINT [UQ_Orders_Date];")]
+    [InlineData(SqlDialect.MySqlKey, "DROP INDEX `UQ_Orders_Date` ON `sales`.`Orders`;")]
+    public void A_unique_constraint_is_dropped_as_a_constraint_not_as_an_index(string provider, string expected)
+    {
+        var shop = Shop();
+        var snapshot = new MetadataSnapshot
+        {
+            Objects = shop.Objects, Columns = shop.Columns, Modules = shop.Modules, ForeignKeys = shop.ForeignKeys,
+            Indexes =
+            [
+                .. shop.Indexes,
+                new DbIndex { Schema = "sales", Table = "Orders", Name = "UQ_Orders_Date", IsUnique = true, IsConstraint = true,
+                              Type = provider == Ss ? "NONCLUSTERED" : "btree", Columns = "OrderDate" }
+            ],
+            RefreshedAt = shop.RefreshedAt
+        };
+        var original = TableDesignLoader.Load(Table("sales", "Orders"), snapshot, OrderDefaults, provider).Design;
+        Assert.True(original.Indexes.Single(i => i.Name == "UQ_Orders_Date").IsConstraint);
+
+        var dropped = original with { Indexes = original.Indexes.Where(i => i.Name != "UQ_Orders_Date").ToList() };
+        Assert.Equal([expected], TableAlterScriptBuilder.Steps(original, dropped, provider));
+
+        // Changed: dropped the same way, then created again.
+        var changed = original with
+        {
+            Indexes = original.Indexes.Select(i => i.Name == "UQ_Orders_Date" ? i with { Columns = ["OrderDate", "CustomerId"] } : i).ToList()
+        };
+        var steps = TableAlterScriptBuilder.Steps(original, changed, provider);
+        Assert.Equal(expected, steps[0]);
+        Assert.StartsWith("CREATE UNIQUE INDEX", steps[1]);
+    }
+
+    [Fact]
+    public async Task The_cached_catalog_keeps_which_indexes_belong_to_a_constraint()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dbx-cache-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cache = new MetadataCache(new AppPaths(root));
+            var shop = Shop();
+            await cache.SaveAsync("k", new MetadataSnapshot
+            {
+                Objects = shop.Objects, Columns = shop.Columns, Modules = shop.Modules, ForeignKeys = shop.ForeignKeys,
+                Indexes = [.. shop.Indexes, new DbIndex { Schema = "sales", Table = "Orders", Name = "UQ_Orders_Date", IsUnique = true, IsConstraint = true, Columns = "OrderDate" }],
+                RefreshedAt = shop.RefreshedAt
+            });
+
+            var read = (await cache.TryLoadAsync("k"))!;
+
+            Assert.False(read.IsStale);
+            Assert.True(read.Indexes.Single(i => i.Name == "UQ_Orders_Date").IsConstraint);
+            Assert.False(read.Indexes.Single(i => i.Name == "IX_Orders_CustomerId").IsConstraint);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Theory]

@@ -9,6 +9,10 @@ public sealed record DbIndex
     public string Type { get; init; } = "";
     public bool IsUnique { get; init; }
     public bool IsPrimaryKey { get; init; }
+
+    /// <summary>The index behind a PRIMARY KEY or UNIQUE constraint (PostgreSQL, SQL Server): it goes away with
+    /// ALTER TABLE … DROP CONSTRAINT, not DROP INDEX. Always false on MySQL, where a unique key is an index.</summary>
+    public bool IsConstraint { get; init; }
     public bool IsDisabled { get; init; }
     public string? Columns { get; init; }
     public string? IncludedColumns { get; init; }

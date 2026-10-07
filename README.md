@@ -210,3 +210,7 @@ The AI assistant's API key is kept in `assistant.json`, encrypted with DPAPI for
 - The Query tab's *Run on multiple databases* confirms once for the whole batch; each database runs independently and a failure on one does not stop the others.
 - The routine debugger steps through PL/pgSQL only (SQL and C functions run without stopping) and stops on entry to the routine it starts. pldebugger gives up a wait when a server signal interrupts it (for example a `DROP DATABASE` elsewhere on the server); the window then reports a lost link, stops the call and rolls it back.
 - Table scripts in the Objects tab are generated from catalog metadata (columns + primary key), not full DDL.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The libraries the app ships with are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

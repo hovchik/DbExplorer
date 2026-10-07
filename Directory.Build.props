@@ -11,7 +11,8 @@
     <Product>DB Explorer</Product>
     <Company>DB Explorer</Company>
     <Authors>DB Explorer contributors</Authors>
-    <Copyright>Copyright © DB Explorer contributors</Copyright>
+    <Copyright>Copyright © 2026 Hovhannes</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Description>Desktop app for exploring SQL Server, PostgreSQL and MySQL / MariaDB databases without disturbing them.</Description>
     <RepositoryUrl>https://github.com/hovchik/DbExplorer</RepositoryUrl>
     <!-- The UI is English only: don't ship the other languages' resource folders of the packages. -->

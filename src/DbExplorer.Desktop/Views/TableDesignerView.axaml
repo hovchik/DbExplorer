@@ -30,6 +30,13 @@
       <TextBlock Text="Table" />
       <TextBox Width="240" Text="{Binding TableName}" Watermark="Table name" />
       <Button Content="New table" Command="{Binding NewTableCommand}" ToolTip.Tip="Start over with an empty design" />
+      <AutoCompleteBox Width="220" ItemsSource="{Binding TableNames}" Text="{Binding OpenTableName, Mode=TwoWay}"
+                       FilterMode="Contains" MinimumPrefixLength="0" GotFocus="OnPickerFocus" Watermark="schema.table"
+                       ToolTip.Tip="An existing table of this database to change" />
+      <Button Content="Open table" Command="{Binding OpenExistingTableCommand}"
+              ToolTip.Tip="Open an existing table: edit it and the designer writes the ALTER script" />
+      <Button Content="Revert" Command="{Binding RevertChangesCommand}" IsVisible="{Binding IsAltering}"
+              ToolTip.Tip="Undo every edit: back to the table as it is on the server" />
       <Button Content="Open created table" Command="{Binding OpenCreatedCommand}" IsVisible="{Binding LastCreated, Converter={x:Static ObjectConverters.IsNotNull}}"
               ToolTip.Tip="Show the table you just created in the Objects tab" />
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
@@ -41,7 +48,9 @@
 
           <!-- Columns -->
           <StackPanel Spacing="4">
-            <TextBlock Classes="section" Text="Columns" />
+            <TextBlock Classes="section" Text="{Binding ModeText}" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding IsAltering}"
+                       Text="Edit columns, keys and indexes; the script below holds only the ALTER statements for what changed. New columns are added at the end." />
             <Grid Classes="header" ColumnDefinitions="200,170,80,52,52,64,170,Auto" Margin="0,0,0,2">
               <TextBlock Grid.Column="0" Text="Name" />
               <TextBlock Grid.Column="1" Text="Type" />
@@ -55,7 +64,7 @@
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ColumnRow">
                   <Grid ColumnDefinitions="200,170,80,52,52,64,170,Auto" Margin="0,0,0,4">
-                    <TextBox Grid.Column="0" Text="{Binding Name}" Watermark="Column name" />
+                    <TextBox Grid.Column="0" Text="{Binding Name}" Watermark="Column name" ToolTip.Tip="{Binding Origin}" />
                     <AutoCompleteBox Grid.Column="1" Text="{Binding Type, Mode=TwoWay}" Watermark="Type"
                                      ItemsSource="{Binding $parent[UserControl].DataContext.TypeNames}"
                                      FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" />
@@ -138,11 +147,11 @@
           <StackPanel Spacing="6">
             <TextBlock Classes="section" Text="Script" />
             <TextBlock Classes="hint" TextWrapping="Wrap"
-                       Text="Updated as you edit. Nothing runs until you press Execute, which shows this script and asks first." />
+                       Text="Updated as you edit. Nothing runs until you press Execute (Apply changes for an open table), which shows this script and asks first." />
             <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="180" />
             <WrapPanel>
-              <Button Classes="accent" Content="Execute…" Command="{Binding ExecuteCommand}" Margin="0,0,8,0"
-                      ToolTip.Tip="Show the script, confirm, then create the table in one transaction" />
+              <Button Classes="accent" Content="{Binding ExecuteLabel}" Command="{Binding ExecuteCommand}" Margin="0,0,8,0"
+                      ToolTip.Tip="Show the script, confirm, then run it in one transaction" />
               <Button Content="Open in Query tab" Command="{Binding OpenInQueryTabCommand}" Margin="0,0,8,0"
                       ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
               <Button Content="Copy script" Command="{Binding CopyScriptCommand}" />

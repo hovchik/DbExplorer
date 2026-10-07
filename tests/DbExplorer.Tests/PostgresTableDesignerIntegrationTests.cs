@@ -115,6 +115,90 @@ public sealed class PostgresTableDesignerIntegrationTests : IAsyncLifetime
         Assert.Contains(snapshot.IndexesOf(table.Database, "billing", "invoices"), i => i.Columns == "customer_id");
     }
 
+    private async Task<(TableDesign Design, DesignContext Context)> OpenAsync(string table)
+    {
+        var snapshot = await _metadata!.LoadAsync(_session!.Profile, _session.Provider, forceRefresh: true);
+        var obj = snapshot.Objects.Single(o => o.Schema == "public" && o.Name == table && o.Type == DbObjectType.Table);
+        var constraints = await _session.Provider.GetTableConstraintsAsync(obj);
+        return (TableDesignLoader.Load(obj, snapshot, constraints, PostgresProviderFactory.ProviderKey).Design,
+                DesignContext.From(snapshot, PostgresProviderFactory.ProviderKey));
+    }
+
+    [SkippableFact]
+    public async Task An_existing_table_is_changed_in_place_and_keeps_its_rows()
+    {
+        Skip.If(Settings is null);
+        await using (var cn = new NpgsqlConnection(PostgresSql.BuildConnectionString(_session!.Profile)))
+        {
+            await cn.OpenAsync();
+            await Exec(cn, "INSERT INTO customers (id, name) VALUES (1, 'Ada'), (2, 'Grace'); ALTER TABLE customers ADD COLUMN city text; CREATE INDEX ix_customers_name ON customers (name);");
+        }
+
+        var (original, context) = await OpenAsync("customers");
+        Assert.Equal("now()", original.Column("created_at")!.Default);
+        Assert.Equal("ix_customers_name", Assert.Single(original.Indexes).Name);
+        Assert.Equal(TableAlterScriptBuilder.NoChanges, TableCreator.Script(original, context, original));
+
+        var edited = original
+            .RenameColumn("name", "full_name")
+            .WithColumn("full_name", c => c with { Size = "150" })
+            .WithColumn("city", c => c with { IsNullable = false, Default = "'unknown'" })
+            .AddColumn(new ColumnDesign { Name = "email", Type = "varchar", Size = "320", IsNullable = false, Default = "''" })
+            .AddIndex(new IndexDesign { Columns = ["email"] });
+        edited = edited with { Columns = edited.Columns.Where(c => c.Name != "created_at").ToList() };
+        var review = TableDesignAdvisor.Review(edited, context, original);
+        Assert.DoesNotContain(review, s => s.Severity == DesignSeverity.Error);
+        Assert.Contains(review, s => s.Key == "alter-drop:created_at");
+
+        await TableCreator.CreateAsync(_session, edited, TableCreator.Script(edited, context, original), 30);
+
+        var snapshot = await _metadata!.LoadAsync(_session.Profile, _session.Provider, forceRefresh: true);
+        var columns = snapshot.Columns.Where(c => c.Table == "customers" && c.Schema == "public").OrderBy(c => c.Ordinal).ToList();
+        Assert.Equal(["id", "full_name", "city", "email"], columns.Select(c => c.Name));
+        Assert.Equal("character varying(150)", columns[1].DataType);
+        Assert.False(columns[2].IsNullable);
+        Assert.Contains(snapshot.Indexes, i => i.Table == "customers" && i.Name == "ix_customers_name" && i.Columns == "full_name");
+        Assert.Contains(snapshot.Indexes, i => i.Table == "customers" && i.Columns == "email");
+        var rows = await _session.Provider.ExecuteScriptAsync("SELECT full_name || ':' || city FROM customers ORDER BY id;", null, 30);
+        Assert.Equal(["Ada:unknown", "Grace:unknown"], rows.ResultSets[0].Rows.Select(r => (string)r[0]!));
+    }
+
+    [SkippableFact]
+    public async Task A_change_existing_rows_do_not_fit_leaves_the_table_as_it_was()
+    {
+        Skip.If(Settings is null);
+        await using (var cn = new NpgsqlConnection(PostgresSql.BuildConnectionString(_session!.Profile)))
+        {
+            await cn.OpenAsync();
+            await Exec(cn, "INSERT INTO products (id, title) VALUES (1, 'A long product title');");
+        }
+        var (original, context) = await OpenAsync("products");
+        var edited = original.RenameColumn("title", "name").WithColumn("name", c => c with { Size = "5" })
+            .AddColumn(new ColumnDesign { Name = "sku", Type = "varchar", Size = "20" });
+        Assert.Contains(TableDesignAdvisor.Review(edited, context, original), s => s.Key == "alter-type:title" && s.Severity == DesignSeverity.Warning);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => TableCreator.CreateAsync(_session, edited, TableCreator.Script(edited, context, original), 30));
+
+        var snapshot = await _metadata!.LoadAsync(_session.Profile, _session.Provider, forceRefresh: true);
+        Assert.Equal(["id", "title", "created_at"], snapshot.Columns.Where(c => c.Table == "products").OrderBy(c => c.Ordinal).Select(c => c.Name));
+    }
+
+    [SkippableFact]
+    public async Task A_key_becomes_an_identity_and_gets_a_foreign_key()
+    {
+        Skip.If(Settings is null);
+        var (original, context) = await OpenAsync("products");
+        var edited = original.WithColumn("id", c => c with { IsIdentity = true })
+            .AddColumn(new ColumnDesign { Name = "customer_id", Type = "integer" })
+            .AddForeignKey(new ForeignKeyDesign { Column = "customer_id", ReferencedSchema = "public", ReferencedTable = "customers", ReferencedColumn = "id" });
+
+        await TableCreator.CreateAsync(_session!, edited, TableCreator.Script(edited, context, original), 30);
+
+        var snapshot = await _metadata!.LoadAsync(_session!.Profile, _session.Provider, forceRefresh: true);
+        Assert.True(snapshot.Columns.Single(c => c.Table == "products" && c.Name == "id").IsIdentity);
+        Assert.Contains(snapshot.ForeignKeys, f => f.Table == "products" && f.Columns == "customer_id" && f.ReferencedTable == "customers");
+    }
+
     [SkippableFact]
     public async Task A_failing_script_leaves_nothing_behind()
     {

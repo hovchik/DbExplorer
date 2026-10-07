@@ -53,9 +53,10 @@ public static class TableScriptBuilder
     public static string SchemaOf(TableDesign design, string providerKey) =>
         string.IsNullOrWhiteSpace(design.Schema) ? DefaultSchema(providerKey) : design.Schema.Trim();
 
-    private static string NameOf(TableDesign design) => design.Name.Trim().Length > 0 ? design.Name.Trim() : "NewTable";
+    internal static string NameOf(TableDesign design) => design.Name.Trim().Length > 0 ? design.Name.Trim() : "NewTable";
 
-    public static string PrimaryKeyName(TableDesign design, SqlDialect d) => Fit($"PK_{NameOf(design)}", d);
+    public static string PrimaryKeyName(TableDesign design, SqlDialect d) =>
+        design.PrimaryKeyName.Trim().Length > 0 ? design.PrimaryKeyName.Trim() : Fit($"PK_{NameOf(design)}", d);
 
     public static string ForeignKeyName(TableDesign design, ForeignKeyDesign fk, SqlDialect d)
     {

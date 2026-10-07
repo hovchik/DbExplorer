@@ -5,6 +5,10 @@ namespace DbExplorer.Application.Design;
 public sealed record ColumnDesign
 {
     public string Name { get; init; } = "";
+
+    /// <summary>The column's name on the server when the design alters an existing table; null for a new column.</summary>
+    public string? OriginalName { get; init; }
+
     public string Type { get; init; } = "";
     public string? Size { get; init; }
     public bool IsNullable { get; init; } = true;
@@ -47,6 +51,9 @@ public sealed record ColumnDesign
         {
             var type = Type.Trim();
             var open = type.IndexOf('(');
+            // timestamp(3) with time zone: words after the brackets stay where they are.
+            if (string.IsNullOrWhiteSpace(Size) && open >= 0 && type.LastIndexOf(')') is var close && close > open && close < type.Length - 1)
+                return type;
             var name = open < 0 ? type : type[..open].Trim();
             return EffectiveSize is { Length: > 0 } size ? $"{name}({size})" : name;
         }
@@ -56,7 +63,8 @@ public sealed record ColumnDesign
     public bool WritesNotNull => IsPrimaryKey || !IsNullable;
 }
 
-/// <summary>A single-column foreign key from the new table to an existing table's key.</summary>
+/// <summary>A single-column foreign key from the table to an existing table's key. When altering, a key keeps the name
+/// it has on the server, which is how the script tells an unchanged key from a new one.</summary>
 public sealed record ForeignKeyDesign
 {
     /// <summary>Empty: named FK_Table_Parent by the script.</summary>
@@ -75,7 +83,8 @@ public sealed record IndexDesign
     public bool IsUnique { get; init; }
 }
 
-/// <summary>A new table as the table designer holds it: everything the CREATE TABLE script is made from.</summary>
+/// <summary>A table as the table designer holds it: everything the CREATE TABLE script is made from, or, next to the
+/// design read from the server, what the ALTER TABLE script is made from.</summary>
 public sealed record TableDesign
 {
     /// <summary>Database the table is created in; empty for the connection's own database.</summary>
@@ -85,6 +94,9 @@ public sealed record TableDesign
     public IReadOnlyList<ColumnDesign> Columns { get; init; } = [];
     public IReadOnlyList<ForeignKeyDesign> ForeignKeys { get; init; } = [];
     public IReadOnlyList<IndexDesign> Indexes { get; init; } = [];
+
+    /// <summary>The primary key constraint's name; empty for PK_Table.</summary>
+    public string PrimaryKeyName { get; init; } = "";
 
     public IEnumerable<ColumnDesign> PrimaryKey => Columns.Where(c => c.IsPrimaryKey && c.Name.Trim().Length > 0);
 

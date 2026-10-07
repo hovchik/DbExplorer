@@ -11,8 +11,10 @@ first: .NET comes inside.
 3. **Launch DB Explorer** at the end.
 
 Upgrading: run the newer installer. It closes the app and never touches the user's data in
-`%LOCALAPPDATA%\DbExplorer` (connections, metadata cache, query tabs, API collections, `logs\errors.log`).
-Uninstalling removes the program and its shortcuts and also leaves the data.
+`%LOCALAPPDATA%\DbExplorer` (connections, settings, metadata cache, query tabs, `logs\errors.log`).
+Uninstalling removes the program and its shortcuts and also leaves the data; delete
+`%LOCALAPPDATA%\DbExplorer` to remove it too (saved passwords and the AI assistant key are in there, encrypted for
+your Windows account).
 
 For IT, unattended: `DbExplorer-Setup-1.2.0.exe /VERYSILENT /ALLUSERS /TASKS="desktopicon"`
 (`/CURRENTUSER` instead of `/ALLUSERS` for a per-user install).
@@ -24,6 +26,7 @@ with winget the first time (or get it from https://jrsoftware.org/isdl.php, or p
 
 ```powershell
 .\installer\build-installer.ps1 -Version 1.2.0
+.\installer\build-installer.ps1 -Version 1.2.0-rc1   # a pre-release: file version 1.2.0, shown as 1.2.0-rc1
 ```
 
 It publishes with the `FolderProfile` publish profile (self-contained, ReadyToRun, win-x64) into

@@ -8,11 +8,15 @@
 ;     prompt, or for everyone in Program Files if they pick that (or pass /ALLUSERS)
 ;   - Start menu shortcut, optional desktop shortcut
 ;   - opens the app at the end
-; The user's connections, metadata cache, query tabs and API collections (%LOCALAPPDATA%\DbExplorer) are never
+; The user's connections, settings, metadata cache and query tabs (%LOCALAPPDATA%\DbExplorer) are never
 ; touched, so upgrades and uninstalls keep them.
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
+#endif
+#ifndef NumericVersion
+  ; Windows version resources take numbers only (1.2.0 for 1.2.0-rc1).
+  #define NumericVersion AppVersion
 #endif
 #ifndef PublishDir
   #define PublishDir "out\publish"
@@ -27,7 +31,11 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppName}
-VersionInfoVersion={#AppVersion}
+AppPublisherURL=https://github.com/hovchik/DbExplorer
+AppSupportURL=https://github.com/hovchik/DbExplorer/issues
+AppUpdatesURL=https://github.com/hovchik/DbExplorer/releases
+VersionInfoVersion={#NumericVersion}
+VersionInfoProductVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

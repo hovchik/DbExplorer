@@ -1,7 +1,8 @@
 name: Windows installer
 
-# Builds DbExplorer-Setup-<version>.exe on Windows. Tag a release (v1.2.0) to get that version number;
-# other runs are numbered 1.0.<run>. Download the installer from the run's artifacts.
+# Builds DbExplorer-Setup-<version>.exe on Windows. Tag a release (v1.2.0, or v1.2.0-rc1 for a pre-release) to get
+# that version number and a draft GitHub release with the installer attached; other runs are numbered 0.0.<run>, so
+# a test build never looks newer than a real release. Download those from the run's artifacts.
 on:
   push:
     tags: ['v*']
@@ -9,8 +10,12 @@ on:
     paths:
       - 'installer/**'
       - 'src/**'
+      - 'Directory.Build.props'
       - '.github/workflows/installer.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   installer:
@@ -37,7 +42,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          $version = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME.TrimStart('v') } else { "1.0.$env:RUN_NUMBER" }
+          $version = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME.TrimStart('v') } else { "0.0.$env:RUN_NUMBER" }
           ./installer/build-installer.ps1 -Version $version
 
       - uses: actions/upload-artifact@v4
@@ -45,3 +50,23 @@ jobs:
           name: DbExplorer-Setup
           path: installer/out/DbExplorer-Setup-*.exe
           if-no-files-found: error
+
+  release:
+    # A tag push gets a draft release with the installer attached; publish it from the Releases page.
+    if: github.ref_type == 'tag'
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: DbExplorer-Setup
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          if [[ "$TAG" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$TAG" DbExplorer-Setup-*.exe --repo "$GITHUB_REPOSITORY" --draft --generate-notes $prerelease --title "DB Explorer ${TAG#v}"

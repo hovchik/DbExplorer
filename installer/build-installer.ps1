@@ -9,6 +9,9 @@
 
 .EXAMPLE
   .\installer\build-installer.ps1 -Version 1.2.0
+
+.EXAMPLE
+  .\installer\build-installer.ps1 -Version 1.2.0-rc1
 #>
 param(
     [string]$Version = '1.0.0',
@@ -16,7 +19,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+(\.\d+){1,3}$') { throw "Version must look like 1.2.0, got '$Version'." }
+if ($Version -notmatch '^(\d+(\.\d+){1,3})(-[0-9A-Za-z.-]+)?$') { throw "Version must look like 1.2.0 or 1.2.0-rc1, got '$Version'." }
+# Windows file versions are numbers only: 1.2.0-rc1 is file version 1.2.0, shown as 1.2.0-rc1 everywhere else.
+$numericVersion = $Matches[1]
 
 $here = $PSScriptRoot
 $root = Split-Path $here -Parent
@@ -60,7 +65,9 @@ Invoke-Step 'dotnet' @(
     'publish', (Join-Path $root 'src\DbExplorer.Desktop'),
     '-p:PublishProfile=FolderProfile',
     "-p:Version=$Version",
+    "-p:AssemblyVersion=$numericVersion",
+    "-p:FileVersion=$numericVersion",
     '-o', $publish)
 
-Invoke-Step $Iscc @("/DAppVersion=$Version", "/DPublishDir=$publish", (Join-Path $here 'DbExplorer.iss'))
+Invoke-Step $Iscc @("/DAppVersion=$Version", "/DNumericVersion=$numericVersion", "/DPublishDir=$publish", (Join-Path $here 'DbExplorer.iss'))
 Write-Host "Done: $(Join-Path $here "out\DbExplorer-Setup-$Version.exe")"

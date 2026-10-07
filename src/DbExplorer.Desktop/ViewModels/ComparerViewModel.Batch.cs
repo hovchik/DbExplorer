@@ -69,7 +69,7 @@ public partial class ComparerViewModel
     partial void OnIsCopyBatchModeChanged(bool value) => RefreshCopyCommands();
 
     private string TargetSchemaFor(DbObject obj) => LeftSession is { } l && RightSession is { } r
-        ? ObjectCopyService.MapSchema(obj.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey)
+        ? ObjectCopyService.MapSchema(obj.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey, SelectedRightDatabase)
         : obj.Schema;
 
     private void StartBatch(IEnumerable<DbObject> objects)

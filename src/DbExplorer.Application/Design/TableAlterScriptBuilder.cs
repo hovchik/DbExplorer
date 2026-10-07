@@ -27,6 +27,7 @@ public static class TableAlterScriptBuilder
     {
         var d = SqlDialect.For(providerKey);
         var sqlServer = providerKey == SqlDialect.SqlServerKey;
+        var mySql = providerKey == SqlDialect.MySqlKey;
         var steps = new List<string>();
 
         var oldSchema = TableScriptBuilder.SchemaOf(original, providerKey);
@@ -43,8 +44,8 @@ public static class TableAlterScriptBuilder
         if (!string.Equals(oldSchema, schema, StringComparison.Ordinal))
         {
             if (createSchema) steps.Add(d.CreateSchemaIfMissing(schema));
-            steps.Add(sqlServer
-                ? $"ALTER SCHEMA {d.Quote(schema)} TRANSFER {d.Table(oldSchema, name)};"
+            steps.Add(sqlServer ? $"ALTER SCHEMA {d.Quote(schema)} TRANSFER {d.Table(oldSchema, name)};"
+                : mySql ? $"RENAME TABLE {d.Table(oldSchema, name)} TO {table};"
                 : $"ALTER TABLE {d.Table(oldSchema, name)} SET SCHEMA {d.Quote(schema)};");
         }
 
@@ -68,7 +69,9 @@ public static class TableAlterScriptBuilder
         {
             var after = edited.ForeignKeys.FirstOrDefault(e => TableDesign.Same(e.Name.Trim(), fk.Name));
             if (after is null || addKeys.Contains(after))
-                steps.Add($"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(fk.Name)};");
+                steps.Add(mySql
+                    ? $"ALTER TABLE {table} DROP FOREIGN KEY {d.Quote(fk.Name)};"
+                    : $"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(fk.Name)};");
         }
 
         var addIndexes = new List<IndexDesign>();
@@ -81,15 +84,31 @@ public static class TableAlterScriptBuilder
         {
             var after = edited.Indexes.FirstOrDefault(e => TableDesign.Same(e.Name.Trim(), index.Name));
             if (after is null || addIndexes.Contains(after))
-                steps.Add(sqlServer ? $"DROP INDEX {d.Quote(index.Name)} ON {table};" : $"DROP INDEX {d.Table(schema, index.Name)};");
+                steps.Add(sqlServer || mySql ? $"DROP INDEX {d.Quote(index.Name)} ON {table};" : $"DROP INDEX {d.Table(schema, index.Name)};");
         }
 
         // ----- Primary key -----
         var oldKey = original.PrimaryKey.Select(c => c.Name).ToList();
         var newKey = edited.PrimaryKey.Select(c => ToOriginal(c.Name)).ToList();
         var keyChanged = !oldKey.SequenceEqual(newKey, StringComparer.OrdinalIgnoreCase);
+        // MySQL refuses a primary key change that leaves an AUTO_INCREMENT column without a key, so a column losing
+        // AUTO_INCREMENT is changed before the key is dropped, and one gaining it after the new key is added.
+        var mySqlDone = new HashSet<ColumnDesign>();
+        var mySqlLater = new List<string>();
+        if (mySql && keyChanged)
+            foreach (var column in kept)
+            {
+                var before = original.Column(column.OriginalName!)!;
+                if (before.IsIdentity && !column.IsIdentity)
+                {
+                    steps.Add(MySqlModify(d, table, d.Quote(column.OriginalName!), column, before));
+                    mySqlDone.Add(column);
+                }
+            }
         if (keyChanged && oldKey.Count > 0)
-            steps.Add($"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(TableScriptBuilder.PrimaryKeyName(original, d))};");
+            steps.Add(mySql
+                ? $"ALTER TABLE {table} DROP PRIMARY KEY;"
+                : $"ALTER TABLE {table} DROP CONSTRAINT {d.Quote(TableScriptBuilder.PrimaryKeyName(original, d))};");
 
         // ----- Columns that go away -----
         foreach (var column in dropped)
@@ -129,6 +148,16 @@ public static class TableAlterScriptBuilder
                 continue;
             }
 
+            if (mySql)
+            {
+                // MySQL restates the whole column (type, AUTO_INCREMENT, NULL, DEFAULT) in one MODIFY.
+                if (fillNulls) steps.Add($"UPDATE {table} SET {q} = {column.Default!.Trim()} WHERE {q} IS NULL;");
+                if (mySqlDone.Contains(column) || !(typeChanged || nullChanged || defaultChanged)) continue;
+                if (keyChanged && column.IsIdentity && !before.IsIdentity) mySqlLater.Add(MySqlModify(d, table, q, column, before));
+                else steps.Add(MySqlModify(d, table, q, column, before));
+                continue;
+            }
+
             if (defaultChanged && !string.IsNullOrWhiteSpace(before.Default) && (string.IsNullOrWhiteSpace(column.Default) || column.IsIdentity))
                 steps.Add($"ALTER TABLE {table} ALTER COLUMN {q} DROP DEFAULT;");
             if (before.IsIdentity && !column.IsIdentity)
@@ -165,6 +194,8 @@ public static class TableAlterScriptBuilder
                       $"PRIMARY KEY ({string.Join(", ", edited.PrimaryKey.Select(c => d.Quote(c.Name.Trim())))});");
         }
 
+        steps.AddRange(mySqlLater);
+
         foreach (var fk in addKeys)
             steps.Add($"ALTER TABLE {table} ADD CONSTRAINT {d.Quote(TableScriptBuilder.ForeignKeyName(edited, fk, d))} FOREIGN KEY ({d.Quote(fk.Column.Trim())})\n" +
                       $"    REFERENCES {d.Table(fk.ReferencedSchema, fk.ReferencedTable)} ({d.Quote(fk.ReferencedColumn.Trim())});");
@@ -179,6 +210,15 @@ public static class TableAlterScriptBuilder
     /// <summary>True when nothing would change on the server.</summary>
     public static bool IsUnchanged(TableDesign original, TableDesign edited, string providerKey) =>
         Steps(original, edited, providerKey).Count == 0;
+
+    private static string MySqlModify(SqlDialect d, string table, string quotedName, ColumnDesign column, ColumnDesign before)
+    {
+        var line = $"ALTER TABLE {table} MODIFY COLUMN {quotedName} {(column.FullType.Length > 0 ? column.FullType : before.FullType)}";
+        if (column.IsIdentity) line += d.IdentityClause;
+        line += column.WritesNotNull || column.IsIdentity ? " NOT NULL" : " NULL";
+        if (!string.IsNullOrWhiteSpace(column.Default) && !column.IsIdentity) line += " DEFAULT " + column.Default.Trim();
+        return line + ";";
+    }
 
     /// <summary>SQL Server names a column's default constraint itself (DF__Orders__Statu__3B75D760), so it is looked up.</summary>
     private static string DropSqlServerDefault(SqlDialect d, string table, string column) =>

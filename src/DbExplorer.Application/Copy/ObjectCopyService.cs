@@ -21,7 +21,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
 
     private static readonly HashSet<string> IntegerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "tinyint", "smallint", "int", "bigint", "int2", "int4", "int8", "integer"
+        "tinyint", "smallint", "mediumint", "int", "bigint", "int2", "int4", "int8", "integer"
     };
 
     // ----- Analysis (metadata only) -----
@@ -38,6 +38,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     {
         targetSchema = targetSchema.Trim();
         targetName = targetName.Trim();
+        // On MySQL the schema is the database: anything else would land in another database (or on the source itself).
+        if (SqlDialect.SchemaIsDatabase(targetProviderKey) && targetDatabase.Length > 0) targetSchema = targetDatabase;
         var crossEngine = sourceProviderKey != targetProviderKey;
         var warnings = new List<string>();
 
@@ -233,10 +235,12 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     /// <summary>
     /// The schema an object lands in on the target engine. The engines' default schemas map onto each other
     /// (PostgreSQL <c>public</c> ↔ SQL Server <c>dbo</c>): SQL Server cannot create a schema named <c>public</c>
-    /// (a built-in role owns the name), and a <c>dbo</c> schema in PostgreSQL would be surprising.
+    /// (a built-in role owns the name), and a <c>dbo</c> schema in PostgreSQL would be surprising. On MySQL a schema is
+    /// the database itself, so objects copied there land in <paramref name="targetDatabase"/> whatever their schema.
     /// </summary>
-    public static string MapSchema(string schema, string sourceProviderKey, string targetProviderKey) =>
-        sourceProviderKey == targetProviderKey ? schema
+    public static string MapSchema(string schema, string sourceProviderKey, string targetProviderKey, string? targetDatabase = null) =>
+        SqlDialect.SchemaIsDatabase(targetProviderKey) && !string.IsNullOrEmpty(targetDatabase) ? targetDatabase
+        : sourceProviderKey == targetProviderKey ? schema
         : targetProviderKey == SqlDialect.SqlServerKey && Same(schema, "public") ? "dbo"
         : targetProviderKey == SqlDialect.PostgresKey && Same(schema, "dbo") ? "public"
         : schema;
@@ -252,7 +256,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { table.FullName };
         string Mapped(string schema) => sourceProviderKey is null || targetProviderKey is null
             ? schema
-            : MapSchema(schema, sourceProviderKey, targetProviderKey);
+            : MapSchema(schema, sourceProviderKey, targetProviderKey, targetDatabase);
 
         void Visit(DbObject child)
         {
@@ -358,6 +362,14 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             texts.Add(text);
         }
 
+        // MySQL definitions name their schema (the database) everywhere: point them at the target database instead.
+        if (c.SameEngine && SqlDialect.SchemaIsDatabase(c.Target.ProviderKey) && !Same(source.Schema, c.Analysis.TargetSchema))
+        {
+            var from = c.Target.Quote(source.Schema) + ".";
+            var to = c.Target.Quote(c.Analysis.TargetSchema) + ".";
+            texts = texts.Select(text => text.Replace(from, to, StringComparison.Ordinal)).ToList();
+        }
+
         var replace = c.Action == CopyAction.ReplaceDefinition;
         for (var i = 0; i < texts.Count; i++)
         {
@@ -383,7 +395,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             : [];
 
         // Schemas first: CREATE SCHEMA is idempotent, so it is emitted whenever the cache has not seen the schema.
-        var schemas = parents.Select(p => MapSchema(p.Schema, c.Source.ProviderKey, c.Target.ProviderKey)).Append(a.TargetSchema).Distinct(StringComparer.OrdinalIgnoreCase)
+        var schemas = parents.Select(p => MapSchema(p.Schema, c.Source.ProviderKey, c.Target.ProviderKey, a.TargetDatabase)).Append(a.TargetSchema).Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(s => !c.TargetSession.Snapshot.Objects.Any(o => Same(o.Database, a.TargetDatabase) && Same(o.Schema, s)));
         foreach (var schema in schemas)
             c.Add($"Create schema {schema} if missing", CopyStepKind.Schema, t.CreateSchemaIfMissing(schema));
@@ -410,7 +422,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
                 foreach (var table in parents.Append(a.Source))
                 {
                     var isMain = ReferenceEquals(table, a.Source);
-                    var (schema, name) = isMain ? (a.TargetSchema, a.TargetName) : (MapSchema(table.Schema, c.Source.ProviderKey, c.Target.ProviderKey), table.Name);
+                    var (schema, name) = isMain ? (a.TargetSchema, a.TargetName) : (MapSchema(table.Schema, c.Source.ProviderKey, c.Target.ProviderKey, a.TargetDatabase), table.Name);
                     var constraints = await ConstraintsOfAsync(c, table, ct);
                     created.Add((table, schema, name, CreateTable(c, table, schema, name, constraints), constraints));
                 }
@@ -573,8 +585,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         }).ToList();
         columns = columns.Select(col => col with
         {
-            // PostgreSQL identity columns must be integers.
-            IsIdentity = col.IsIdentity && (t.ProviderKey == SqlDialect.SqlServerKey || IntegerTypes.Contains(col.BaseType)
+            // PostgreSQL identity and MySQL AUTO_INCREMENT columns must be integers.
+            IsIdentity = col.IsIdentity && (t.ProviderKey == SqlDialect.SqlServerKey || IntegerTypes.Contains(col.BaseType.Split(' ')[0])
                                              || col.DataType is "integer" or "bigint" or "smallint")
         }).ToList();
 
@@ -617,7 +629,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
         return columns.Where(col => !t.IsReadOnlyColumn(col)).ToList();
     }
 
-    private static string EngineName(SqlDialect dialect) => dialect.ProviderKey == SqlDialect.SqlServerKey ? "SQL Server" : "PostgreSQL";
+    private static string EngineName(SqlDialect dialect) => SqlDialect.EngineName(dialect.ProviderKey);
 
     /// <summary>Copies the left rows into the right table: streamed at run time when the table has a key
     /// (no row limit, flat memory), otherwise read now and written into the script.</summary>
@@ -837,6 +849,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             var kind = "";
             if (c.SameEngine && t.ProviderKey == SqlDialect.SqlServerKey)
                 kind = type.StartsWith("CLUSTERED", StringComparison.Ordinal) ? "CLUSTERED " : "NONCLUSTERED ";
+            if (c.SameEngine && t.ProviderKey == SqlDialect.MySqlKey && type == "FULLTEXT")
+                kind = "FULLTEXT ";
             var method = c.SameEngine && t.ProviderKey == SqlDialect.PostgresKey && !string.IsNullOrEmpty(index.Type) && !Same(index.Type, "btree")
                 ? $" USING {index.Type}"
                 : "";
@@ -855,6 +869,9 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     }
 
     /// <summary>"a, b DESC" (SQL Server) or "a, \"B c\"" (PostgreSQL) into quoted column references; null when a part is an expression.</summary>
+    private static readonly System.Text.RegularExpressions.Regex IndexPrefix = new(@"^(?<name>.+)\((?<length>\d+)\)$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     public static List<string>? ParseIndexColumns(string? list, IReadOnlyList<string> columns, SqlDialect dialect)
     {
         var result = new List<string>();
@@ -868,9 +885,17 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             else if (part.EndsWith(" ASC", StringComparison.OrdinalIgnoreCase)) part = part[..^4].TrimEnd();
             if (part.Length > 1 && part[0] == '"' && part[^1] == '"') part = part[1..^1].Replace("\"\"", "\"");
 
+            // MySQL prefix indexes, "name(10)": the prefix only carries over to MySQL.
+            var prefix = "";
+            if (IndexPrefix.Match(part) is { Success: true } m && columns.Any(col => Same(col, m.Groups["name"].Value)))
+            {
+                part = m.Groups["name"].Value;
+                if (dialect.ProviderKey == SqlDialect.MySqlKey) prefix = $"({m.Groups["length"].Value})";
+            }
+
             var column = columns.FirstOrDefault(col => Same(col, part));
             if (column is null) return null;
-            result.Add(dialect.Quote(column) + suffix);
+            result.Add(dialect.Quote(column) + prefix + suffix);
         }
         return result;
     }
@@ -884,7 +909,7 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
             var selfReference = Same(fk.ReferencedSchema, table.Schema) && Same(fk.ReferencedTable, table.Name);
             var (parentSchema, parentName) = selfReference ? (schema, name)
                 : Same(fk.ReferencedSchema, a.Source.Schema) && Same(fk.ReferencedTable, a.Source.Name) ? (a.TargetSchema, a.TargetName)
-                : (MapSchema(fk.ReferencedSchema, c.Source.ProviderKey, c.Target.ProviderKey), fk.ReferencedTable);
+                : (MapSchema(fk.ReferencedSchema, c.Source.ProviderKey, c.Target.ProviderKey, a.TargetDatabase), fk.ReferencedTable);
 
             var parentExists = c.CreatedTables.Contains($"{parentSchema}.{parentName}") ||
                                c.TargetSession.Snapshot.Objects.Any(o => o.Type == DbObjectType.Table && Same(o.Database, a.TargetDatabase) &&

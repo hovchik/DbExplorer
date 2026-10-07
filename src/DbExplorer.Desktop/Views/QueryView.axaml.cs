@@ -799,7 +799,7 @@ public partial class QueryView : UserControl
     {
         var caret = Editor.TextArea.Caret;
         var selected = Editor.SelectionLength;
-        var dialect = _vm?.ProviderKey switch { "SqlServer" => " · SQL Server", "Postgres" => " · PostgreSQL", _ => "" };
+        var dialect = _vm?.ProviderKey switch { "SqlServer" => " · SQL Server", "Postgres" => " · PostgreSQL", "MySql" => " · MySQL", _ => "" };
         CaretInfo.Text = $"Ln {caret.Line}, Col {caret.Column}" + (selected > 0 ? $" · {selected:N0} selected" : "") + dialect;
     }
 

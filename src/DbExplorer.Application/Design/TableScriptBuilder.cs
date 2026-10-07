@@ -47,11 +47,16 @@ public static class TableScriptBuilder
         return sb.ToString();
     }
 
-    /// <summary>The engine's usual schema when none is given: dbo or public.</summary>
-    public static string DefaultSchema(string providerKey) => providerKey == SqlDialect.SqlServerKey ? "dbo" : "public";
+    /// <summary>The engine's usual schema when none is given: dbo or public; on MySQL the schema is the database itself.</summary>
+    public static string DefaultSchema(string providerKey, string? database = null) => providerKey switch
+    {
+        SqlDialect.SqlServerKey => "dbo",
+        SqlDialect.MySqlKey => database ?? "",
+        _ => "public"
+    };
 
     public static string SchemaOf(TableDesign design, string providerKey) =>
-        string.IsNullOrWhiteSpace(design.Schema) ? DefaultSchema(providerKey) : design.Schema.Trim();
+        string.IsNullOrWhiteSpace(design.Schema) ? DefaultSchema(providerKey, design.Database) : design.Schema.Trim();
 
     internal static string NameOf(TableDesign design) => design.Name.Trim().Length > 0 ? design.Name.Trim() : "NewTable";
 

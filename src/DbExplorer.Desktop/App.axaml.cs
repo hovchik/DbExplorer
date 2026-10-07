@@ -8,6 +8,7 @@ using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
+using DbExplorer.Providers.MySql;
 using DbExplorer.Providers.Postgres;
 using DbExplorer.Providers.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +25,8 @@ public partial class App : Avalonia.Application
         var services = new ServiceCollection()
             .AddDbExplorerApplication()
             .AddSqlServerProvider()
-            .AddPostgresProvider();   // <- new engines are registered here
+            .AddPostgresProvider()
+            .AddMySqlProvider();      // <- new engines are registered here
 
         services.AddSingleton<ISshHostKeyPrompt, SshHostKeyPrompt>();
         services.AddSingleton<DialogService>();
@@ -37,7 +39,9 @@ public partial class App : Avalonia.Application
         services.AddSingleton<ActivityViewModel>();
         services.AddSingleton<DiagramViewModel>();
         services.AddSingleton<TableDesignerViewModel>();
+        services.AddSingleton<ErModelViewModel>();
         services.AddSingleton<QueryBuilderViewModel>();
+        services.AddSingleton<SecurityViewModel>();
         services.AddTransient<QueryViewModel>();
         services.AddSingleton<Func<QueryViewModel>>(sp => sp.GetRequiredService<QueryViewModel>);
         services.AddSingleton<QueryWorkspaceViewModel>();

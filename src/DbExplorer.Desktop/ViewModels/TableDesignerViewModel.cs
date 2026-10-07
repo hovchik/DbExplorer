@@ -16,7 +16,7 @@ namespace DbExplorer.Desktop.ViewModels;
 /// tables and indexes, with the CREATE TABLE (or ALTER TABLE) script and <see cref="TableDesignAdvisor"/>'s suggestions
 /// updated on every edit. Nothing reaches the server until Execute, which shows the exact script and asks first.
 /// </summary>
-public partial class TableDesignerViewModel(SessionService sessions, IDialogService dialogs) : ViewModelBase, ISessionAware
+public partial class TableDesignerViewModel(SessionService sessions, IDialogService dialogs) : ViewModelBase, ISessionAware, IForeignKeyRowOwner
 {
     private const int TimeoutSeconds = 60;
     private DatabaseSession? _session;
@@ -148,7 +148,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             var context = await Task.Run(() => DesignContext.From(snapshot, provider));
             if (version != _contextVersion || !ReferenceEquals(session, _session)) return;
             _context = context;
-            Schemas = context.Schemas.Count > 0 ? context.Schemas : [TableScriptBuilder.DefaultSchema(provider)];
+            Schemas = context.Schemas.Count > 0 ? context.Schemas : [TableScriptBuilder.DefaultSchema(provider, database)];
             TableNames = context.Tables.Select(t => t.FullName).ToList();
             foreach (var fk in ForeignKeys) fk.RefreshChoices();
             if (!_edited && _original is null) NewDesign();
@@ -200,7 +200,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         _edited = false;
         SetOriginal(null);
         var provider = ProviderKey;
-        var draft = new TableDesign { Schema = _context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider) };
+        var draft = new TableDesign { Schema = _context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider, SelectedDatabase) };
         var (type, _) = ColumnTypes.Preferred(provider, TypeFamily.Integer);
         LoadDesign(draft.AddColumn(new ColumnDesign
         {
@@ -545,7 +545,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var production = session.Profile.IsProduction;
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
         var ok = await dialogs.ConfirmAsync(
-            $"Create {schema}.{name} in {where}? This runs the script below in one transaction.",
+            $"Create {schema}.{name} in {where}? {RunsInOneTransaction}",
             "Create table", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script);
         if (!ok) return;
@@ -586,6 +586,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         Status = $"Created {schema}.{name} in {where}. The designer is ready for the next table.";
     }
 
+    /// <summary>MySQL commits each DDL statement on its own, so a failure part way leaves the earlier steps applied.</summary>
+    private string RunsInOneTransaction => ProviderKey == SqlDialect.MySqlKey
+        ? "This runs the script below. MySQL applies each statement as it goes, so if one fails the steps before it stay."
+        : "This runs the script below in one transaction.";
+
     /// <summary>Execute for an open table: the same confirm-then-one-transaction flow as creating, then the table is read
     /// again so the designer shows it as it now is.</summary>
     private async Task AlterAsync(DatabaseSession session, TableDesign original, TableDesign design, IReadOnlyList<DesignSuggestion> review)
@@ -608,7 +613,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
         var risks = review.Count(s => s.Severity == DesignSeverity.Warning && s.Key.StartsWith("alter-", StringComparison.Ordinal));
         var ok = await dialogs.ConfirmAsync(
-            $"Change {original.Schema}.{original.Name} in {where}? This runs the script below in one transaction." +
+            $"Change {original.Schema}.{original.Name} in {where}? {RunsInOneTransaction}" +
             (risks > 0 ? $" {risks} change(s) are flagged in Suggestions as risky for existing data." : ""),
             "Alter table", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script);
@@ -651,6 +656,9 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private static IReadOnlyList<string> Merge(params IEnumerable<string?>[] lists) =>
         lists.SelectMany(l => l).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!)
             .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+    IReadOnlyList<string> IForeignKeyRowOwner.ColumnsOfTable(string fullName, out string? key) => ColumnsOfTable(fullName, out key);
+    void IForeignKeyRowOwner.Changed() => Changed();
 
     internal IReadOnlyList<string> ColumnsOfTable(string fullName, out string? key)
     {
@@ -723,10 +731,24 @@ public partial class ColumnRow : ObservableObject
     }
 }
 
+/// <summary>What a <see cref="ForeignKeyRow"/> picks from: the Table designer's table, or a table of the ER model.</summary>
+internal interface IForeignKeyRowOwner
+{
+    /// <summary>The design's column names.</summary>
+    ObservableCollection<string> ColumnNames { get; }
+
+    /// <summary>Tables a key can reference, as schema.table.</summary>
+    IReadOnlyList<string> TableNames { get; }
+
+    IReadOnlyList<string> ColumnsOfTable(string fullName, out string? key);
+
+    void Changed();
+}
+
 /// <summary>One foreign key row: a column of the new table and the existing table and column it references.</summary>
 public partial class ForeignKeyRow : ObservableObject
 {
-    private TableDesignerViewModel? _owner;
+    private IForeignKeyRowOwner? _owner;
     private bool _loading;
 
     [ObservableProperty] private string? _column;
@@ -738,7 +760,7 @@ public partial class ForeignKeyRow : ObservableObject
     public ObservableCollection<string> ColumnChoices => _owner?.ColumnNames ?? [];
     public IReadOnlyList<string> TableChoices => _owner?.TableNames ?? [];
 
-    public static ForeignKeyRow From(ForeignKeyDesign f, TableDesignerViewModel owner)
+    internal static ForeignKeyRow From(ForeignKeyDesign f, IForeignKeyRowOwner owner)
     {
         var row = new ForeignKeyRow { _owner = owner, _loading = true };
         row.Column = f.Column.Length > 0 ? f.Column : null;

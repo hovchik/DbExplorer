@@ -1,7 +1,7 @@
 # DB Explorer
 
 A cross-platform desktop app (.NET 8 + Avalonia) for exploring databases without disturbing them.
-SQL Server is the primary engine; PostgreSQL is included as a second provider to prove the extension point.
+SQL Server is the primary engine; PostgreSQL and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
 
 ## Features
 
@@ -13,6 +13,7 @@ SQL Server is the primary engine; PostgreSQL is included as a second provider to
 | **Query** | Ad-hoc scripts with a per-tab **Database** picker (statements run there and the editor suggests every table, view, function and column of that database only), context-aware completion (aliases, `db.schema.`, `schema.` and `alias.` qualifiers, Ctrl+Space), cancel, and **Run on multiple databases**: the same script on every selected database, results stacked with a `Database` column. A **row limit** (default 10,000, 0 = none) keeps huge tables cheap: a script that only reads stops each result set on the server one row past the limit (see *Large databases* below). **Several carets**: Ctrl+Alt+Click adds a caret, Alt+J selects the word and then adds its next occurrence, Ctrl+Alt+Shift+J takes every occurrence; typing, Backspace and Delete apply at all of them in one undo step, Esc goes back to one. Alt+drag or Alt+Shift+arrows select a box of text. |
 | **Diagram** | ER diagram built from the cached foreign keys (no server round-trip): around one table (N hops) or a whole schema. Copy as Mermaid, save as PNG. |
 | **Table designer** | Create a new table in any database of the server (type-to-filter picker): schema, name, columns (type, size, nullable, key, identity, default), foreign keys to existing tables and indexes, with the CREATE TABLE script for the engine updated as you type. **Suggestions** update live too: what would fail (name taken, duplicate columns, a foreign key to nothing), likely mistakes (no primary key, a column like `CustomerId` without its foreign key or with the wrong type, dates or ids kept as text, money in `float`, `varchar` without a length, `decimal` without decimals, unindexed foreign keys) and consistency with the rest of the database (snake_case or PascalCase, plural names, key naming, audit columns such as `CreatedAt`, `nvarchar`). Each one applies with a click, or *Apply all*. Nothing runs until **Execute**, which shows the exact script, asks (typing `PRODUCTION` on production) and runs it in one transaction; *Open in Query tab* hands the script over instead. |
+| **ER model** | Draw tables and relationships on a canvas, or read the tables of a database (all schemas or one) to model changes to them. Drag a title to move a table; drag a column onto another table's column to make it a foreign key, or onto its title to reference its primary key; Shift-drag a title onto another table to add the key column too; double-click empty space for a new table. The selected table is edited with the Table designer's columns, keys, indexes and suggestions. **Generate DDL** compares the model with a chosen database and writes CREATE TABLE for new tables and ALTER TABLE for changed ones (renames included), dropping and adding foreign keys around them so the order always works; tables the model does not have are never dropped. **Run** shows the script, asks (typing `PRODUCTION` on production) and runs it in one transaction. Undo/redo, autosaved between sessions, and Save/Open as `.dbxmodel` files. Works without a connection. |
 | **Query builder** | Build a SELECT without typing: drag tables and views from the list onto a canvas (or double-click them) and they join on their foreign keys (accepted inferred relationships too; failing that, a column named like the other table's key). Drag a column onto another table's column to join by hand, click a join's label to select it, change it to Left/Right/Full in the joins list. Click columns to tick them into a grid of aliases, aggregates (any aggregate groups by the other output columns), sorts and filters (`> 100`, `LIKE 'A%'`, `IS NULL`, `IN (1, 2)` or a bare value; aggregated filters go to HAVING), plus DISTINCT and TOP/LIMIT. The SQL for the engine updates live; *Open in Query tab* hands it over. One way: the builder writes SQL, it does not read it back. |
 | **Indexes** | Key and included columns, filters, size, rows, usage (seeks/scans/updates), fragmentation (SQL Server, optional). |
 | **Locks** | Current locks, waiting sessions, the blocker's SQL, auto-refresh, and a **blocking tree** (head blocker → blocked sessions, cycle-safe). |
@@ -63,7 +64,9 @@ Integration tests for the Lab features run against real servers when these are s
 
 ```bash
 DBEXPLORER_TEST_PG="localhost;5432;postgres;<password>" \
-DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" dotnet test
+DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" \
+DBEXPLORER_TEST_MYSQL="localhost;3306;root;<password>" \
+DBEXPLORER_TEST_MARIADB="localhost;3307;root;<password>" dotnet test
 ```
 
 Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as the startup project.
@@ -98,6 +101,7 @@ src/
   DbExplorer.Application           Use cases: sessions, metadata cache (SQLite), name/code search, data search, saved connections
   DbExplorer.Providers.SqlServer   Dapper + Microsoft.Data.SqlClient
   DbExplorer.Providers.Postgres    Dapper + Npgsql
+  DbExplorer.Providers.MySql       Dapper + MySqlConnector (MySQL 8+, MariaDB 10.6+)
   DbExplorer.Desktop               Avalonia UI, MVVM (CommunityToolkit.Mvvm), DI composition root
 tests/
   DbExplorer.Tests                 xUnit tests for pure logic (no database needed)
@@ -120,6 +124,14 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 
 **PostgreSQL**
 - MVCC readers never block writers. Each query runs in its own transaction with `SET TRANSACTION READ ONLY; SET LOCAL statement_timeout; SET LOCAL lock_timeout`, then rolls back. Column profiling uses the same read-only transaction.
+
+**MySQL / MariaDB**
+- A MySQL schema is a database, so each one shows as a database with a single schema of the same name.
+- Catalog reads, search and profiling run in `START TRANSACTION READ ONLY` with session lock and statement timeouts (`lock_wait_timeout`, `innodb_lock_wait_timeout`, `max_execution_time` on MySQL or `max_statement_time` on MariaDB), then roll back. InnoDB readers take no row locks.
+- Read-only connections run `SET SESSION TRANSACTION READ ONLY`, so the server refuses writes too. Limited read-only scripts use `sql_select_limit`.
+- Top queries, change counters and index usage come from `performance_schema`, which MariaDB leaves off by default; the app says how to turn it on. Locks come from `performance_schema.data_locks` (MySQL) or `information_schema.INNODB_LOCKS` (MariaDB).
+- Plans: `EXPLAIN FORMAT=TREE` / `EXPLAIN ANALYZE` on MySQL, `EXPLAIN FORMAT=JSON` / `ANALYZE FORMAT=JSON` on MariaDB.
+- MySQL commits DDL as it runs: the Table designer's script is not all-or-nothing there, and a dry run stops before a DDL statement instead of running it.
 
 **Large databases**
 - The metadata snapshot makes browsing, name/code search, diagrams and the schema overview independent of data size.

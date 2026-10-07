@@ -31,7 +31,8 @@ public sealed record LockImpactReport(IReadOnlyList<LockTarget> Targets, IReadOn
 /// <summary>
 /// Predicts who a script would block before it runs: the estimated plan gives the tables it writes and how many rows
 /// (nothing is executed), engine rules turn that into the locks it will take (row locks, SQL Server lock escalation past
-/// 5,000 rows, PostgreSQL's ACCESS EXCLUSIVE for most DDL), and the live lock list and running requests show which
+/// 5,000 rows, PostgreSQL's ACCESS EXCLUSIVE for most DDL, MySQL metadata locks and InnoDB locking every row a write scans),
+/// and the live lock list and running requests show which
 /// sessions are on those tables right now and would block it or be blocked by it.
 /// </summary>
 public sealed class LockImpactAnalyzer
@@ -88,6 +89,33 @@ public sealed class LockImpactAnalyzer
     public static IEnumerable<ImpactFinding> Rules(LockTarget t, string providerKey)
     {
         var rows = t.EstimatedRows is double r ? $"≈{r:N0} row(s)" : "an unknown number of rows";
+        if (providerKey == SqlDialect.MySqlKey)
+        {
+            switch (t.LockKind)
+            {
+                case MySqlExclusiveMetadata:
+                    yield return new ImpactFinding(ImpactSeverity.Danger, t.Table,
+                        $"{t.Operation} needs an exclusive metadata lock on {t.Table}: it waits for every open transaction that has touched the table (idle ones included), and every new query on the table queues behind it. Set lock_wait_timeout and run it when the table is quiet.");
+                    yield break;
+                case MySqlOnlineDdl:
+                    yield return new ImpactFinding(ImpactSeverity.Warning, t.Table,
+                        $"{t.Operation} runs online where InnoDB can (reads and writes continue), but takes an exclusive metadata lock at the start and the end: it waits for open transactions on {t.Table}, and queries arriving meanwhile queue behind it. Changes InnoDB cannot do in place (e.g. a column type) copy the table and block writes.");
+                    yield break;
+                case MySqlTableWrite:
+                    yield return new ImpactFinding(ImpactSeverity.Danger, t.Table,
+                        $"{t.Operation} takes a table lock on {t.Table}: other sessions wait until UNLOCK TABLES.");
+                    yield break;
+                case MySqlFullScanRowLocks:
+                    yield return new ImpactFinding(ImpactSeverity.Danger, t.Table,
+                        $"{t.Operation} finds its rows without an index: InnoDB locks every row it scans ({rows}), not just the ones it changes, so other writers of {t.Table} wait until commit. An index on the WHERE columns limits the locks.");
+                    yield break;
+            }
+            yield return new ImpactFinding(t.EstimatedRows is >= 100_000 ? ImpactSeverity.Warning : ImpactSeverity.Info, t.Table,
+                $"{t.Operation} of {rows}: InnoDB row locks (with gap locks under REPEATABLE READ) on the rows it reaches through the index; other writers of those rows wait until commit, readers never do." +
+                (t.EstimatedRows is >= 100_000 ? " A large transaction also grows the undo log and replication lag; consider batches (LIMIT in a loop)." : ""));
+            yield break;
+        }
+
         if (providerKey == SqlDialect.SqlServerKey)
         {
             switch (t.LockKind)
@@ -154,9 +182,27 @@ public sealed class LockImpactAnalyzer
         }
 
         var sqlServer = providerKey == SqlDialect.SqlServerKey;
-        var exclusive = sqlServer ? "Sch-M" : "ACCESS EXCLUSIVE";
+        var mySql = providerKey == SqlDialect.MySqlKey;
+        var exclusive = sqlServer ? "Sch-M" : mySql ? MySqlExclusiveMetadata : "ACCESS EXCLUSIVE";
         var w0 = Word(0);
         var w1 = Word(1);
+        if (mySql)
+        {
+            switch (w0)
+            {
+                case "ALTER" when w1 is "TABLE":
+                    return new LockTarget(NameAfter(2), "ALTER TABLE", null, MySqlOnlineDdl);
+                case "CREATE" or "DROP" when IsIndexStatement(tokens):
+                {
+                    var on = tokens.FindIndex(t => t.Is("ON"));
+                    return new LockTarget(on >= 0 ? NameAfter(on + 1) : "", w0 + " INDEX", null, MySqlOnlineDdl);
+                }
+                case "LOCK" when w1 is "TABLES" or "TABLE":
+                    return new LockTarget(NameAfter(2), "LOCK TABLES", null, MySqlTableWrite);
+                case "OPTIMIZE" or "RENAME" when w1 is "TABLE":
+                    return new LockTarget(NameAfter(2), w0 + " TABLE", null, MySqlExclusiveMetadata);
+            }
+        }
         switch (w0)
         {
             case "ALTER" when w1 is "TABLE":
@@ -167,9 +213,9 @@ public sealed class LockImpactAnalyzer
                 return new LockTarget(NameAfter(1), "TRUNCATE", null, exclusive);
             case "LOCK" when w1 is "TABLE" || !sqlServer:
                 return new LockTarget(NameAfter(w1 is "TABLE" ? 2 : 1), "LOCK TABLE", null, exclusive);
-            case "VACUUM" when statement.Contains("FULL", StringComparison.OrdinalIgnoreCase):
+            case "VACUUM" when !mySql && statement.Contains("FULL", StringComparison.OrdinalIgnoreCase):
                 return new LockTarget(NameAfter(2), "VACUUM FULL", null, "ACCESS EXCLUSIVE");
-            case "CLUSTER" or "REINDEX" when !sqlServer && !statement.Contains("CONCURRENTLY", StringComparison.OrdinalIgnoreCase):
+            case "CLUSTER" or "REINDEX" when !sqlServer && !mySql && !statement.Contains("CONCURRENTLY", StringComparison.OrdinalIgnoreCase):
                 return new LockTarget(NameAfter(w0 == "REINDEX" ? 2 : 1), w0, null, w0 == "CLUSTER" ? "ACCESS EXCLUSIVE" : "SHARE");
             case "CREATE" or "DROP" when IsIndexStatement(tokens):
             {
@@ -188,6 +234,11 @@ public sealed class LockImpactAnalyzer
         return null;
     }
 
+    private const string MySqlExclusiveMetadata = "METADATA EXCLUSIVE";
+    private const string MySqlOnlineDdl = "ONLINE DDL";
+    private const string MySqlTableWrite = "TABLE LOCK";
+    private const string MySqlFullScanRowLocks = "row locks (full scan)";
+
     private static bool IsIndexStatement(IReadOnlyList<SqlToken> tokens) =>
         tokens.Take(5).Any(t => t.Is("INDEX"));
 
@@ -195,7 +246,7 @@ public sealed class LockImpactAnalyzer
     public static bool LocksOnRead(string statement, string providerKey) =>
         providerKey == SqlDialect.SqlServerKey
             ? Regex.IsMatch(statement, @"\b(UPDLOCK|XLOCK|TABLOCKX|TABLOCK|HOLDLOCK|SERIALIZABLE)\b", RegexOptions.IgnoreCase)
-            : Regex.IsMatch(statement, @"\bFOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)\b", RegexOptions.IgnoreCase);
+            : Regex.IsMatch(statement, @"\bFOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)\b|\bLOCK\s+IN\s+SHARE\s+MODE\b", RegexOptions.IgnoreCase);
 
     private static async Task<IReadOnlyList<LockTarget>> EstimateAsync(
         DatabaseSession session, string? database, string statement, string key, CancellationToken ct)
@@ -207,9 +258,47 @@ public sealed class LockImpactAnalyzer
             return plan is null ? [] : ParseShowPlan(plan.Columns, plan.Rows);
         }
 
+        if (key == SqlDialect.MySqlKey)
+        {
+            var result = await session.Provider.ExecuteScriptAsync($"EXPLAIN {statement}", database, 60, ct);
+            var table = result.ResultSets.FirstOrDefault(rs => rs.Columns.Contains("select_type", StringComparer.OrdinalIgnoreCase));
+            return table is null ? [] : ParseMySqlExplain(table.Columns, table.Rows, statement);
+        }
+
         var json = await session.Provider.ExecuteScriptAsync($"EXPLAIN (FORMAT JSON) {statement}", database, 60, ct);
         var text = json.ResultSets.FirstOrDefault()?.Rows.FirstOrDefault()?.FirstOrDefault()?.ToString();
         return text is null ? [] : ParsePostgresPlan(text);
+    }
+
+    /// <summary>
+    /// MySQL's classic EXPLAIN table for one statement: the written table's estimated rows, and whether it is reached
+    /// without an index (type ALL / index), in which case InnoDB locks every row it scans. A locking SELECT locks each
+    /// table it reads.
+    /// </summary>
+    public static IReadOnlyList<LockTarget> ParseMySqlExplain(IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<object?>> rows, string statement)
+    {
+        int Col(string name) => columns.ToList().FindIndex(c => string.Equals(c, name, StringComparison.OrdinalIgnoreCase));
+        var table = Col("table");
+        var type = Col("type");
+        var estimate = Col("rows");
+        if (rows.Count == 0) return [];
+        double? Rows(IReadOnlyList<object?> row) => estimate >= 0 && row[estimate] is { } v and not DBNull ? Convert.ToDouble(v, CultureInfo.InvariantCulture) : null;
+        bool Scans(IReadOnlyList<object?> row) => type >= 0 && row[type]?.ToString() is "ALL" or "index";
+
+        var kind = SqlAnatomy.KindOf(statement);
+        if (kind == DmlKind.Select)
+        {
+            return rows.Where(r => table >= 0 && r[table] is string name && !name.StartsWith('<'))
+                .Select(r => new LockTarget(r[table]!.ToString()!, "SELECT … FOR UPDATE/SHARE", Rows(r), Scans(r) ? MySqlFullScanRowLocks : "row locks"))
+                .ToList();
+        }
+
+        var dml = SqlAnatomy.ParseDml(statement);
+        if (dml is null) return [];
+        var first = rows[0];
+        var operation = kind.ToString().ToUpperInvariant();
+        var scans = kind is DmlKind.Update or DmlKind.Delete && Scans(first);
+        return [new LockTarget(dml.Target, operation, kind == DmlKind.Insert ? null : Rows(first), scans ? MySqlFullScanRowLocks : "row locks")];
     }
 
     private static readonly Regex ObjectArgument = new(@"OBJECT:\((?:\[[^\]]*\]\.)?(?<schema>\[[^\]]*\])\.(?<table>\[[^\]]*\])", RegexOptions.CultureInvariant);
@@ -308,6 +397,7 @@ public sealed class LockImpactAnalyzer
         {
             var target = group.First();
             var exclusive = group.Any(t => t.LockKind is "Sch-M" or "ACCESS EXCLUSIVE" or "S table" or "SHARE" ||
+                                           t.LockKind is MySqlExclusiveMetadata or MySqlTableWrite ||
                                            t.EstimatedRows is >= EscalationThreshold && session.Provider.ProviderKey == SqlDialect.SqlServerKey);
 
             var holders = locks.Where(l => SameTable(l.ObjectName, target.Table))
@@ -345,7 +435,7 @@ public sealed class LockImpactAnalyzer
         return a.Length < 2 || b.Length < 2 || string.Equals(a[^2], b[^2], StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Normalize(string name) => name.Replace("[", "").Replace("]", "").Replace("\"", "").Trim();
+    private static string Normalize(string name) => name.Replace("[", "").Replace("]", "").Replace("\"", "").Replace("`", "").Trim();
 
     private static string Shorten(string? sql)
     {

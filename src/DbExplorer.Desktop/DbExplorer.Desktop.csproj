@@ -14,6 +14,7 @@
     <ProjectReference Include="..\DbExplorer.Application\DbExplorer.Application.csproj" />
     <ProjectReference Include="..\DbExplorer.Providers.SqlServer\DbExplorer.Providers.SqlServer.csproj" />
     <ProjectReference Include="..\DbExplorer.Providers.Postgres\DbExplorer.Providers.Postgres.csproj" />
+    <ProjectReference Include="..\DbExplorer.Providers.MySql\DbExplorer.Providers.MySql.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.3" />

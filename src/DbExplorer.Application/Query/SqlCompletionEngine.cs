@@ -117,7 +117,22 @@ public sealed class SqlCompletionEngine
         new("ARRAY_AGG", "array_agg(expression)", "Postgres"), new("UNNEST", "unnest(array)", "Postgres"),
         new("JSON_AGG", "json_agg(expression)", "Postgres"), new("JSONB_BUILD_OBJECT", "jsonb_build_object(key, value, …)", "Postgres"),
         new("GENERATE_SERIES", "generate_series(start, stop, step)", "Postgres"), new("GREATEST", "greatest(value, …)", "Postgres"),
-        new("LEAST", "least(value, …)", "Postgres"), new("GEN_RANDOM_UUID", "gen_random_uuid() → uuid", "Postgres")
+        new("LEAST", "least(value, …)", "Postgres"), new("GEN_RANDOM_UUID", "gen_random_uuid() → uuid", "Postgres"),
+        // MySQL / MariaDB
+        new("NOW", "NOW() → datetime", "MySql"), new("CURDATE", "CURDATE() → date", "MySql"),
+        new("DATE_ADD", "DATE_ADD(date, INTERVAL n unit)", "MySql"), new("DATE_SUB", "DATE_SUB(date, INTERVAL n unit)", "MySql"),
+        new("DATEDIFF", "DATEDIFF(end, start) → days", "MySql"), new("TIMESTAMPDIFF", "TIMESTAMPDIFF(unit, start, end)", "MySql"),
+        new("DATE_FORMAT", "DATE_FORMAT(date, '%Y-%m-%d')", "MySql"), new("STR_TO_DATE", "STR_TO_DATE(text, 'format')", "MySql"),
+        new("IFNULL", "IFNULL(value, replacement)", "MySql"), new("IF", "IF(condition, whenTrue, whenFalse)", "MySql"),
+        new("GROUP_CONCAT", "GROUP_CONCAT(expression ORDER BY … SEPARATOR ',')", "MySql"), new("CONCAT_WS", "CONCAT_WS(separator, value, …)", "MySql"),
+        new("LENGTH", "LENGTH(text) → bytes", "MySql"), new("CHAR_LENGTH", "CHAR_LENGTH(text)", "MySql"),
+        new("LEFT", "LEFT(text, count)", "MySql"), new("RIGHT", "RIGHT(text, count)", "MySql"),
+        new("LOCATE", "LOCATE(find, text, start)", "MySql"), new("SUBSTRING_INDEX", "SUBSTRING_INDEX(text, delimiter, count)", "MySql"),
+        new("REGEXP_REPLACE", "REGEXP_REPLACE(text, pattern, replacement)", "MySql"), new("UUID", "UUID() → char(36)", "MySql"),
+        new("LAST_INSERT_ID", "LAST_INSERT_ID()", "MySql"), new("FOUND_ROWS", "FOUND_ROWS()", "MySql"),
+        new("JSON_EXTRACT", "JSON_EXTRACT(json, '$.path')", "MySql"), new("JSON_UNQUOTE", "JSON_UNQUOTE(json)", "MySql"),
+        new("JSON_OBJECT", "JSON_OBJECT(key, value, …)", "MySql"), new("JSON_ARRAYAGG", "JSON_ARRAYAGG(expression)", "MySql"),
+        new("GREATEST", "GREATEST(value, …)", "MySql"), new("LEAST", "LEAST(value, …)", "MySql")
     ];
 
     public static readonly IReadOnlySet<string> KnownFunctionNames =
@@ -205,7 +220,8 @@ public sealed class SqlCompletionEngine
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
         _allColumnNames = snapshot.Columns.Select(c => c.Name).Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
-        _functions = Functions.Where(f => f.Provider is null || providerKey is null || f.Provider == providerKey).ToList();
+        _functions = Functions.Where(f => f.Provider is null || providerKey is null || f.Provider == providerKey)
+            .DistinctBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>The most frequent values of a column, or null while unknown (see <see cref="ColumnValueCache"/>).</summary>
@@ -216,6 +232,7 @@ public sealed class SqlCompletionEngine
 
     private bool IsSqlServer => _providerKey is null or "SqlServer";
     private bool IsPostgres => _providerKey is null or "Postgres";
+    private bool IsMySql => _providerKey is null or "MySql";
 
     // ----- Completion -----
 
@@ -565,9 +582,9 @@ public sealed class SqlCompletionEngine
     {
         "SELECT" or "DISTINCT" or "TOP" => ["FROM", "AS", "DISTINCT", "CASE", IsSqlServer ? "TOP" : "LIMIT", "INTO"],
         "WHERE" or "HAVING" or "ON" => ["AND", "OR", "NOT", "IN", "NOT IN", "EXISTS", "NOT EXISTS", "BETWEEN", "LIKE", "IS NULL", "IS NOT NULL",
-                                        "GROUP BY", "ORDER BY", IsPostgres ? "ILIKE" : "ESCAPE"],
-        "GROUP BY" => ["HAVING", "ORDER BY", "ROLLUP", "CUBE"],
-        "ORDER BY" => ["ASC", "DESC", IsSqlServer ? "OFFSET" : "LIMIT", IsSqlServer ? "FETCH NEXT" : "NULLS LAST"],
+                                        "GROUP BY", "ORDER BY", IsPostgres ? "ILIKE" : IsMySql ? "REGEXP" : "ESCAPE"],
+        "GROUP BY" => _providerKey == "MySql" ? ["HAVING", "ORDER BY", "WITH ROLLUP"] : ["HAVING", "ORDER BY", "ROLLUP", "CUBE"],
+        "ORDER BY" => ["ASC", "DESC", IsSqlServer ? "OFFSET" : "LIMIT", IsSqlServer ? "FETCH NEXT" : _providerKey == "MySql" ? "OFFSET" : "NULLS LAST"],
         "PARTITION BY" => ["ORDER BY"],
         "SET" => ["WHERE", "FROM", "OUTPUT", "RETURNING"],
         "CASE" or "WHEN" => ["WHEN", "THEN", "ELSE", "END"],
@@ -617,7 +634,8 @@ public sealed class SqlCompletionEngine
         KeywordItems(Keywords.Where(k => k switch
         {
             "TOP" or "NOLOCK" or "CROSS APPLY" or "OUTER APPLY" or "PRINT" or "OUTPUT" or "MERGE" or "EXEC" => IsSqlServer,
-            "LIMIT" or "RETURNING" or "ILIKE" => IsPostgres,
+            "LIMIT" => IsPostgres || IsMySql,
+            "RETURNING" or "ILIKE" => IsPostgres,
             _ => true
         }));
 
@@ -641,6 +659,8 @@ public sealed class SqlCompletionEngine
         yield return Snippet("CASE WHEN … END", "CASE WHEN | THEN  ELSE  END", "conditional expression");
         yield return IsSqlServer
             ? Snippet("BEGIN TRANSACTION … COMMIT", "BEGIN TRANSACTION;\n\n|\n\nCOMMIT TRANSACTION;", "explicit transaction")
+            : _providerKey == "MySql"
+            ? Snippet("START TRANSACTION … COMMIT", "START TRANSACTION;\n\n|\n\nCOMMIT;", "explicit transaction")
             : Snippet("BEGIN … COMMIT", "BEGIN;\n\n|\n\nCOMMIT;", "explicit transaction");
         if (IsSqlServer)
             yield return Snippet("IF EXISTS (…)", "IF EXISTS (SELECT 1 FROM | WHERE )\nBEGIN\n    \nEND", "conditional block");

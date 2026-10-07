@@ -79,7 +79,7 @@ public static class SchemaSuggester
         sb.Append("-- Not run. Review each one first: adding a constraint fails\n");
         sb.Append("-- while existing rows point at missing parents.\n\n");
         if (!string.IsNullOrEmpty(database))
-            sb.Append(dialect.ProviderKey == SqlDialect.SqlServerKey ? $"USE {dialect.Quote(database)};\n\n" : $"-- Run in database {database}.\n\n");
+            sb.Append(dialect.ProviderKey is SqlDialect.SqlServerKey or SqlDialect.MySqlKey ? $"USE {dialect.Quote(database)};\n\n" : $"-- Run in database {database}.\n\n");
 
         foreach (var s in suggestions)
         {

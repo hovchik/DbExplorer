@@ -36,18 +36,37 @@ public static class ColumnTypes
         "date", "timestamp", "timestamptz", "time", "interval", "uuid", "jsonb", "json", "bytea"
     ];
 
-    /// <summary>The types offered in the designer's type list, most used first.</summary>
-    public static IReadOnlyList<string> For(string providerKey) => providerKey == SqlDialect.SqlServerKey ? SqlServer : Postgres;
+    private static readonly string[] MySql =
+    [
+        "int", "bigint", "smallint", "tinyint", "boolean", "decimal", "double", "float", "varchar", "char", "text",
+        "mediumtext", "longtext", "date", "datetime", "timestamp", "time", "json", "varbinary", "blob", "longblob"
+    ];
 
-    /// <summary>SQL Server sizes a varchar/nvarchar/varbinary without a length as 1 in a CREATE TABLE.</summary>
-    public static bool NeedsLength(string providerKey, string baseType) =>
-        providerKey == SqlDialect.SqlServerKey && baseType is "varchar" or "nvarchar" or "varbinary" or "char" or "nchar" or "binary";
+    /// <summary>The types offered in the designer's type list, most used first.</summary>
+    public static IReadOnlyList<string> For(string providerKey) => providerKey switch
+    {
+        SqlDialect.SqlServerKey => SqlServer,
+        SqlDialect.MySqlKey => MySql,
+        _ => Postgres
+    };
+
+    /// <summary>SQL Server sizes a varchar/nvarchar/varbinary without a length as 1 in a CREATE TABLE; MySQL refuses a
+    /// varchar or varbinary without one.</summary>
+    public static bool NeedsLength(string providerKey, string baseType) => providerKey switch
+    {
+        SqlDialect.SqlServerKey => baseType is "varchar" or "nvarchar" or "varbinary" or "char" or "nchar" or "binary",
+        SqlDialect.MySqlKey => baseType is "varchar" or "varbinary",
+        _ => false
+    };
 
     public static TypeFamily Family(ColumnDesign column) => Family(column.BaseType, column.EffectiveSize);
 
     public static TypeFamily Family(string baseType, string? size = null)
     {
         var type = baseType.Trim().ToLowerInvariant();
+        // MySQL's attributes after the type: int unsigned, decimal(10,2) unsigned zerofill.
+        foreach (var attribute in new[] { " zerofill", " unsigned", " signed" })
+            if (type.EndsWith(attribute, StringComparison.Ordinal)) type = type[..^attribute.Length].TrimEnd();
         var open = type.IndexOf('(');
         if (open >= 0)
         {
@@ -57,19 +76,20 @@ public static class ColumnTypes
         var max = string.Equals(size?.Trim(), "max", StringComparison.OrdinalIgnoreCase);
         return type switch
         {
-            "tinyint" or "smallint" or "int" or "bigint" or "int2" or "int4" or "int8" or "integer" or "serial" or "bigserial" or "smallserial" => TypeFamily.Integer,
+            "tinyint" when size?.Trim() == "1" => TypeFamily.Boolean, // MySQL's boolean
+            "tinyint" or "smallint" or "mediumint" or "int" or "bigint" or "int2" or "int4" or "int8" or "integer" or "serial" or "bigserial" or "smallserial" => TypeFamily.Integer,
             "decimal" or "numeric" or "money" or "smallmoney" => TypeFamily.Decimal,
-            "float" or "real" or "double precision" or "float4" or "float8" => TypeFamily.Float,
+            "float" or "real" or "double" or "double precision" or "float4" or "float8" => TypeFamily.Float,
             "varchar" or "nvarchar" or "character varying" when max => TypeFamily.LargeText,
             "char" or "nchar" or "varchar" or "nvarchar" or "character" or "character varying" or "bpchar" or "citext" or "sysname" => TypeFamily.Text,
-            "text" or "ntext" => TypeFamily.LargeText,
+            "text" or "ntext" or "tinytext" or "mediumtext" or "longtext" => TypeFamily.LargeText,
             "bit" or "boolean" or "bool" => TypeFamily.Boolean,
             "date" => TypeFamily.Date,
             "datetime" or "datetime2" or "smalldatetime" or "datetimeoffset" or "timestamp" or "timestamptz"
                 or "timestamp with time zone" or "timestamp without time zone" => TypeFamily.DateTime,
             "time" or "interval" => TypeFamily.Time,
             "uniqueidentifier" or "uuid" => TypeFamily.Uuid,
-            "varbinary" or "binary" or "bytea" or "image" => TypeFamily.Binary,
+            "varbinary" or "binary" or "bytea" or "image" or "tinyblob" or "blob" or "mediumblob" or "longblob" => TypeFamily.Binary,
             "json" or "jsonb" or "xml" => TypeFamily.Json,
             _ => TypeFamily.Other
         };
@@ -78,6 +98,22 @@ public static class ColumnTypes
     /// <summary>The engine's everyday type for a family: int / integer, datetime2 / timestamptz, bit / boolean …</summary>
     public static (string Type, string? Size) Preferred(string providerKey, TypeFamily family)
     {
+        if (providerKey == SqlDialect.MySqlKey)
+            return family switch
+            {
+                TypeFamily.Integer => ("int", null),
+                TypeFamily.Decimal => ("decimal", "18,2"),
+                TypeFamily.Float => ("double", null),
+                TypeFamily.Boolean => ("boolean", null),
+                TypeFamily.Date => ("date", null),
+                TypeFamily.DateTime => ("datetime", null),
+                TypeFamily.Time => ("time", null),
+                TypeFamily.Uuid => ("char", "36"),
+                TypeFamily.Binary => ("blob", null),
+                TypeFamily.Json => ("json", null),
+                TypeFamily.LargeText => ("text", null),
+                _ => ("varchar", "100")
+            };
         var sqlServer = providerKey == SqlDialect.SqlServerKey;
         return family switch
         {
@@ -97,10 +133,13 @@ public static class ColumnTypes
     }
 
     /// <summary>The expression for "now" a timestamp column defaults to.</summary>
-    public static string NowExpression(string providerKey, string baseType) =>
-        providerKey == SqlDialect.SqlServerKey
-            ? baseType switch { "datetime" or "smalldatetime" => "GETDATE()", "datetimeoffset" => "SYSDATETIMEOFFSET()", "date" => "CAST(GETDATE() AS date)", _ => "SYSUTCDATETIME()" }
-            : baseType == "date" ? "CURRENT_DATE" : "now()";
+    public static string NowExpression(string providerKey, string baseType) => providerKey switch
+    {
+        SqlDialect.SqlServerKey => baseType switch { "datetime" or "smalldatetime" => "GETDATE()", "datetimeoffset" => "SYSDATETIMEOFFSET()", "date" => "CAST(GETDATE() AS date)", _ => "SYSUTCDATETIME()" },
+        // A date column needs an expression default, which MySQL only takes in brackets.
+        SqlDialect.MySqlKey => baseType == "date" ? "(CURRENT_DATE)" : "CURRENT_TIMESTAMP",
+        _ => baseType == "date" ? "CURRENT_DATE" : "now()"
+    };
     /// <summary>A type written the same way whatever spelling was used, to tell a real type change from a respelling:
     /// character varying(100) and varchar(100), int4 and integer, timestamptz and timestamp with time zone.</summary>
     public static string Canonical(string providerKey, string fullType)
@@ -112,6 +151,16 @@ public static class ColumnTypes
         var name = open < 0 ? type : type[..open];
         var size = open >= 0 && close > open ? type[open..(close + 1)] : "";
         var rest = open >= 0 && close > open ? type[(close + 1)..].Trim() : "";
+        if (providerKey == SqlDialect.MySqlKey)
+        {
+            // Integer display widths (int(11)) mean nothing since MySQL 8.0.19, except tinyint(1), MySQL's boolean.
+            name = name switch { "integer" => "int", "numeric" => "decimal", "real" or "double precision" => "double", _ => name };
+            if (name is "bool" or "boolean") (name, size) = ("tinyint", "(1)");
+            if (name is "tinyint" or "smallint" or "mediumint" or "int" or "bigint" && !(name == "tinyint" && size == "(1)")) size = "";
+            if (name is "decimal" && size == "") size = "(10)";
+            if (name is "decimal" && size.EndsWith(",0)", StringComparison.Ordinal)) size = size[..^3] + ")";
+            return name + size + (rest.Length > 0 ? " " + rest : "");
+        }
         if (providerKey != SqlDialect.SqlServerKey)
         {
             if (rest.Length > 0) name = $"{name} {rest}";
@@ -182,8 +231,9 @@ public static class ColumnTypes
     {
         "tinyint" => 1,
         "smallint" or "int2" or "smallserial" => 2,
-        "bigint" or "int8" or "bigserial" => 4,
-        _ => 3
+        "mediumint" => 3,
+        "bigint" or "int8" or "bigserial" => 5,
+        _ => 4
     };
 
     /// <summary>Precision and scale; a decimal without them counts as unlimited (PostgreSQL) or 18,0 (SQL Server).</summary>

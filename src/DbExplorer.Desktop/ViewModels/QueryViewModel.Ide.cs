@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
@@ -144,7 +145,7 @@ public partial class QueryViewModel
         Status = analyze ? "Running and measuring…" : "Getting the estimated plan…";
         try
         {
-            var result = await queryService.ExecuteScriptAsync(session, PlanReader.BuildScript(sql, key, analyze), TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
+            var result = await queryService.ExecuteScriptAsync(session, PlanReader.BuildScript(sql, key, analyze, session.ServerVersion), TargetDatabase, TimeoutSeconds * 5, _runCts.Token);
             IReadOnlyList<ExecutionPlan> plans;
             try
             {
@@ -219,7 +220,7 @@ public partial class QueryViewModel
         var result = await queryService.ExecuteScriptAsync(session, script, TargetDatabase, TimeoutSeconds * 5, ct);
         // SQL Server's STATISTICS PROFILE interleaves the statements' own results with the plans; keep the plans.
         var plans = result.ResultSets
-            .Where(rs => key != "SqlServer" || rs.Columns.Contains("StmtText", StringComparer.OrdinalIgnoreCase))
+            .Where(rs => key != SqlDialect.SqlServerKey || rs.Columns.Contains("StmtText", StringComparer.OrdinalIgnoreCase))
             .ToList();
         ResultSets = plans.Select((rs, i) => ResultSetView.From(plans.Count == 1 ? "Plan" : $"Plan {i + 1}", rs, session)).ToList();
 

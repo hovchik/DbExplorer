@@ -74,6 +74,19 @@ public class ConnectionTransferTests
     }
 
     [Theory]
+    [InlineData(2147483647)]
+    [InlineData(10_000_001)]
+    [InlineData(999)]
+    public void A_file_asking_for_an_unreasonable_key_work_factor_is_refused(int iterations)
+    {
+        var doc = System.Text.Json.Nodes.JsonNode.Parse(ConnectionTransfer.Export([Profile("main", "s3cret!")], "right"))!;
+        doc["passwords"]!["iterations"] = iterations;
+
+        var ex = Assert.Throws<InvalidDataException>(() => ConnectionTransfer.Read(doc.ToJsonString()));
+        Assert.Contains("iterations", ex.Message);
+    }
+
+    [Theory]
     [InlineData("not json")]
     [InlineData("""{"format":"Something.Else","version":1,"connections":[]}""")]
     [InlineData("""{"format":"DbExplorer.Connections","version":99,"connections":[]}""")]

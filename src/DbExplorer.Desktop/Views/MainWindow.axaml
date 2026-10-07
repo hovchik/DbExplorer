@@ -98,6 +98,9 @@
       <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
         <views:TableDesignerView DataContext="{Binding TableDesigner}" />
       </TabItem>
+      <TabItem Header="ER model" ToolTip.Tip="Draw tables and relationships, or read them from a database, and generate the DDL">
+        <views:ErModelView DataContext="{Binding ErModel}" />
+      </TabItem>
       <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
         <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
       </TabItem>
@@ -112,6 +115,9 @@
       </TabItem>
       <TabItem Header="Lab" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Experimental: change recorder, schema history, inferred relationships">
         <views:LabView DataContext="{Binding Lab}" />
+      </TabItem>
+      <TabItem Header="Security" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Logins, users and roles: memberships and permissions, edited as a reviewed script">
+        <views:SecurityView DataContext="{Binding Security}" />
       </TabItem>
     </TabControl>
   </DockPanel>

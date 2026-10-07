@@ -16,7 +16,7 @@ namespace DbExplorer.Desktop.ViewModels;
 /// tables and indexes, with the CREATE TABLE (or ALTER TABLE) script and <see cref="TableDesignAdvisor"/>'s suggestions
 /// updated on every edit. Nothing reaches the server until Execute, which shows the exact script and asks first.
 /// </summary>
-public partial class TableDesignerViewModel(SessionService sessions, IDialogService dialogs) : ViewModelBase, ISessionAware
+public partial class TableDesignerViewModel(SessionService sessions, IDialogService dialogs) : ViewModelBase, ISessionAware, IForeignKeyRowOwner
 {
     private const int TimeoutSeconds = 60;
     private DatabaseSession? _session;
@@ -657,6 +657,9 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         lists.SelectMany(l => l).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!)
             .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
 
+    IReadOnlyList<string> IForeignKeyRowOwner.ColumnsOfTable(string fullName, out string? key) => ColumnsOfTable(fullName, out key);
+    void IForeignKeyRowOwner.Changed() => Changed();
+
     internal IReadOnlyList<string> ColumnsOfTable(string fullName, out string? key)
     {
         key = null;
@@ -728,10 +731,24 @@ public partial class ColumnRow : ObservableObject
     }
 }
 
+/// <summary>What a <see cref="ForeignKeyRow"/> picks from: the Table designer's table, or a table of the ER model.</summary>
+internal interface IForeignKeyRowOwner
+{
+    /// <summary>The design's column names.</summary>
+    ObservableCollection<string> ColumnNames { get; }
+
+    /// <summary>Tables a key can reference, as schema.table.</summary>
+    IReadOnlyList<string> TableNames { get; }
+
+    IReadOnlyList<string> ColumnsOfTable(string fullName, out string? key);
+
+    void Changed();
+}
+
 /// <summary>One foreign key row: a column of the new table and the existing table and column it references.</summary>
 public partial class ForeignKeyRow : ObservableObject
 {
-    private TableDesignerViewModel? _owner;
+    private IForeignKeyRowOwner? _owner;
     private bool _loading;
 
     [ObservableProperty] private string? _column;
@@ -743,7 +760,7 @@ public partial class ForeignKeyRow : ObservableObject
     public ObservableCollection<string> ColumnChoices => _owner?.ColumnNames ?? [];
     public IReadOnlyList<string> TableChoices => _owner?.TableNames ?? [];
 
-    public static ForeignKeyRow From(ForeignKeyDesign f, TableDesignerViewModel owner)
+    internal static ForeignKeyRow From(ForeignKeyDesign f, IForeignKeyRowOwner owner)
     {
         var row = new ForeignKeyRow { _owner = owner, _loading = true };
         row.Column = f.Column.Length > 0 ? f.Column : null;

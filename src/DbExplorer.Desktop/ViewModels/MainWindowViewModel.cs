@@ -34,10 +34,12 @@ public partial class MainWindowViewModel : ViewModelBase
         ActivityViewModel activity,
         DiagramViewModel diagram,
         TableDesignerViewModel tableDesigner,
+        ErModelViewModel erModel,
         QueryBuilderViewModel queryBuilder,
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
-        LabViewModel lab)
+        LabViewModel lab,
+        SecurityViewModel security)
     {
         _store = store;
         _sessions = sessions;
@@ -53,13 +55,15 @@ public partial class MainWindowViewModel : ViewModelBase
         Activity = activity;
         Diagram = diagram;
         TableDesigner = tableDesigner;
+        ErModel = erModel;
         QueryBuilder = queryBuilder;
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, queryBuilder, query, comparer, lab];
+        Security = security;
+        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, erModel, queryBuilder, query, comparer, lab, security];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -91,6 +95,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
         };
+        erModel.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
         objects.DesignTableRequested += table =>
         {
             SelectedTab = AppTab.TableDesigner;
@@ -100,6 +109,11 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
+        };
+        security.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
         };
         dataSearch.OpenSqlRequested += (sql, database) =>
         {
@@ -122,6 +136,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public ActivityViewModel Activity { get; }
     public DiagramViewModel Diagram { get; }
     public TableDesignerViewModel TableDesigner { get; }
+    public ErModelViewModel ErModel { get; }
     public QueryBuilderViewModel QueryBuilder { get; }
 
     /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
@@ -129,6 +144,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
     public LabViewModel Lab { get; }
+    public SecurityViewModel Security { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -504,9 +520,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var tab in Enum.GetValues<AppTab>())
         {
-            if (!IsConnected && tab != AppTab.Comparer) continue;
+            if (!IsConnected && tab is not (AppTab.Comparer or AppTab.ErModel)) continue;
             var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
-            items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
+            items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code").Replace("Er model", "ER model"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
         }
 
         if (Session is { } session)
@@ -578,9 +594,11 @@ public enum AppTab
     SearchData,
     Diagram,
     TableDesigner,
+    ErModel,
     QueryBuilder,
     Indexes,
     Locks,
     Activity,
-    Lab
+    Lab,
+    Security
 }

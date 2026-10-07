@@ -59,12 +59,20 @@ public partial class QueryViewModel
         if (_transaction is null)
         {
             Status = "Starting a transaction…";
-            _transaction = await session.Provider.BeginScriptSessionAsync(TargetDatabase, transactional: true, ct);
+            var started = await session.Provider.BeginScriptSessionAsync(TargetDatabase, transactional: true, ct);
+            if (!ReferenceEquals(session, _session))
+            {
+                // Moved to another connection meanwhile: this transaction would never be ended.
+                await started.DisposeAsync();
+                EnsureCurrent(session, ct);
+            }
+            _transaction = started;
             _transactionStarted = DateTime.Now;
         }
         HasOpenTransaction = true;
         Status = "Running in the open transaction…";
         var result = await _transaction.QueryAsync(sql, ScriptTimeoutSeconds, RowLimit, ct, QueryExecutionService.ReadOnlyFor(sql, RowLimit));
+        EnsureCurrent(session, ct);
         ShowResult(session, sql, result, prefix: "In transaction · ");
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }
@@ -82,6 +90,9 @@ public partial class QueryViewModel
     {
         if (_transaction is not { } tx) return;
         _transaction = null;
+        // Closing the tab or changing the connection mid-run: a statement may still be running on the transaction's
+        // connection, which cannot roll back (or be disposed) under it. Stop it first.
+        await StopRunAsync();
         try
         {
             if (commit) await tx.CommitAsync();

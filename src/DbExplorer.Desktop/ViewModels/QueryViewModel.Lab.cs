@@ -32,6 +32,13 @@ public partial class QueryViewModel
         return _valueCache;
     }
 
+    /// <summary>Detached (closed or disconnected): the shared cache must not keep this tab alive through its event.</summary>
+    private void ReleaseValueCache()
+    {
+        if (_valueCache is not null) _valueCache.ValuesLoaded -= OnValuesLoaded;
+        _valueCache = null;
+    }
+
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DatabaseSession, ColumnValueCache> SharedValueCaches = new();
 
     private void OnValuesLoaded() => Avalonia.Threading.Dispatcher.UIThread.Post(() => CompletionValuesArrived?.Invoke());

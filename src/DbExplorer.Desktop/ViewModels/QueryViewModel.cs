@@ -120,8 +120,14 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     {
         var remembered = false;
         var preferredDatabase = session is null ? null : Databases.Resolve(session.Profile.Id, out remembered);
-        // An open manual transaction belongs to the old connection: roll it back rather than leave it hanging.
-        if (_transaction is not null && !ReferenceEquals(session, _session)) _ = EndTransactionAsync(commit: false, reason: "connection changed");
+        if (!ReferenceEquals(session, _session))
+        {
+            // A statement still running belongs to the old connection: stop it (its results are discarded, see EnsureCurrent).
+            _runCts?.Cancel();
+            // An open manual transaction belongs to the old connection: roll it back rather than leave it hanging.
+            if (_transaction is not null) _ = EndTransactionAsync(commit: false, reason: "connection changed");
+        }
+        if (session is null) ReleaseValueCache();
         if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
         _session = session;
         if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
@@ -366,8 +372,17 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         NotifyLabCommands();
     }
 
+    /// <summary>Pending while <see cref="IsRunning"/>: what <see cref="StopRunAsync"/> waits for.</summary>
+    private TaskCompletionSource? _runStopped;
+
     partial void OnIsRunningChanged(bool value)
     {
+        if (value) _runStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        else
+        {
+            _runStopped?.TrySetResult();
+            _runStopped = null;
+        }
         ExecuteCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         ExplainCommand.NotifyCanExecuteChanged();
@@ -442,6 +457,19 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void Cancel() => _runCts?.Cancel();
 
+    /// <summary>Cancels the running statement and waits for it to stop (at most <paramref name="wait"/>, 10 s by default),
+    /// so the connection or transaction it runs on is not rolled back or closed under it.</summary>
+    public async Task StopRunAsync(TimeSpan? wait = null)
+    {
+        if (_runStopped is not { } stopped) return;
+        _runCts?.Cancel();
+        await Task.WhenAny(stopped.Task, Task.Delay(wait ?? TimeSpan.FromSeconds(10)));
+    }
+
+    /// <summary>True from the start of <see cref="ExecuteAsync"/> to its end, also while it waits on the parameter and
+    /// confirmation dialogs, before <see cref="IsRunning"/> is set: auto refresh and a second run wait for it.</summary>
+    private bool _executing;
+
     /// <summary>
     /// Runs <paramref name="run"/> (a selection or the statement at the caret, with its offset in the editor) or, when
     /// null, the whole script: asks for undeclared parameters, warns about UPDATE/DELETE without WHERE and other
@@ -450,27 +478,36 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     [RelayCommand(CanExecute = nameof(CanExecute))]
     private async Task ExecuteAsync(QueryRun? run)
     {
-        if (_session is not { } session) return;
-
-        var targets = RunOnMultipleDatabases ? _allDatabases.Where(d => d.IsSelected).Select(d => d.Name).ToList() : [];
-        var sql = run is { Sql: { Length: > 0 } part } && !string.IsNullOrWhiteSpace(part) ? part : Sql;
-        var startOffset = run is { Sql.Length: > 0 } ? run.StartOffset : 0;
-        if (string.IsNullOrWhiteSpace(sql)) return;
-        if (!await ConfirmDiscardEditsAsync()) return;
-        ErrorCleared?.Invoke();
-
-        sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
-        if (sql is null) { Status = "Not run (parameters were not given)."; return; }
-
-        if (session.Profile.ReadOnly && ReadOnlyGuard.MayWrite(sql))
+        if (_session is not { } session || _executing || IsRunning) return;
+        _executing = true;
+        try
         {
-            Status = ReadOnlyGuard.Refusal(session.Profile, "The script");
-            return;
-        }
-        if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
+            var targets = RunOnMultipleDatabases ? _allDatabases.Where(d => d.IsSelected).Select(d => d.Name).ToList() : [];
+            var sql = run is { Sql: { Length: > 0 } part } && !string.IsNullOrWhiteSpace(part) ? part : Sql;
+            var startOffset = run is { Sql.Length: > 0 } ? run.StartOffset : 0;
+            if (string.IsNullOrWhiteSpace(sql)) return;
+            if (!await ConfirmDiscardEditsAsync()) return;
+            ErrorCleared?.Invoke();
 
-        _lastRun = new RepeatableRun(sql, startOffset, targets);
-        await RunAsync(session, sql, startOffset, targets);
+            sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
+            if (sql is null) { Status = "Not run (parameters were not given)."; return; }
+
+            if (session.Profile.ReadOnly && ReadOnlyGuard.MayWrite(sql))
+            {
+                Status = ReadOnlyGuard.Refusal(session.Profile, "The script");
+                return;
+            }
+            if (!await ConfirmRiskyAsync(session.Profile, sql, Math.Max(1, targets.Count))) return;
+            // The connection changed while a dialog was open: what was confirmed was meant for the old one.
+            if (!ReferenceEquals(session, _session)) return;
+
+            _lastRun = new RepeatableRun(sql, startOffset, targets);
+            await RunAsync(session, sql, startOffset, targets);
+        }
+        finally
+        {
+            _executing = false;
+        }
     }
 
     /// <summary>Runs <paramref name="sql"/> with nothing left to ask; false when it failed or was cancelled.</summary>
@@ -501,7 +538,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             outcome = RunOutcome.Cancelled;
+            if (!ReferenceEquals(session, _session)) return false; // the tab was closed or moved to another connection
             Status = "Cancelled." + (HasOpenTransaction ? " The transaction is still open: Commit or Rollback." : "");
+            return false;
+        }
+        catch (Exception) when (!ReferenceEquals(session, _session))
+        {
+            // The old connection's statement failed while it was being stopped: nothing to show on this tab any more.
             return false;
         }
         catch (Exception ex)
@@ -518,7 +561,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             IsRunning = false;
             var elapsed = _runClock.Elapsed;
             StopElapsedClock();
-            if (!_isRefreshRun) RunFinished?.Invoke(this, elapsed, outcome);
+            if (!_isRefreshRun && ReferenceEquals(session, _session)) RunFinished?.Invoke(this, elapsed, outcome);
         }
     }
 
@@ -531,15 +574,23 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     {
         Status = "Running…";
         var result = await queryService.ExecuteScriptAsync(session, sql, TargetDatabase, ScriptTimeoutSeconds, ct, RowLimit);
+        EnsureCurrent(session, ct);
         ShowResult(session, sql, result);
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
+    }
+
+    /// <summary>Results that arrive after the tab was closed or moved to another connection are dropped as a cancelled
+    /// run (<see cref="Attach"/> cancels the run), never shown under the new connection.</summary>
+    private void EnsureCurrent(DatabaseSession session, CancellationToken ct)
+    {
+        if (!ReferenceEquals(session, _session)) throw new OperationCanceledException(ct);
     }
 
     private void ShowResult(DatabaseSession session, string sql, QueryExecutionResult result, string prefix = "")
     {
         var sources = ResolveSources(session, sql, result);
         ResultSets = result.ResultSets
-            .Select((rs, i) => WithSource(ResultSetView.From($"Result {i + 1}", rs, session), sources[i]))
+            .Select((rs, i) => WithSource(session, ResultSetView.From($"Result {i + 1}", rs, session), sources[i]))
             .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
 
@@ -561,6 +612,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         var progress = new Progress<int>(n => Status = $"Running… {n}/{databases.Count} database(s) done");
 
         var results = await multiQuery.RunAsync(session, sql, databases, ScriptTimeoutSeconds, (int)Math.Clamp(Parallelism, 1, 16), progress, ct, RowLimit);
+        EnsureCurrent(session, ct);
 
         var merged = MultiDatabaseQueryService.Merge(results, RowLimit);
         ResultSets = merged

@@ -66,7 +66,7 @@ public partial class QueryViewModel
     /// </summary>
     private async Task RefreshAsync()
     {
-        if (!AutoRefresh || IsRunning || _session is not { } session || _lastRun is not { } run) return;
+        if (!AutoRefresh || IsRunning || _executing || _session is not { } session || _lastRun is not { } run) return;
         if (ResultEditing.HasEdits(ResultSets)) return;
         // A manual run since auto refresh was turned on replaced the query it repeats; never repeat one that writes.
         if (QueryAutoRefresh.WhyNotRepeatable(run.Sql) is { } why)

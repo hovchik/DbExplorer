@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
@@ -168,9 +169,14 @@ public partial class MainWindowViewModel : ViewModelBase
         _ => ""
     };
 
+    /// <summary>"1.2.0" (from -p:Version), without the "+commit" suffix the SDK appends.</summary>
+    public static string AppVersion { get; } =
+        (typeof(MainWindowViewModel).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+         ?? typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString(3) ?? "").Split('+')[0];
+
     public string WindowTitle => Session is { } s
-        ? $"DB Explorer — {s.Profile}"
-        : "DB Explorer";
+        ? $"DB Explorer {AppVersion} — {s.Profile}"
+        : $"DB Explorer {AppVersion}";
 
     public async Task InitializeAsync()
     {

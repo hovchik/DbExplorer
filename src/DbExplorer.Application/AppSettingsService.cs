@@ -3,7 +3,21 @@ using DbExplorer.Core.Models;
 
 namespace DbExplorer.Application;
 
-/// <summary>Small app-wide preferences persisted as JSON: the UI theme and the SQL editor's zoom and word wrap.</summary>
+/// <summary>Experimental Query tab features, each of which can be turned off (all are on by default).</summary>
+public enum ExperimentalFeature
+{
+    /// <summary>Re-running a query shows which rows are new, gone or changed since the previous run.</summary>
+    ResultDiff,
+
+    /// <summary>The statement at the caret shows the planner's estimate (rows, cost, full scans) before it is run.</summary>
+    CostLens,
+
+    /// <summary><c>-- expect: …</c> comments are checked against the results after each run.</summary>
+    Expectations
+}
+
+/// <summary>Small app-wide preferences persisted as JSON: the UI theme, the SQL editor's zoom and word wrap, and which
+/// experimental features are on.</summary>
 public sealed class AppSettingsService
 {
     public const double DefaultEditorFontSize = 13;
@@ -20,7 +34,12 @@ public sealed class AppSettingsService
         Theme = stored.Theme;
         EditorFontSize = ClampFontSize(stored.EditorFontSize ?? DefaultEditorFontSize);
         EditorWordWrap = stored.EditorWordWrap;
+        _disabled = (stored.DisabledExperiments ?? [])
+            .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
+            .OfType<ExperimentalFeature>().ToHashSet();
     }
+
+    private readonly HashSet<ExperimentalFeature> _disabled;
 
     public AppThemeMode Theme { get; private set; }
 
@@ -31,6 +50,20 @@ public sealed class AppSettingsService
     public bool EditorWordWrap { get; private set; }
 
     public event Action<AppThemeMode>? ThemeChanged;
+
+    /// <summary>Raised when an experimental feature was turned on or off.</summary>
+    public event Action<ExperimentalFeature>? ExperimentChanged;
+
+    public bool IsEnabled(ExperimentalFeature feature) => !_disabled.Contains(feature);
+
+    public void SetEnabled(ExperimentalFeature feature, bool enabled)
+    {
+        if (IsEnabled(feature) == enabled) return;
+        if (enabled) _disabled.Remove(feature);
+        else _disabled.Add(feature);
+        ExperimentChanged?.Invoke(feature);
+        Save();
+    }
 
     /// <summary>Raised when the editor font size or word wrap changed, so every open editor follows.</summary>
     public event Action? EditorChanged;
@@ -80,7 +113,11 @@ public sealed class AppSettingsService
     {
         try
         {
-            var stored = new StoredSettings { Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap };
+            var stored = new StoredSettings
+            {
+                Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap,
+                DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
+            };
             File.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
         }
         catch
@@ -94,5 +131,8 @@ public sealed class AppSettingsService
         public AppThemeMode Theme { get; set; }
         public double? EditorFontSize { get; set; }
         public bool EditorWordWrap { get; set; }
+
+        /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
+        public List<string>? DisabledExperiments { get; set; }
     }
 }

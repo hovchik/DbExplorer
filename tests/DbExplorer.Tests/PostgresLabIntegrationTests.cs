@@ -96,6 +96,23 @@ public sealed class PostgresLabIntegrationTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task Cost_lens_reads_the_estimated_plan_without_running_the_query()
+    {
+        Skip.If(Settings is null);
+        // pg_sleep would take 30 s if the statement ran; an estimated plan returns at once.
+        const string sql = "SELECT o.*, pg_sleep(30) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.total > 20";
+        var statement = CostLens.Estimable(sql)!;
+        var started = DateTime.UtcNow;
+
+        var estimate = await CostLens.EstimateAsync(_session!, null, statement, CancellationToken.None);
+
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(10));
+        Assert.NotNull(estimate);
+        Assert.True(estimate!.Rows >= 1);
+        Assert.NotNull(estimate.Cost);
+    }
+
+    [SkippableFact]
     public async Task Change_recorder_finds_the_tables_and_rows_an_action_wrote()
     {
         Skip.If(Settings is null);

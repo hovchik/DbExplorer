@@ -119,6 +119,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Status = "";
         AutoRefresh = false;
         _lastRun = null;
+        ResetExperiments();
         RunOnMultipleDatabases = false;
         SetDatabases([]);
         ExecuteCommand.NotifyCanExecuteChanged();
@@ -457,6 +458,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             else
                 await RunOnceAsync(session, sql, ct);
             if (AutoTitle && QueryTabNamer.Suggest(sql) is { } name) Title = name;
+            if (succeeded) AfterRun(session, sql);
             return succeeded;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

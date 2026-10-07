@@ -56,12 +56,21 @@
 		  </MenuFlyout>
 		</Button.Flyout>
 	  </Button>
-	  <Button Content="Lab ▾" Classes="tool" ToolTip.Tip="Experimental: debug a missing row, preview a script's changes or its locks">
+	  <Button Content="Lab ▾" Classes="tool" ToolTip.Tip="Experimental: debug a missing row, preview a script's changes or its locks, compare runs, check expectations, and switch the experimental features on or off">
 		<Button.Flyout>
 		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
 			<MenuItem Header="Why isn't my row here? (statement at the caret)…" Click="OnWhyNot" />
 			<MenuItem Header="Dry run: execute, show changed rows, roll back" Click="OnDryRun" />
 			<MenuItem Header="Lock impact: who would this block? (does not run it)" Click="OnLockImpact" />
+			<Separator />
+			<MenuItem Header="Pin these results as the baseline (later runs are compared with them)" Command="{Binding PinBaselineCommand}" />
+			<MenuItem Header="Clear the baseline" Command="{Binding ClearBaselineCommand}" />
+			<MenuItem Header="Add an expectation above this statement (-- expect: rows &gt; 0)" Click="OnInsertExpectation" />
+			<Separator />
+			<MenuItem Header="Experimental features" IsEnabled="False" />
+			<MenuItem x:Name="ResultDiffItem" Header="What changed: compare each run with the previous one" ToggleType="CheckBox" Click="OnToggleExperiment" Tag="ResultDiff" />
+			<MenuItem x:Name="ExpectationsItem" Header="Expectations: check -- expect: comments after each run" ToggleType="CheckBox" Click="OnToggleExperiment" Tag="Expectations" />
+			<MenuItem x:Name="CostLensItem" Header="Cost lens: planner estimate of the statement at the caret while typing" ToggleType="CheckBox" Click="OnToggleExperiment" Tag="CostLens" />
 		  </MenuFlyout>
 		</Button.Flyout>
 	  </Button>
@@ -156,6 +165,12 @@
 	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis"
 				 Text="Ctrl+Space suggest · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+		<TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding CostLensText}" Foreground="{Binding CostLensBrush}" VerticalAlignment="Center"
+				   ToolTip.Tip="{Binding CostLensDetail}" MaxWidth="460" TextTrimming="CharacterEllipsis"
+				   IsVisible="{Binding CostLensText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+		<TextBlock Classes="hint" FontSize="11" Text="{Binding BaselineInfo}" VerticalAlignment="Center"
+				   ToolTip.Tip="Runs of the same query are compared with these pinned results (Lab ▾ › Clear the baseline)"
+				   IsVisible="{Binding BaselineInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 		<TextBlock Classes="hint" FontSize="11" Text="{Binding CompletionInfo}" VerticalAlignment="Center" />
 		<TextBlock x:Name="CaretInfo" Classes="hint" FontSize="11" VerticalAlignment="Center" />
 		<Button x:Name="ZoomInfo" Classes="layout" IsVisible="False" Click="OnZoomReset" ToolTip.Tip="Editor zoom · click to reset (Ctrl+0)" />

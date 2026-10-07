@@ -98,7 +98,7 @@ public partial class QueryView : UserControl
 
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
-        Editor.TextArea.Caret.PositionChanged += (_, _) => { UpdateCaretInfo(); _analysisTimer.Stop(); _analysisTimer.Start(); };
+        Editor.TextArea.Caret.PositionChanged += (_, _) => { UpdateCaretInfo(); _analysisTimer.Stop(); _analysisTimer.Start(); RestartCostLens(); };
         Editor.TextArea.SelectionChanged += (_, _) => UpdateCaretInfo();
         Editor.PointerHover += OnPointerHover;
         Editor.PointerHoverStopped += (_, _) => HideHover();
@@ -111,6 +111,7 @@ public partial class QueryView : UserControl
 
         _analysisTimer.Tick += (_, _) => { _analysisTimer.Stop(); UpdateCaretMarks(); UpdateSignatureHelp(); };
         _foldingTimer.Tick += (_, _) => { _foldingTimer.Stop(); UpdateFoldings(); };
+        _costLensTimer.Tick += OnCostLensTick;
         ApplyHighlighting();
     }
 
@@ -145,6 +146,7 @@ public partial class QueryView : UserControl
         UpdateFoldings();
         UpdateCaretMarks();
         UpdateCaretInfo();
+        RestartCostLens();
     }
 
     private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
@@ -158,6 +160,7 @@ public partial class QueryView : UserControl
         }
         _foldingTimer.Stop();
         _foldingTimer.Start();
+        RestartCostLens();
     }
 
     private void ApplyHighlighting() =>
@@ -705,9 +708,17 @@ public partial class QueryView : UserControl
     {
         var wanted = this.IsAttachedToVisualTree() ? _vm?.Settings : null;
         if (ReferenceEquals(wanted, _settings)) { ApplyEditorSettings(); return; }
-        if (_settings is not null) _settings.EditorChanged -= ApplyEditorSettings;
+        if (_settings is not null)
+        {
+            _settings.EditorChanged -= ApplyEditorSettings;
+            _settings.ExperimentChanged -= OnExperimentChanged;
+        }
         _settings = wanted;
-        if (_settings is not null) _settings.EditorChanged += ApplyEditorSettings;
+        if (_settings is not null)
+        {
+            _settings.EditorChanged += ApplyEditorSettings;
+            _settings.ExperimentChanged += OnExperimentChanged;
+        }
         ApplyEditorSettings();
     }
 
@@ -729,6 +740,9 @@ public partial class QueryView : UserControl
         Editor.FontSize = settings.EditorFontSize;
         Editor.WordWrap = settings.EditorWordWrap;
         WordWrapItem.IsChecked = settings.EditorWordWrap;
+        ResultDiffItem.IsChecked = settings.IsEnabled(ExperimentalFeature.ResultDiff);
+        ExpectationsItem.IsChecked = settings.IsEnabled(ExperimentalFeature.Expectations);
+        CostLensItem.IsChecked = settings.IsEnabled(ExperimentalFeature.CostLens);
         var percent = (int)Math.Round(settings.EditorFontSize / AppSettingsService.DefaultEditorFontSize * 100);
         ZoomInfo.Content = $"{percent}%";
         ZoomInfo.IsVisible = percent != 100;
@@ -757,6 +771,51 @@ public partial class QueryView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e) => Zoom(-1);
     private void OnZoomReset(object? sender, RoutedEventArgs e) => ResetZoom();
     private void OnToggleWordWrap(object? sender, RoutedEventArgs e) => ToggleWordWrap();
+
+    // ----- Experimental features (Lab menu) -----
+
+    private void OnToggleExperiment(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string name } && Enum.TryParse<ExperimentalFeature>(name, out var feature) && _vm?.Settings is { } settings)
+            settings.SetEnabled(feature, !settings.IsEnabled(feature));
+    }
+
+    private void OnExperimentChanged(ExperimentalFeature feature)
+    {
+        ApplyEditorSettings();
+        _vm?.OnExperimentToggled(feature);
+        RestartCostLens();
+    }
+
+    private void OnInsertExpectation(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        Editor.CaretOffset = _vm.InsertExpectation(Editor.CaretOffset);
+        Editor.Focus();
+    }
+
+    /// <summary>The cost lens asks for an estimate once typing or caret moves pause, not on every key.</summary>
+    private readonly DispatcherTimer _costLensTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+
+    private void RestartCostLens()
+    {
+        _costLensTimer.Stop();
+        _costLensTimer.Start();
+    }
+
+    private async void OnCostLensTick(object? sender, EventArgs e)
+    {
+        _costLensTimer.Stop();
+        if (_vm is not { } vm || !this.IsAttachedToVisualTree() || Editor.Document.TextLength > MaxLengthForLiveAnalysis) return;
+        try
+        {
+            await vm.UpdateCostLensAsync(Editor.Document.Text, Editor.CaretOffset);
+        }
+        catch
+        {
+            // The lens is a hint; it never interrupts editing.
+        }
+    }
 
     // ----- My snippets -----
 

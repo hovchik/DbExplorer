@@ -250,7 +250,12 @@ public sealed class SqlServerProvider : IDatabaseProvider
         if (usesText)
             cmd.Parameters.Add(new SqlParameter("@p", SqlDbType.NVarChar, 4000) { Value = SqlServerSql.BuildPattern(term.Text, term.Mode) });
         if (usesNumber)
-            cmd.Parameters.Add(new SqlParameter("@n", SqlDbType.Decimal) { Precision = 38, Scale = 10, Value = term.Number!.Value });
+        {
+            // decimal(38, its own scale): any System.Decimal (at most 29 digits) fits, which decimal(38, 10) did not
+            // above 10^28, so a long number failed every table.
+            var number = term.Number!.Value;
+            cmd.Parameters.Add(new SqlParameter("@n", SqlDbType.Decimal) { Precision = 38, Scale = number.Scale, Value = number });
+        }
         if (usesGuid)
             cmd.Parameters.Add(new SqlParameter("@g", SqlDbType.UniqueIdentifier) { Value = term.Uuid!.Value });
 

@@ -148,4 +148,25 @@ public sealed class SqlServerProviderIntegrationTests : IAsyncLifetime
         }
         Assert.Equal(0, remaining);
     }
+
+    [SkippableFact]
+    public async Task Numeric_search_takes_any_decimal()
+    {
+        Skip.If(Settings is null);
+        var columns = new List<DbColumn>
+        {
+            new() { Database = Database, Schema = "dbo", Table = "Numbers", Name = "Id", BaseType = "int", Ordinal = 1, IsPrimaryKey = true },
+            new() { Database = Database, Schema = "dbo", Table = "Numbers", Name = "Amount", BaseType = "decimal", Ordinal = 2 }
+        };
+        var table = new DbTableTarget(Database, "dbo", "Numbers", columns);
+
+        async Task<IReadOnlyList<DataMatch>> SearchAsync(string text) =>
+            await _provider!.SearchTableAsync(table, SearchTerm.Create(text, SearchMatchMode.Exact, includeNumeric: true, includeGuid: false), Options);
+
+        var big = Assert.Single(await SearchAsync("12345678901234567890123456789"));
+        Assert.Equal(("Amount", "Id=1"), (big.Column, big.RowKey));
+        Assert.Equal("Id=2", Assert.Single(await SearchAsync("42")).RowKey);
+        Assert.Equal("Id=2", Assert.Single(await SearchAsync("42.000")).RowKey);
+        Assert.Empty(await SearchAsync("0.0000000000001"));
+    }
 }

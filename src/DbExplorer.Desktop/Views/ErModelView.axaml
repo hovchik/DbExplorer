@@ -54,10 +54,17 @@
 
     <TextBlock DockPanel.Dock="Top" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="2,0,2,4" />
 
-    <Grid ColumnDefinitions="*,6,600" MinHeight="0">
+    <Grid MinHeight="0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="3*" />
+        <ColumnDefinition Width="6" />
+        <!-- About 560 px at 1400 px; shrinks with the window so the canvas keeps its room -->
+        <ColumnDefinition Width="2*" MinWidth="320" MaxWidth="600" />
+      </Grid.ColumnDefinitions>
       <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto">
         <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-          <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                        Background="{DynamicResource AppCodeBackgroundBrush}">
             <controls:ErModelControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
                                      SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
                                      HorizontalAlignment="Left" VerticalAlignment="Top" />

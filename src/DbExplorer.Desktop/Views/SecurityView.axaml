@@ -77,9 +77,18 @@
       <TextBlock Text="{Binding Warnings}" TextWrapping="Wrap" />
     </Border>
 
-    <Grid ColumnDefinitions="300,6,*,6,400" MinHeight="0">
+    <Grid MinHeight="0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="280" />
+        <ColumnDefinition Width="6" />
+        <ColumnDefinition Width="3*" />
+        <ColumnDefinition Width="6" />
+        <!-- About 390 px at 1400 px; shrinks with the window so the details keep their room -->
+        <ColumnDefinition Width="1.6*" MinWidth="240" MaxWidth="400" />
+      </Grid.ColumnDefinitions>
       <!-- Principals -->
-      <ListBox Grid.Column="0" ItemsSource="{Binding Principals}" SelectedItem="{Binding SelectedPrincipal}"
+      <Panel Grid.Column="0">
+      <ListBox ItemsSource="{Binding Principals}" SelectedItem="{Binding SelectedPrincipal}"
                BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:PrincipalItem">
@@ -96,6 +105,11 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
+      <!-- A fresh server often has only built-in roles, which are hidden by default: say so instead of showing a blank list -->
+      <TextBlock Classes="hint" Margin="16" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                 IsVisible="{Binding !Principals.Count}"
+                 Text="Nothing to show. Built-in logins and roles are hidden: tick Show built-in, clear the filter, or pick another kind." />
+      </Panel>
 
       <GridSplitter Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns" />
 

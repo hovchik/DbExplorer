@@ -82,7 +82,7 @@
 					ToolTip.Tip="Use the connection already open in the main window" />
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <controls:DatabasePicker Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
+			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsLeftConnected}" ToolTip.Tip="Database of the left server" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
@@ -98,7 +98,7 @@
 				  </DataTemplate>
 				</AutoCompleteBox.ItemTemplate>
 			  </AutoCompleteBox>
-			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300"
+			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
 						 TextTrimming="CharacterEllipsis" Text="{Binding LeftObjectInfo}" ToolTip.Tip="{Binding LeftObjectInfo}" />
 			</Grid>
 		  </Grid>
@@ -125,7 +125,7 @@
 					ToolTip.Tip="Use the connection already open in the main window" />
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <controls:DatabasePicker Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
+			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}"
 						ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
@@ -142,7 +142,7 @@
 				  </DataTemplate>
 				</AutoCompleteBox.ItemTemplate>
 			  </AutoCompleteBox>
-			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300"
+			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
 						 TextTrimming="CharacterEllipsis" Text="{Binding RightObjectInfo}" ToolTip.Tip="{Binding RightObjectInfo}" />
 			</Grid>
 
@@ -709,23 +709,23 @@
 	  </TabItem>
 	</TabControl>
 
-	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side -->
-	<StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Top"
-				Height="30" Margin="440,0,0,0">
-	  <ProgressBar IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
-	  <Button Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" VerticalAlignment="Center"
-			  ToolTip.Tip="Stop the running comparison or copy (Esc)" />
-	  <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
-				 TextTrimming="CharacterEllipsis" MaxWidth="520" ToolTip.Tip="{Binding NextStepHint}"
-				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
-	  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis" MaxWidth="420"
-				 ToolTip.Tip="{Binding Status}" />
-	  <CheckBox Content="Left" IsChecked="{Binding IsLeftPanelVisible}" Margin="0"
-				ToolTip.Tip="Show the left side (panel and result columns)" />
-	  <CheckBox Content="Right" IsChecked="{Binding IsRightPanelVisible}" Margin="0"
+	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side. The toggles are docked
+	     right and the texts take what is left (trimmed), so nothing leaves the window when it is narrow. -->
+	<DockPanel Grid.Row="2" VerticalAlignment="Top" Height="30" Margin="440,0,0,0">
+	  <Button DockPanel.Dock="Right" Classes="compact" Content="{Binding ConnectionsToggleText}" Command="{Binding ToggleConnectionsCommand}"
+			  VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Collapse the connection panels to give the results more room" />
+	  <CheckBox DockPanel.Dock="Right" Content="Right" IsChecked="{Binding IsRightPanelVisible}" Margin="8,0,0,0"
 				ToolTip.Tip="Show the right side (panel and result columns)" />
-	  <Button Classes="compact" Content="{Binding ConnectionsToggleText}" Command="{Binding ToggleConnectionsCommand}" VerticalAlignment="Center"
-			  ToolTip.Tip="Collapse the connection panels to give the results more room" />
-	</StackPanel>
+	  <CheckBox DockPanel.Dock="Right" Content="Left" IsChecked="{Binding IsLeftPanelVisible}" Margin="8,0,0,0"
+				ToolTip.Tip="Show the left side (panel and result columns)" />
+	  <TextBlock DockPanel.Dock="Right" Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+				 MaxWidth="420" Margin="8,0,0,0" ToolTip.Tip="{Binding Status}" />
+	  <ProgressBar DockPanel.Dock="Left" IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
+	  <Button DockPanel.Dock="Left" Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"
+			  VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Stop the running comparison or copy (Esc)" />
+	  <TextBlock VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
+				 TextTrimming="CharacterEllipsis" MaxWidth="520" Margin="8,0,0,0" ToolTip.Tip="{Binding NextStepHint}"
+				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
+	</DockPanel>
   </Grid>
 </UserControl>

@@ -16,11 +16,15 @@
   </Window.Resources>
   <DockPanel>
     <Border DockPanel.Dock="Top" Padding="8,4" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto">
+        <!-- The connection picker gives way first when the window is narrow (1024 px laptops): it shrinks before
+             anything on the right is pushed out of view. -->
+        <Grid Grid.Column="0" ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Image Source="/Assets/logo.png" Width="24" Height="24" Margin="0,0,4,0" VerticalAlignment="Center" />
           <TextBlock Text="DB Explorer" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0" />
-          <ComboBox Width="280"
+        </StackPanel>
+          <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="120" MaxWidth="280"
                     ItemsSource="{Binding Profiles}"
                     SelectedItem="{Binding SelectedProfile}"
                     PlaceholderText="Select a connection…"
@@ -31,11 +35,13 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Ellipse Width="8" Height="8" VerticalAlignment="Center"
                            Fill="{Binding Environment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}" />
-                  <TextBlock Text="{Binding}" />
+                  <!-- StringFormat: a bare {Binding} to the profile object shows nothing in a TextBlock -->
+                  <TextBlock Text="{Binding, StringFormat='{}{0}'}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="6,0,0,0">
           <Button Classes="icon" Content="＋" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}" />
           <Button Classes="icon" Content="✎" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}" />
           <Button Classes="icon" Content="🗑" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}" />
@@ -49,17 +55,19 @@
           </Button>
           <Button Content="{Binding Team.ButtonText}" ToolTip.Tip="{Binding Team.ButtonTip}" Command="{Binding OpenTeamCommand}" />
         </StackPanel>
+        </Grid>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
           <Button Content="Go to…  Ctrl+K" Command="{Binding OpenCommandPaletteCommand}"
                   ToolTip.Tip="Jump to any table, view, procedure, tab or command" />
-          <ComboBox Width="110" ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme}"
+          <ComboBox Width="100" ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme}"
                     ToolTip.Tip="App theme" />
-          <ProgressBar Width="100" VerticalAlignment="Center"
+          <ProgressBar Width="80" VerticalAlignment="Center"
                        IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
           <Button Content="Cancel" IsVisible="{Binding IsBusy}" Command="{Binding CancelLoadCommand}"
                   ToolTip.Tip="Stop connecting / reading the catalog" />
-          <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}"
+          <!-- Disabled while busy anyway; hiding it keeps the progress bar and Cancel inside a 1024 px window -->
+          <Button Content="Refresh metadata" Command="{Binding RefreshMetadataCommand}" IsVisible="{Binding !IsBusy}"
                   ToolTip.Tip="Re-read the catalog from the server and update the local cache" />
           <Button Content="Disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}" />
           <Button Content="Connect" Classes="accent" IsVisible="{Binding !IsConnected}" Command="{Binding ConnectCommand}" />

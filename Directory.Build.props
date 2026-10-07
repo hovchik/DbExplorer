@@ -3,7 +3,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
+    <!-- Pinned so every SDK (8, 9, 10…) compiles the code the same way. -->
+    <LangVersion>12</LangVersion>
   </PropertyGroup>
   <PropertyGroup>
     <!-- The installer build passes -p:Version (from the v1.2.0 tag); local builds get this one. -->

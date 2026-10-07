@@ -12,9 +12,9 @@ using DbExplorer.Desktop.Services;
 namespace DbExplorer.Desktop.ViewModels;
 
 /// <summary>
-/// Designs a new table in a chosen database: columns, primary key, foreign keys to existing tables and indexes, with the
-/// CREATE TABLE script and <see cref="TableDesignAdvisor"/>'s suggestions updated on every edit. Nothing reaches the
-/// server until Execute, which shows the exact script and asks first.
+/// Designs a new table in a chosen database, or changes an existing one: columns, primary key, foreign keys to existing
+/// tables and indexes, with the CREATE TABLE (or ALTER TABLE) script and <see cref="TableDesignAdvisor"/>'s suggestions
+/// updated on every edit. Nothing reaches the server until Execute, which shows the exact script and asks first.
 /// </summary>
 public partial class TableDesignerViewModel(SessionService sessions, IDialogService dialogs) : ViewModelBase, ISessionAware
 {
@@ -25,6 +25,10 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private bool _loading;
     private bool _edited;
     private int _contextVersion;
+
+    /// <summary>The table as it is on the server while an existing table is open; null while designing a new one.</summary>
+    private TableDesign? _original;
+    private bool _opening;
 
     [ObservableProperty] private IReadOnlyList<string> _databases = [];
     [ObservableProperty] private string? _selectedDatabase;
@@ -43,6 +47,12 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     /// <summary>The table the last Execute created, for "Open in Objects".</summary>
     [ObservableProperty] private DbObject? _lastCreated;
 
+    /// <summary>schema.table typed or picked in the "Open table" box.</summary>
+    [ObservableProperty] private string _openTableName = "";
+
+    /// <summary>"New table" or "Changing dbo.Orders", shown above the columns.</summary>
+    [ObservableProperty] private string _modeText = "New table";
+
     public ObservableCollection<ColumnRow> Columns { get; } = [];
     public ObservableCollection<ForeignKeyRow> ForeignKeys { get; } = [];
     public ObservableCollection<IndexRow> Indexes { get; } = [];
@@ -53,9 +63,12 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     public bool HasErrors { get; private set; }
     public bool HasDismissed => _dismissed.Count > 0;
-    public bool HasFixable => Suggestions.Any(s => s.CanFix);
+    /// <summary>"Apply all" leaves out the undo buttons of risky changes: those are the user's own edits.</summary>
+    public bool HasFixable => Suggestions.Any(s => s.CanFix && !s.Suggestion.Key.StartsWith("alter-", StringComparison.Ordinal));
     public bool HasForeignKeys => ForeignKeys.Count > 0;
     public bool HasIndexes => Indexes.Count > 0;
+    public bool IsAltering => _original is not null;
+    public string ExecuteLabel => IsAltering ? "Apply changes…" : "Execute…";
 
     /// <summary>Raised to open SQL in a new query tab, against a database.</summary>
     public event Action<string, string?>? OpenSqlRequested;
@@ -107,7 +120,16 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     private void OnSnapshotChanged(object? sender, EventArgs e) => _ = LoadContextAsync();
 
-    partial void OnSelectedDatabaseChanged(string? value) => _ = LoadContextAsync();
+    partial void OnSelectedDatabaseChanged(string? value)
+    {
+        // Another database than the open table's: back to designing a new table there.
+        if (!_opening && _original is not null && !Same(value, _original.Database))
+        {
+            SetOriginal(null);
+            _edited = false;
+        }
+        _ = LoadContextAsync();
+    }
 
     /// <summary>Reads the conventions and tables of the selected database from the catalog (cached; another database of
     /// the server is read once over its own connection).</summary>
@@ -129,7 +151,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             Schemas = context.Schemas.Count > 0 ? context.Schemas : [TableScriptBuilder.DefaultSchema(provider)];
             TableNames = context.Tables.Select(t => t.FullName).ToList();
             foreach (var fk in ForeignKeys) fk.RefreshChoices();
-            if (!_edited) NewDesign();
+            if (!_edited && _original is null) NewDesign();
             else Refresh();
             if (Status.StartsWith("Reading the tables", StringComparison.Ordinal) || Status.StartsWith("Pick a database", StringComparison.Ordinal)) Status = $"{context.Tables.Count:N0} existing table(s) in {database ?? "this database"}.";
         }
@@ -159,7 +181,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             Schema = design.Schema;
             TableName = design.Name;
             Columns.Clear();
-            foreach (var c in design.Columns) Columns.Add(ColumnRow.From(c, Changed));
+            foreach (var c in design.Columns) Columns.Add(ColumnRow.From(c, Changed, ColumnRenamed));
             ForeignKeys.Clear();
             foreach (var f in design.ForeignKeys) ForeignKeys.Add(ForeignKeyRow.From(f, this));
             Indexes.Clear();
@@ -176,6 +198,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private void NewDesign()
     {
         _edited = false;
+        SetOriginal(null);
         var provider = ProviderKey;
         var draft = new TableDesign { Schema = _context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider) };
         var (type, _) = ColumnTypes.Preferred(provider, TypeFamily.Integer);
@@ -183,6 +206,23 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         {
             Name = TableDesignAdvisor.KeyColumnName(draft, _context), Type = type, IsNullable = false, IsPrimaryKey = true, IsIdentity = true
         }));
+    }
+
+    /// <summary>Foreign keys and indexes follow a column while its name is typed, as they do on the server; otherwise the
+    /// key's column picker would lose its selection and an existing key would be dropped.</summary>
+    private void ColumnRenamed(string oldName, string newName)
+    {
+        if (_loading || oldName.Trim().Length == 0 || newName.Trim().Length == 0) return;
+        var from = oldName.Trim();
+        var to = newName.Trim();
+        if (!ColumnNames.Contains(to)) ColumnNames.Add(to);
+        foreach (var fk in ForeignKeys.Where(f => Same(f.Column, from))) fk.Column = to;
+        foreach (var index in Indexes)
+        {
+            var columns = index.ToDesign().Columns;
+            if (columns.Contains(from, StringComparer.OrdinalIgnoreCase))
+                index.Columns = string.Join(", ", columns.Select(c => Same(c, from) ? to : c));
+        }
     }
 
     internal void Changed()
@@ -197,8 +237,8 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     partial void OnTableNameChanged(string? oldValue, string newValue)
     {
         if (_loading) return;
-        // A key still named after the table (InvoiceId) follows the table's name while it is typed.
-        if (_context.KeyNaming == KeyNaming.TableId && Columns.FirstOrDefault(c => c.IsPrimaryKey) is { } key)
+        // A key still named after the table (new tables only) (InvoiceId) follows the table's name while it is typed.
+        if (_original is null && _context.KeyNaming == KeyNaming.TableId && Columns.FirstOrDefault(c => c.IsPrimaryKey) is { } key)
         {
             var before = TableDesignAdvisor.KeyColumnName(BuildDesign() with { Name = oldValue ?? "" }, _context);
             if (Same(key.Name, before) || key.Name is "Id" or "id")
@@ -215,12 +255,12 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private void Refresh()
     {
         var design = BuildDesign();
-        Script = TableCreator.Script(design, _context);
+        Script = TableCreator.Script(design, _context, _original);
 
         var names = design.Columns.Select(c => c.Name.Trim()).Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         SyncColumnNames(names);
 
-        var review = TableDesignAdvisor.Review(design, _context);
+        var review = TableDesignAdvisor.Review(design, _context, _original);
         HasErrors = review.Any(s => s.Severity == DesignSeverity.Error);
         Suggestions.Clear();
         foreach (var s in review.Where(s => s.Severity == DesignSeverity.Error || !_dismissed.Contains(s.Key)))
@@ -229,7 +269,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var others = Suggestions.Count - errors;
         SuggestionSummary = errors > 0 ? $"{errors} to fix before Execute" + (others > 0 ? $" · {others} suggestion(s)" : "")
             : others > 0 ? $"{others} suggestion(s). Apply them with one click, or dismiss the ones you don't want."
-            : "Nothing to suggest. The table looks good.";
+            : IsAltering ? "Nothing to flag in these changes." : "Nothing to suggest. The table looks good.";
         OnPropertyChanged(nameof(HasErrors));
         OnPropertyChanged(nameof(HasDismissed));
         OnPropertyChanged(nameof(HasFixable));
@@ -256,7 +296,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     [RelayCommand]
     private void AddColumn()
     {
-        Columns.Add(ColumnRow.From(new ColumnDesign { Type = "" }, Changed));
+        Columns.Add(ColumnRow.From(new ColumnDesign { Type = "" }, Changed, ColumnRenamed));
         Changed();
     }
 
@@ -265,6 +305,13 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     {
         if (row is null) return;
         Columns.Remove(row);
+        // The column's keys and indexes go with it, as they do on the server.
+        var name = row.Name?.Trim() ?? "";
+        if (name.Length > 0)
+        {
+            foreach (var fk in ForeignKeys.Where(f => Same(f.Column, name)).ToList()) ForeignKeys.Remove(fk);
+            foreach (var index in Indexes.Where(i => i.ToDesign().Columns.Contains(name, StringComparer.OrdinalIgnoreCase)).ToList()) Indexes.Remove(index);
+        }
         Changed();
     }
 
@@ -346,14 +393,96 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         while (applied.Count < 100)
         {
             var design = BuildDesign();
-            var next = TableDesignAdvisor.Review(design, _context)
-                .FirstOrDefault(s => s.Fix is not null && !_dismissed.Contains(s.Key) && !applied.Contains(s.Key));
+            var next = TableDesignAdvisor.Review(design, _context, _original)
+                .FirstOrDefault(s => s.Fix is not null && !_dismissed.Contains(s.Key) && !applied.Contains(s.Key) &&
+                                     !s.Key.StartsWith("alter-", StringComparison.Ordinal));
             if (next is null) break;
             applied.Add(next.Key);
             LoadDesign(next.Fix!(design));
         }
         _edited = true;
         Status = applied.Count == 0 ? "No suggestion has a fix to apply." : $"Applied {applied.Count} suggestion(s). Review the script before you execute it.";
+    }
+
+    /// <summary>Reads an existing table from the catalog (and its column defaults from the server) and opens it for
+    /// changing: the script becomes the ALTER statements for whatever is edited.</summary>
+    public async Task OpenTableAsync(DbObject table)
+    {
+        if (_session is not { } session) return;
+        _opening = true;
+        try
+        {
+            var database = string.IsNullOrEmpty(table.Database) ? SelectedDatabase ?? session.Profile.Database : table.Database;
+            if (!Same(SelectedDatabase, database))
+            {
+                if (!string.IsNullOrEmpty(database) && !Databases.Contains(database, StringComparer.OrdinalIgnoreCase)) Databases = Merge(Databases, [database]);
+                SelectedDatabase = Databases.FirstOrDefault(d => Same(d, database)) ?? database;
+            }
+            Status = $"Reading {table.FullName}…";
+            await LoadContextAsync();
+            // The session's own catalog first: it is the one Execute refreshes.
+            var snapshot = !string.IsNullOrEmpty(database) && session.Snapshot.ContainsDatabase(database) ? session.Snapshot.ForDatabase(database)
+                : string.IsNullOrEmpty(database) || Same(database, session.Profile.Database) ? session.Snapshot
+                : await sessions.GetDatabaseSnapshotAsync(session, database);
+            var found = snapshot.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table && Same(o.Schema, table.Schema) && Same(o.Name, table.Name));
+            if (found is null)
+            {
+                Status = $"{table.FullName} is not a table in {database}, or the catalog does not have it yet.";
+                return;
+            }
+            var constraints = await session.Provider.GetTableConstraintsAsync(found);
+            if (!ReferenceEquals(session, _session)) return;
+            var loaded = TableDesignLoader.Load(found, snapshot, constraints, ProviderKey);
+            _dismissed.Clear();
+            LastCreated = null;
+            SetOriginal(loaded.Design with { Database = database ?? "" });
+            _edited = false;
+            LoadDesign(_original!);
+            OpenTableName = "";
+            var kept = loaded.KeptIndexes.Count + loaded.KeptForeignKeys.Count;
+            Status = $"Opened {found.FullName}. Edit it and the ALTER script shows up below." +
+                     (kept > 0 ? $" {kept} index(es) or key(s) the designer cannot show stay as they are: {string.Join(", ", loaded.KeptIndexes.Concat(loaded.KeptForeignKeys))}." : "");
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not read {table.FullName}: {ex.Message}";
+        }
+        finally
+        {
+            _opening = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenExistingTableAsync()
+    {
+        var name = OpenTableName.Trim();
+        var table = _context.Tables.FirstOrDefault(t => Same(t.FullName, name)) ?? _context.Tables.FirstOrDefault(t => Same(t.Name, name));
+        if (table is null)
+        {
+            Status = name.Length == 0 ? "Pick a table to open." : $"No table {name} in {SelectedDatabase ?? "this database"}.";
+            return;
+        }
+        await OpenTableAsync(table.Table);
+    }
+
+    /// <summary>Undoes every edit of the open table.</summary>
+    [RelayCommand]
+    private void RevertChanges()
+    {
+        if (_original is null) return;
+        _dismissed.Clear();
+        _edited = false;
+        LoadDesign(_original);
+        Status = "Back to the table as it is on the server.";
+    }
+
+    private void SetOriginal(TableDesign? original)
+    {
+        _original = original;
+        ModeText = original is null ? "New table" : $"Changing {original.Schema}.{original.Name}";
+        OnPropertyChanged(nameof(IsAltering));
+        OnPropertyChanged(nameof(ExecuteLabel));
     }
 
     [RelayCommand]
@@ -392,9 +521,15 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     {
         if (_session is not { } session) return;
         var design = BuildDesign();
-        if (TableDesignAdvisor.Review(design, _context).FirstOrDefault(s => s.Severity == DesignSeverity.Error) is { } error)
+        var review = TableDesignAdvisor.Review(design, _context, _original);
+        if (review.FirstOrDefault(s => s.Severity == DesignSeverity.Error) is { } error)
         {
             Status = "Fix this first: " + error.Title;
+            return;
+        }
+        if (_original is { } original)
+        {
+            await AlterAsync(session, original, design, review);
             return;
         }
 
@@ -451,6 +586,66 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         Status = $"Created {schema}.{name} in {where}. The designer is ready for the next table.";
     }
 
+    /// <summary>Execute for an open table: the same confirm-then-one-transaction flow as creating, then the table is read
+    /// again so the designer shows it as it now is.</summary>
+    private async Task AlterAsync(DatabaseSession session, TableDesign original, TableDesign design, IReadOnlyList<DesignSuggestion> review)
+    {
+        if (TableAlterScriptBuilder.IsUnchanged(original, design, ProviderKey))
+        {
+            Status = "Nothing to change yet.";
+            return;
+        }
+        var database = SelectedDatabase;
+        var schema = TableScriptBuilder.SchemaOf(design, ProviderKey);
+        var name = design.Name.Trim();
+        var script = Script;
+        if (session.Profile.ReadOnly)
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "ALTER TABLE") + " Open in Query tab still hands the script over.";
+            return;
+        }
+        var production = session.Profile.IsProduction;
+        var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
+        var risks = review.Count(s => s.Severity == DesignSeverity.Warning && s.Key.StartsWith("alter-", StringComparison.Ordinal));
+        var ok = await dialogs.ConfirmAsync(
+            $"Change {original.Schema}.{original.Name} in {where}? This runs the script below in one transaction." +
+            (risks > 0 ? $" {risks} change(s) are flagged in Suggestions as risky for existing data." : ""),
+            "Alter table", production ? "PRODUCTION" : null,
+            production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script);
+        if (!ok) return;
+
+        IsBusy = true;
+        Status = $"Changing {original.Schema}.{original.Name}…";
+        try
+        {
+            await TableCreator.CreateAsync(session, design with { Database = database ?? "" }, script, TimeoutSeconds);
+        }
+        catch (Exception ex)
+        {
+            IsBusy = false;
+            Status = "The server did not apply the changes, nothing was changed: " + ex.Message;
+            return;
+        }
+
+        Status = $"Changed {schema}.{name}. Reading the catalog so it shows up everywhere…";
+        try
+        {
+            await sessions.RefreshDatabaseSnapshotAsync(session, database);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("table designer refresh", ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+
+        await OpenTableAsync(new DbObject { Database = database ?? "", Schema = schema, Name = name, Type = DbObjectType.Table });
+        LastCreated = session.Snapshot.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table && Same(o.Schema, schema) && Same(o.Name, name));
+        Status = $"Changed {schema}.{name} in {where}. The designer shows the table as it is now.";
+    }
+
     private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> Merge(params IEnumerable<string?>[] lists) =>
@@ -471,6 +666,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 public partial class ColumnRow : ObservableObject
 {
     private Action _changed = () => { };
+    private Action<string, string> _renamed = (_, _) => { };
 
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _type = "";
@@ -480,24 +676,39 @@ public partial class ColumnRow : ObservableObject
     [ObservableProperty] private bool _isIdentity;
     [ObservableProperty] private string _default = "";
 
-    public static ColumnRow From(ColumnDesign c, Action changed)
+    /// <summary>The column's name on the server when an existing table is open; null for a column added here.</summary>
+    public string? OriginalName { get; private init; }
+
+    /// <summary>"New column", "Renamed from CustomerNo" or "Column on the server", for the name box's tooltip.</summary>
+    public string Origin => OriginalName is null ? "New column" : string.Equals(OriginalName, Name?.Trim(), StringComparison.Ordinal)
+        ? "Column on the server" : $"Renamed from {OriginalName}";
+
+    public static ColumnRow From(ColumnDesign c, Action changed, Action<string, string>? renamed = null)
     {
         var row = new ColumnRow
         {
+            OriginalName = c.OriginalName,
             Name = c.Name, Type = c.Type, Size = c.Size ?? "", IsNullable = c.IsNullable && !c.IsPrimaryKey,
             IsPrimaryKey = c.IsPrimaryKey, IsIdentity = c.IsIdentity, Default = c.Default ?? ""
         };
         row._changed = changed;
+        row._renamed = renamed ?? row._renamed;
         return row;
     }
 
     public ColumnDesign ToDesign() => new()
     {
-        Name = Name ?? "", Type = Type ?? "", Size = string.IsNullOrWhiteSpace(Size) ? null : Size.Trim(), IsNullable = IsNullable,
+        Name = Name ?? "", OriginalName = OriginalName, Type = Type ?? "", Size = string.IsNullOrWhiteSpace(Size) ? null : Size.Trim(), IsNullable = IsNullable,
         IsPrimaryKey = IsPrimaryKey, IsIdentity = IsIdentity, Default = string.IsNullOrWhiteSpace(Default) ? null : Default.Trim()
     };
 
-    partial void OnNameChanged(string value) => _changed();
+    partial void OnNameChanged(string? oldValue, string newValue)
+    {
+        OnPropertyChanged(nameof(Origin));
+        _renamed(oldValue ?? "", newValue ?? "");
+        _changed();
+    }
+
     partial void OnTypeChanged(string value) => _changed();
     partial void OnSizeChanged(string value) => _changed();
     partial void OnIsNullableChanged(bool value) => _changed();

@@ -29,7 +29,10 @@ public sealed record DesignSuggestion(
 /// </summary>
 public static class TableDesignAdvisor
 {
-    public static IReadOnlyList<DesignSuggestion> Review(TableDesign design, DesignContext context)
+    /// <param name="original">The table as it is on the server when the design alters it; null for a new table. Then the
+    /// rules about types and names look only at new and changed columns (existing data is not second-guessed), and
+    /// <see cref="TableAlterAdvisor"/> adds what the ALTER script risks.</param>
+    public static IReadOnlyList<DesignSuggestion> Review(TableDesign design, DesignContext context, TableDesign? original = null)
     {
         var provider = context.ProviderKey;
         var dialect = SqlDialect.For(provider);
@@ -38,6 +41,12 @@ public static class TableDesignAdvisor
         var columns = design.Columns.Where(c => c.Name.Trim().Length > 0).ToList();
         var result = new List<DesignSuggestion>();
 
+        var altering = original is not null;
+        // When altering, an existing column nobody touched keeps its type and name: no suggestion rewrites old data.
+        bool Reviewable(ColumnDesign c) => original is null || c.OriginalName is null || original.Column(c.OriginalName) is not { } before ||
+                                           !TableAlterAdvisor.SameColumn(before, c, provider);
+        var reviewable = columns.Where(Reviewable).ToList();
+
         void Add(string key, DesignSeverity severity, string title, string detail, string? fixLabel = null, Func<TableDesign, TableDesign>? fix = null) =>
             result.Add(new DesignSuggestion(key, severity, title, detail, fixLabel, fix));
 
@@ -45,7 +54,7 @@ public static class TableDesignAdvisor
 
         if (name.Length == 0)
             Add("name", DesignSeverity.Error, "Name the table", "The table needs a name before it can be created.");
-        else if (context.Exists(schema, name))
+        else if (context.Exists(schema, name) && !(altering && TableDesign.Same(schema, TableScriptBuilder.SchemaOf(original!, provider)) && TableDesign.Same(name, original!.Name)))
             Add("exists", DesignSeverity.Error, $"{schema}.{name} already exists",
                 "Pick another name: the database already has an object with this name in this schema.");
         if (name.Length > dialect.MaxIdentifierLength)
@@ -161,7 +170,7 @@ public static class TableDesignAdvisor
                     $"Use {key.DataType}", d => d.WithColumn(column.Name, c => c with { Type = key.DataType, Size = null }));
         }
 
-        foreach (var column in columns)
+        foreach (var column in reviewable)
         {
             var family = ColumnTypes.Family(column);
             var words = DesignContext.Words(column.Name);
@@ -255,12 +264,12 @@ public static class TableDesignAdvisor
         if (!context.Schemas.Contains(schema, StringComparer.OrdinalIgnoreCase) && context.Tables.Count > 0)
             Add("new-schema", DesignSeverity.Tip, $"Schema {schema} is new", "The script creates it first.");
 
-        if (name.Length > 0 && context.TableStyle != NamingStyle.Unknown && DesignContext.StyleOf(name) != context.TableStyle && DesignContext.ToStyle(name, context.TableStyle) is var styled && styled != name)
+        if (!altering && name.Length > 0 && context.TableStyle != NamingStyle.Unknown && DesignContext.StyleOf(name) != context.TableStyle && DesignContext.ToStyle(name, context.TableStyle) is var styled && styled != name)
             Add("table-style", DesignSeverity.Tip, $"Other tables use {StyleName(context.TableStyle)}",
                 $"Most table names here look like {Example(context.TableStyle)}.",
                 $"Rename to {styled}", d => d with { Name = styled });
 
-        if (name.Length > 0 && context.PluralTables is { } plural && DesignContext.IsPlural(DesignContext.LastWord(name)) != plural)
+        if (!altering && name.Length > 0 && context.PluralTables is { } plural && DesignContext.IsPlural(DesignContext.LastWord(name)) != plural)
         {
             var renamed = plural ? DesignContext.Pluralize(name) : DesignContext.Singularize(name);
             if (renamed != name && !context.Exists(schema, renamed))
@@ -271,7 +280,7 @@ public static class TableDesignAdvisor
 
         if (context.ColumnStyle != NamingStyle.Unknown)
         {
-            var off = columns.Where(c => DesignContext.StyleOf(c.Name.Trim()) != context.ColumnStyle &&
+            var off = reviewable.Where(c => DesignContext.StyleOf(c.Name.Trim()) != context.ColumnStyle &&
                                          DesignContext.ToStyle(c.Name.Trim(), context.ColumnStyle) != c.Name.Trim()).ToList();
             if (off.Count > 0)
             {
@@ -298,16 +307,20 @@ public static class TableDesignAdvisor
 
         if (provider == SqlDialect.SqlServerKey && context.PrefersUnicode)
         {
-            var ansi = columns.Where(c => c.BaseType is "varchar" or "char").ToList();
+            var ansi = reviewable.Where(c => c.BaseType is "varchar" or "char").ToList();
             if (ansi.Count > 0)
                 Add("unicode", DesignSeverity.Tip, "Other tables store text as nvarchar",
                     $"{string.Join(", ", ansi.Select(c => c.Name.Trim()))} {(ansi.Count == 1 ? "is" : "are")} varchar, which cannot hold every character (Ä, 中, emoji) on most collations.",
                     "Use nvarchar", d => ansi.Aggregate(d, (acc, c) => acc.WithColumn(c.Name, x => x with { Type = "n" + x.BaseType })));
         }
 
-        foreach (var reserved in new[] { name }.Concat(columns.Select(c => c.Name.Trim())).Where(n => ReservedWords.Contains(n)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (original is not null) existingNames.UnionWith(original.Columns.Select(c => c.Name).Append(original.Name));
+        foreach (var reserved in new[] { name }.Concat(columns.Select(c => c.Name.Trim())).Where(n => ReservedWords.Contains(n) && !existingNames.Contains(n)).Distinct(StringComparer.OrdinalIgnoreCase))
             Add($"reserved:{reserved}", DesignSeverity.Tip, $"{reserved} is a reserved word",
                 "It works here because the script quotes every name, but every hand-written query will have to quote it too.");
+
+        if (original is not null) result.AddRange(TableAlterAdvisor.Review(original, design, context));
 
         return result
             .GroupBy(s => s.Key).Select(g => g.First())

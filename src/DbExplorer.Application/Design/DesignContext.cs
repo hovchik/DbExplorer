@@ -51,6 +51,10 @@ public sealed class DesignContext
     public IReadOnlyList<DbObject> Objects { get; init; } = [];
 
     public IReadOnlyList<string> Schemas { get; init; } = [];
+
+    /// <summary>The database's foreign keys (not virtual ones), for what references a table being altered.</summary>
+    public IReadOnlyList<DbForeignKey> ForeignKeys { get; init; } = [];
+
     public NamingStyle TableStyle { get; init; }
     public NamingStyle ColumnStyle { get; init; }
 
@@ -113,6 +117,7 @@ public sealed class DesignContext
             ProviderKey = providerKey,
             Tables = tables,
             Objects = snapshot.Objects,
+            ForeignKeys = snapshot.ForeignKeys.Where(f => !f.IsVirtual).ToList(),
             Schemas = snapshot.Objects.Select(o => o.Schema).Where(s => s.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
                 .Order(StringComparer.OrdinalIgnoreCase).ToList(),
             TableStyle = DominantStyle(tables.Select(t => t.Name)),

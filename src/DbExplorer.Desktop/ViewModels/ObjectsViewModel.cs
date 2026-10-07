@@ -82,6 +82,7 @@ public partial class ObjectsViewModel(
         GetDataCommand.NotifyCanExecuteChanged();
         ProfileCommand.NotifyCanExecuteChanged();
         ShowInDiagramCommand.NotifyCanExecuteChanged();
+        DesignTableCommand.NotifyCanExecuteChanged();
         ColumnProfiles = [];
         TopValues = [];
     }
@@ -162,6 +163,17 @@ public partial class ObjectsViewModel(
     }
 
     private bool CanShowInDiagram => SelectedObject?.Type is DbObjectType.Table or DbObjectType.ForeignTable;
+
+    /// <summary>Raised when the user asks to change the selected table in the Table designer.</summary>
+    public event Action<DbObject>? DesignTableRequested;
+
+    [RelayCommand(CanExecute = nameof(CanDesignTable))]
+    private void DesignTable()
+    {
+        if (SelectedObject is { Type: DbObjectType.Table } table) DesignTableRequested?.Invoke(table);
+    }
+
+    private bool CanDesignTable => SelectedObject?.Type == DbObjectType.Table;
 
     /// <summary>Clears the filters and selects <paramref name="target"/> (matched by database/schema/name).</summary>
     public void Reveal(DbObject target)

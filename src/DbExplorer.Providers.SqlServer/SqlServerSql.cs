@@ -76,6 +76,9 @@ public static class SqlServerSql
             b.Password = p.Password ?? "";
         }
 
+        // Through an SSH tunnel the driver dials 127.0.0.1; the certificate is checked against the real server name.
+        if (!string.IsNullOrEmpty(p.CertificateHostName)) b.HostNameInCertificate = p.CertificateHostName;
+
         return b.ConnectionString;
     }
 }

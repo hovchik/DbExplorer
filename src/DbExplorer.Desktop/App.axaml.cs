@@ -3,6 +3,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using DbExplorer.Application;
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
@@ -25,6 +26,7 @@ public partial class App : Avalonia.Application
             .AddSqlServerProvider()
             .AddPostgresProvider();   // <- new engines are registered here
 
+        services.AddSingleton<ISshHostKeyPrompt, SshHostKeyPrompt>();
         services.AddSingleton<DialogService>();
         services.AddSingleton<IDialogService>(sp => sp.GetRequiredService<DialogService>());
         services.AddSingleton<ObjectsViewModel>();

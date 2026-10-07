@@ -33,13 +33,36 @@ public sealed class ConnectionProfile
     /// </summary>
     public bool ReadOnly { get; set; }
 
+    /// <summary>Connect through an SSH server; <see cref="Host"/> and <see cref="Port"/> are then as that server sees them.</summary>
+    public SshTunnelSettings Ssh { get => _ssh; set => _ssh = value ?? new(); }
+    private SshTunnelSettings _ssh = new();
+
+    /// <summary>
+    /// "host:port" of the SSH server when the connection uses a tunnel, else null. Two tunnelled connections to
+    /// "localhost" are only the same server when they go through the same SSH server.
+    /// </summary>
+    [JsonIgnore]
+    public string? TunnelKey => Ssh.Enabled ? $"{Ssh.Host.Trim()}:{Ssh.Port}".ToLowerInvariant() : null;
+
+    /// <summary>
+    /// The name the server's TLS certificate is checked against when the driver dials another address for it (the local
+    /// end of an SSH tunnel). Set for the connection only, never saved.
+    /// </summary>
+    [JsonIgnore]
+    public string? CertificateHostName { get; set; }
+
     [JsonConverter(typeof(JsonStringEnumConverter<ConnectionEnvironment>))]
     public ConnectionEnvironment Environment { get; set; }
 
     [JsonIgnore]
     public bool IsProduction => Environment == ConnectionEnvironment.Production;
 
-    public ConnectionProfile Clone() => (ConnectionProfile)MemberwiseClone();
+    public ConnectionProfile Clone()
+    {
+        var copy = (ConnectionProfile)MemberwiseClone();
+        copy._ssh = _ssh.Clone();
+        return copy;
+    }
 
     [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"{Host}/{Database}" : Name;

@@ -30,8 +30,10 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
 
         foreach (var s in stored)
         {
-            if (s.ProtectedPassword is not null && protector.IsSupported)
-                s.Profile.Password = protector.Unprotect(s.ProtectedPassword);
+            if (!protector.IsSupported) continue;
+            if (s.ProtectedPassword is not null) s.Profile.Password = protector.Unprotect(s.ProtectedPassword);
+            if (s.ProtectedSshPassword is not null) s.Profile.Ssh.Password = protector.Unprotect(s.ProtectedSshPassword);
+            if (s.ProtectedSshPassphrase is not null) s.Profile.Ssh.Passphrase = protector.Unprotect(s.ProtectedSshPassphrase);
         }
 
         return stored.Select(s => s.Profile).ToList();
@@ -42,9 +44,9 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
         var stored = profiles.Select(p => new StoredProfile
         {
             Profile = p,
-            ProtectedPassword = p.SavePassword && protector.IsSupported && !string.IsNullOrEmpty(p.Password)
-                ? protector.Protect(p.Password)
-                : null
+            ProtectedPassword = Protect(p, p.Password),
+            ProtectedSshPassword = p.Ssh.Enabled ? Protect(p, p.Ssh.Password) : null,
+            ProtectedSshPassphrase = p.Ssh.Enabled ? Protect(p, p.Ssh.Passphrase) : null
         }).ToList();
 
         var tmp = paths.ConnectionsFile + ".tmp";
@@ -55,9 +57,15 @@ public sealed class ConnectionStore(AppPaths paths, ISecretProtector protector)
         File.Move(tmp, paths.ConnectionsFile, overwrite: true);
     }
 
+    /// <summary>"Save password" covers the SSH password and key passphrase too.</summary>
+    private string? Protect(ConnectionProfile profile, string? secret) =>
+        profile.SavePassword && protector.IsSupported && !string.IsNullOrEmpty(secret) ? protector.Protect(secret) : null;
+
     private sealed class StoredProfile
     {
         public ConnectionProfile Profile { get; set; } = new();
         public string? ProtectedPassword { get; set; }
+        public string? ProtectedSshPassword { get; set; }
+        public string? ProtectedSshPassphrase { get; set; }
     }
 }

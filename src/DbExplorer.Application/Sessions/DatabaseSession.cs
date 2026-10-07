@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Connections;
@@ -18,6 +19,9 @@ public sealed class DatabaseSession(
     public IDatabaseProvider Provider { get; } = provider;
     public string ServerVersion { get; } = serverVersion;
     public MetadataSnapshot Snapshot { get; private set; } = snapshot;
+
+    /// <summary>The SSH tunnel the session's connections go through (closed with the session), or null.</summary>
+    public SshTunnel? Tunnel { get; init; }
 
     private readonly CancellationTokenSource _lifetime = new();
 
@@ -45,12 +49,20 @@ public sealed class DatabaseSession(
     /// snapshot does not cover. The view shares the provider (disposing it does nothing) and never refreshes itself.
     /// </summary>
     public DatabaseSession WithSnapshot(MetadataSnapshot snapshot) =>
-        new(Profile, Factory, Provider, ServerVersion, snapshot) { OwnsProvider = false };
+        new(Profile, Factory, Provider, ServerVersion, snapshot) { OwnsProvider = false, Tunnel = Tunnel };
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        if (!OwnsProvider) return ValueTask.CompletedTask;
+        if (!OwnsProvider) return;
         _lifetime.Cancel();
-        return Provider.DisposeAsync();
+        try
+        {
+            await Provider.DisposeAsync();
+        }
+        finally
+        {
+            // After the provider: its pooled connections close through the tunnel first.
+            if (Tunnel is not null) await Tunnel.DisposeAsync();
+        }
     }
 }

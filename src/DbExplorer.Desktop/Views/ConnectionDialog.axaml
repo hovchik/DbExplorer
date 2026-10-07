@@ -44,7 +44,9 @@
       </Grid>
     </Border>
 
-    <StackPanel Classes="form" Margin="20,16,20,18">
+    <TabControl x:Name="Tabs" Margin="12,6,12,0" Padding="0">
+    <TabItem Header="General">
+    <StackPanel Classes="form" Margin="8,10,8,18">
       <!-- General -->
       <TextBlock Classes="section" Text="General" />
       <Grid ColumnDefinitions="*,12,150">
@@ -84,7 +86,7 @@
           </StackPanel>
           <StackPanel Grid.Column="2">
             <TextBlock Classes="field" Text="Host" />
-            <TextBox Text="{Binding Host}" Watermark="server or server\instance" />
+            <TextBox Text="{Binding Host}" Watermark="{Binding HostHint}" />
           </StackPanel>
           <StackPanel Grid.Column="4">
             <TextBlock Classes="field" Text="Port" />
@@ -155,5 +157,83 @@
                   ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only." />
       </WrapPanel>
     </StackPanel>
+    </TabItem>
+
+    <TabItem>
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="SSH" />
+          <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{DynamicResource SystemAccentColor}"
+                   IsVisible="{Binding UseSsh}" ToolTip.Tip="This connection goes through an SSH tunnel" />
+        </StackPanel>
+      </TabItem.Header>
+      <StackPanel Classes="form" Margin="8,10,8,18">
+        <TextBlock Classes="section" Text="Tunnel" />
+        <CheckBox Content="Connect through an SSH tunnel" IsChecked="{Binding UseSsh}" />
+        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,4,0,0"
+                   Text="The app signs in to the SSH server and forwards a local port to the database. Host and Port on the General tab are then the database as the SSH server sees it, often localhost." />
+
+        <StackPanel IsEnabled="{Binding UseSsh}">
+          <TextBlock Classes="section" Text="SSH server" />
+          <Grid ColumnDefinitions="*,12,112">
+            <StackPanel Grid.Column="0">
+              <TextBlock Classes="field" Text="Host" />
+              <TextBox Text="{Binding SshHost}" Watermark="bastion.example.com" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="field" Text="Port" />
+              <TextBox Text="{Binding SshPort}" Watermark="default 22" />
+            </StackPanel>
+          </Grid>
+          <TextBlock Classes="field" Text="User" Margin="0,10,0,3" />
+          <TextBox Text="{Binding SshUserName}" />
+
+          <TextBlock Classes="section" Text="Sign-in" />
+          <StackPanel Orientation="Horizontal" Spacing="16">
+            <RadioButton GroupName="SshAuth" Content="Password" IsChecked="{Binding SshUsePassword}" />
+            <RadioButton GroupName="SshAuth" Content="Private key" IsChecked="{Binding SshUseKey}" />
+          </StackPanel>
+
+          <StackPanel Margin="0,8,0,0" IsVisible="{Binding SshUsePassword}">
+            <TextBlock Classes="field" Text="Password" />
+            <TextBox Text="{Binding SshPassword}" PasswordChar="•" RevealPassword="{Binding #RevealSshPassword.IsChecked}">
+              <TextBox.InnerRightContent>
+                <ToggleButton x:Name="RevealSshPassword" Content="👁" Padding="6,0" MinHeight="0" Margin="0,0,2,0"
+                              Background="Transparent" BorderThickness="0" Focusable="False"
+                              ToolTip.Tip="Show password" />
+              </TextBox.InnerRightContent>
+            </TextBox>
+          </StackPanel>
+
+          <StackPanel Margin="0,8,0,0" Spacing="10" IsVisible="{Binding SshUseKey}">
+            <StackPanel>
+              <TextBlock Classes="field" Text="Private key file" />
+              <TextBox Text="{Binding SshKeyPath}" Watermark="e.g. ~/.ssh/id_ed25519 (OpenSSH, PEM or PuTTY .ppk)">
+                <TextBox.InnerRightContent>
+                  <Button Content="Browse…" Padding="8,0" MinHeight="0" Margin="0,0,2,0"
+                          VerticalAlignment="Stretch" VerticalContentAlignment="Center"
+                          Background="Transparent" BorderThickness="0" Click="OnBrowseKey"
+                          ToolTip.Tip="Choose the private key file" />
+                </TextBox.InnerRightContent>
+              </TextBox>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Classes="field" Text="Passphrase" />
+              <TextBox Text="{Binding SshPassphrase}" PasswordChar="•" Watermark="empty if the key has none"
+                       RevealPassword="{Binding #RevealPassphrase.IsChecked}">
+                <TextBox.InnerRightContent>
+                  <ToggleButton x:Name="RevealPassphrase" Content="👁" Padding="6,0" MinHeight="0" Margin="0,0,2,0"
+                                Background="Transparent" BorderThickness="0" Focusable="False"
+                                ToolTip.Tip="Show passphrase" />
+                </TextBox.InnerRightContent>
+              </TextBox>
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
+                     Text="Save password on the General tab also saves the SSH password and passphrase, encrypted the same way. The server's host key is shown for you to accept the first time and remembered after that." />
+        </StackPanel>
+      </StackPanel>
+    </TabItem>
+    </TabControl>
   </DockPanel>
 </Window>

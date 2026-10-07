@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using DbExplorer.Application;
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Lab;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
@@ -22,6 +23,8 @@ public sealed class SessionLoadingTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
+    private SshTunnelService Tunnels() => new(new KnownHostsStore(new AppPaths(_root)), new RejectUnknownHostKeys());
+
     private MetadataService Metadata()
     {
         var paths = new AppPaths(_root);
@@ -35,7 +38,7 @@ public sealed class SessionLoadingTests : IDisposable
     public async Task Connect_reads_the_server_and_catalog_off_the_callers_context()
     {
         var provider = FakeProvider.Create();
-        var sessions = new SessionService(new ProviderRegistry([new FakeFactory(provider)]), Metadata());
+        var sessions = new SessionService(new ProviderRegistry([new FakeFactory(provider)]), Metadata(), Tunnels());
         var ui = new MarkerContext();
 
         var previous = SynchronizationContext.Current;
@@ -60,7 +63,7 @@ public sealed class SessionLoadingTests : IDisposable
     public async Task Cancel_stops_a_slow_catalog_read_at_once_and_releases_the_connection()
     {
         var provider = FakeProvider.Create(hangOn: nameof(IDatabaseProvider.GetColumnsAsync));
-        var sessions = new SessionService(new ProviderRegistry([new FakeFactory(provider)]), Metadata());
+        var sessions = new SessionService(new ProviderRegistry([new FakeFactory(provider)]), Metadata(), Tunnels());
         using var cts = new CancellationTokenSource();
 
         var connect = sessions.ConnectAsync(Profile(), cts.Token);

@@ -1,4 +1,5 @@
 using DbExplorer.Application.Connections;
+using DbExplorer.Application.Connections.Ssh;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,9 +12,19 @@ namespace DbExplorer.Desktop.ViewModels;
 public partial class ConnectionDialogViewModel : ViewModelBase
 {
     private readonly Guid _id;
+    private readonly SshTunnelService? _tunnels;
 
-    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft, IReadOnlyList<string>? folders = null)
+    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft, IReadOnlyList<string>? folders = null, SshTunnelService? tunnels = null)
     {
+        _tunnels = tunnels;
+        _useSsh = draft.Ssh.Enabled;
+        _sshHost = draft.Ssh.Host;
+        _sshPort = draft.Ssh.Port == SshTunnelSettings.DefaultPort ? "" : draft.Ssh.Port.ToString();
+        _sshUserName = draft.Ssh.UserName;
+        _sshUseKey = draft.Ssh.AuthMethod == SshAuthMethod.PrivateKey;
+        _sshPassword = draft.Ssh.Password ?? "";
+        _sshKeyPath = draft.Ssh.PrivateKeyPath;
+        _sshPassphrase = draft.Ssh.Passphrase ?? "";
         Folders = folders ?? [];
         _folder = draft.Folder;
         Providers = registry.All;
@@ -59,6 +70,26 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private bool _readOnlyIntent;
     [ObservableProperty] private bool _readOnly;
     [ObservableProperty] private string? _selectedDatabase;
+
+    [ObservableProperty] private bool _useSsh;
+    [ObservableProperty] private string _sshHost;
+    [ObservableProperty] private string _sshPort;
+    [ObservableProperty] private string _sshUserName;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(SshUsePassword))] private bool _sshUseKey;
+    [ObservableProperty] private string _sshPassword;
+    [ObservableProperty] private string _sshKeyPath;
+    [ObservableProperty] private string _sshPassphrase;
+
+    public bool SshUsePassword
+    {
+        get => !SshUseKey;
+        set => SshUseKey = !value;
+    }
+
+    /// <summary>Shown on the General tab while a tunnel is on: Host and Port are then as the SSH server sees them.</summary>
+    public string HostHint => UseSsh ? "as the SSH server sees it, often localhost" : "server or server\\instance";
+
+    partial void OnUseSshChanged(bool value) => OnPropertyChanged(nameof(HostHint));
     [ObservableProperty] private string? _message;
     [ObservableProperty] private bool _isBusy;
 
@@ -81,23 +112,47 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(value)) Database = value;
     }
 
+    /// <summary>With a tunnel, the SSH step and the database step are checked and reported separately.</summary>
     [RelayCommand]
     private async Task TestAsync()
     {
         IsBusy = true;
-        Message = "Connecting…";
+        var profile = ToProfile();
+        SshTunnel? tunnel = null;
+        var sshResult = "";
         try
         {
-            await using var provider = SelectedProvider.Create(ToProfile());
-            var version = await provider.GetServerVersionAsync();
-            Message = "✓ Connected: " + version;
-        }
-        catch (Exception ex)
-        {
-            Message = "✗ " + ex.Message;
+            if (profile.Ssh.Enabled && _tunnels is not null)
+            {
+                Message = $"Opening SSH tunnel to {profile.Ssh}…";
+                try
+                {
+                    tunnel = await _tunnels.OpenAsync(profile, SelectedProvider.DefaultPort);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Message = "✗ SSH: " + ex.Message;
+                    return;
+                }
+                sshResult = $"✓ SSH: connected to {tunnel.Server}. ";
+                profile = tunnel.Local(profile);
+            }
+
+            Message = sshResult + "Connecting to the database…";
+            try
+            {
+                await using var provider = SelectedProvider.Create(profile);
+                var version = await provider.GetServerVersionAsync();
+                Message = sshResult + "✓ Database: " + version;
+            }
+            catch (Exception ex)
+            {
+                Message = sshResult + "✗ Database: " + (tunnel?.Explain(ex) ?? ex).Message;
+            }
         }
         finally
         {
+            if (tunnel is not null) await tunnel.DisposeAsync();
             IsBusy = false;
         }
     }
@@ -109,7 +164,17 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         Message = "Loading databases…";
         try
         {
-            var list = await SelectedProvider.ListDatabasesAsync(ToProfile());
+            var profile = ToProfile();
+            IReadOnlyList<string> list;
+            if (profile.Ssh.Enabled && _tunnels is not null)
+            {
+                await using var tunnel = await _tunnels.OpenAsync(profile, SelectedProvider.DefaultPort);
+                list = await new TunnelledProviderFactory(SelectedProvider, tunnel).ListDatabasesAsync(profile);
+            }
+            else
+            {
+                list = await SelectedProvider.ListDatabasesAsync(profile);
+            }
             Databases.Clear();
             foreach (var db in list) Databases.Add(db);
             Message = $"{list.Count} databases found.";
@@ -129,6 +194,14 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(Host)) { Message = "Host is required."; return; }
         if (!string.IsNullOrWhiteSpace(Port) && !int.TryParse(Port, out _)) { Message = "Port must be a number."; return; }
+        if (UseSsh)
+        {
+            if (string.IsNullOrWhiteSpace(SshHost)) { Message = "SSH: enter the SSH server."; return; }
+            if (!string.IsNullOrWhiteSpace(SshPort) && !(int.TryParse(SshPort, out var sshPort) && sshPort is > 0 and <= 65535))
+            { Message = "SSH: the port must be a number from 1 to 65535."; return; }
+            if (string.IsNullOrWhiteSpace(SshUserName)) { Message = "SSH: enter the user."; return; }
+            if (SshUseKey && string.IsNullOrWhiteSpace(SshKeyPath)) { Message = "SSH: choose the private key file."; return; }
+        }
         CloseRequested?.Invoke(true);
     }
 
@@ -152,6 +225,17 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         TrustServerCertificate = TrustServerCertificate,
         ReadOnlyIntent = ReadOnlyIntent && CanUseReadOnlyIntent,
         ReadOnly = ReadOnly,
-        Environment = Environment
+        Environment = Environment,
+        Ssh = new SshTunnelSettings
+        {
+            Enabled = UseSsh,
+            Host = SshHost.Trim(),
+            Port = int.TryParse(SshPort, out var sshPort) ? sshPort : SshTunnelSettings.DefaultPort,
+            UserName = SshUserName.Trim(),
+            AuthMethod = SshUseKey ? SshAuthMethod.PrivateKey : SshAuthMethod.Password,
+            Password = string.IsNullOrEmpty(SshPassword) ? null : SshPassword,
+            PrivateKeyPath = SshKeyPath.Trim(),
+            Passphrase = string.IsNullOrEmpty(SshPassphrase) ? null : SshPassphrase
+        }
     };
 }

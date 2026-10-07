@@ -1,10 +1,12 @@
+using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Providers;
+using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Connections;
 
 namespace DbExplorer.Application.Sessions;
 
-public sealed class SessionService(ProviderRegistry registry, MetadataService metadata)
+public sealed class SessionService(ProviderRegistry registry, MetadataService metadata, SshTunnelService tunnels)
 {
     /// <summary>
     /// Opens the connection and loads the catalog entirely on the thread pool: driver connects (SqlClient's login
@@ -15,7 +17,25 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
     {
         var context = SynchronizationContext.Current;
         var factory = registry.Get(profile.ProviderKey);
-        var provider = factory.Create(profile);
+        SshTunnel? tunnel = null;
+        if (profile.Ssh.Enabled)
+        {
+            progress?.Report($"Opening SSH tunnel to {profile.Ssh}…");
+            tunnel = await tunnels.OpenAsync(profile, factory.DefaultPort, ct);
+            factory = new TunnelledProviderFactory(factory, tunnel);
+        }
+
+        IDatabaseProvider provider;
+        try
+        {
+            provider = factory.Create(profile);
+        }
+        catch
+        {
+            if (tunnel is not null) await tunnel.DisposeAsync();
+            throw;
+        }
+
         try
         {
             var (version, snapshot) = await Task.Run(async () =>
@@ -26,14 +46,18 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
                 await Task.WhenAll(versionTask, snapshotTask).ConfigureAwait(false);
                 return (versionTask.Result, snapshotTask.Result.Warm());
             }, ct).WaitAsync(ct); // a cancel returns at once, even while a driver call is still unwinding
-            var session = new DatabaseSession(profile, factory, provider, version, snapshot);
+            var session = new DatabaseSession(profile, factory, provider, version, snapshot) { Tunnel = tunnel };
             if (snapshot.IsStale) RefreshInBackground(session, context);
             return session;
         }
-        catch
+        catch (Exception ex)
         {
             await provider.DisposeAsync();
-            throw;
+            if (tunnel is null) throw;
+            await tunnel.DisposeAsync();
+            var explained = tunnel.Explain(ex);
+            if (ReferenceEquals(explained, ex)) throw;
+            throw explained;
         }
     }
 

@@ -164,7 +164,8 @@ public static class TableAlterScriptBuilder
                 steps.Add($"ALTER TABLE {table} ALTER COLUMN {q} DROP IDENTITY IF EXISTS;");
             if (typeChanged)
             {
-                var convert = ColumnTypes.Family(before) != ColumnTypes.Family(column) ? $" USING {q}::{column.FullType}" : "";
+                // USING only where the server has no cast of its own: an explicit cast would cut a value that does not fit.
+                var convert = !ColumnTypes.PostgresConvertsByItself(ColumnTypes.Family(before), ColumnTypes.Family(column)) ? $" USING {q}::{column.FullType}" : "";
                 steps.Add($"ALTER TABLE {table} ALTER COLUMN {q} TYPE {column.FullType}{convert};");
             }
             if (defaultChanged && !string.IsNullOrWhiteSpace(column.Default) && !column.IsIdentity)

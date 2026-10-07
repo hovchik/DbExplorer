@@ -197,6 +197,34 @@ public class TableAlterTests
         Assert.Equal(DesignSeverity.Tip, Find(review, "alter-not-null:note").Severity);
     }
 
+    [Theory]
+    [InlineData("text", null, "varchar", "50", false)]
+    [InlineData("varchar", "100", "text", null, false)]
+    [InlineData("integer", null, "varchar", "5", false)]
+    [InlineData("numeric", "10,2", "integer", null, false)]
+    [InlineData("integer", null, "double precision", null, false)]
+    [InlineData("date", null, "timestamptz", null, false)]
+    [InlineData("uuid", null, "text", null, false)]
+    [InlineData("text", null, "integer", null, true)]
+    [InlineData("text", null, "uuid", null, true)]
+    [InlineData("varchar", "5", "boolean", null, true)]
+    [InlineData("text", null, "date", null, true)]
+    [InlineData("integer", null, "boolean", null, true)]
+    public void Postgres_adds_using_only_where_the_server_has_no_cast_of_its_own(string from, string? fromSize, string to, string? toSize, bool usingExpected)
+    {
+        var original = new TableDesign
+        {
+            Schema = "public", Name = "items",
+            Columns = [new ColumnDesign { Name = "c", OriginalName = "c", Type = from, Size = fromSize }]
+        };
+        var edited = original.WithColumn("c", c => c with { Type = to, Size = toSize });
+
+        var step = Assert.Single(TableAlterScriptBuilder.Steps(original, edited, Pg));
+
+        Assert.StartsWith($"ALTER TABLE \"public\".\"items\" ALTER COLUMN \"c\" TYPE {edited.Columns[0].FullType}", step);
+        Assert.Equal(usingExpected, step.Contains(" USING ", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Postgres_renames_and_moves_the_table_before_anything_else()
     {

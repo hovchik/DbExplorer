@@ -970,15 +970,42 @@ public partial class ResultGridView : UserControl
     {
         if (target is not ({ } row, var column)) return;
         var value = Cell(row, column);
+        if (value is byte[] picture && ValueViewerWindow.TryImage(_columns[column].Name, picture) is { } imageWindow)
+        {
+            ShowViewer(imageWindow);
+            return;
+        }
         var text = value switch
         {
             null or DBNull => "NULL",
             byte[] bytes => "0x" + Convert.ToHexString(bytes),
             _ => ResultViewQuery.DisplayText(value) ?? ""
         };
-        var window = new ValueViewerWindow(_columns[column].Name, text);
+        ShowViewer(new ValueViewerWindow(_columns[column].Name, text));
+    }
+
+    private void ShowViewer(Window window)
+    {
         if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner);
         else window.Show();
+    }
+
+    private void OnViewRowJson(object? sender, RoutedEventArgs e)
+    {
+        var columns = VisibleColumns();
+        if (TargetCell() is not ({ } row, _) || columns.Count == 0) return;
+        var json = ResultExporter.ToJsonObject(Names(columns), Project([row], columns)[0]);
+        ShowViewer(new ValueViewerWindow("Row", json));
+    }
+
+    private void OnCopySelectedJson(object? sender, RoutedEventArgs e)
+    {
+        var columns = VisibleColumns();
+        var rows = SelectedRows();
+        if (rows.Count == 0 || columns.Count == 0) return;
+        _ = SetClipboardAsync(rows.Count == 1
+            ? ResultExporter.ToJsonObject(Names(columns), Project(rows, columns)[0])
+            : ResultExporter.ToJson(Names(columns), Project(rows, columns)));
     }
 
     private void OnFilterByCell(object? sender, RoutedEventArgs e)

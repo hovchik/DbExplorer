@@ -29,6 +29,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     /// <summary>The table as it is on the server while an existing table is open; null while designing a new one.</summary>
     private TableDesign? _original;
     private bool _opening;
+    private int _openVersion;
+
+    /// <summary>The connection the design was made on, and its database while disconnected: a reconnect keeps it.</summary>
+    private Guid? _designProfileId;
+    private string? _keptDatabase;
 
     [ObservableProperty] private IReadOnlyList<string> _databases = [];
     [ObservableProperty] private string? _selectedDatabase;
@@ -84,21 +89,29 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         _session = session;
         if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
         LastCreated = null;
-        _dismissed.Clear();
         _context = DesignContext.Empty(ProviderKey);
         TypeNames = ColumnTypes.For(ProviderKey);
         if (session is null)
         {
+            // The design (and the table it changes) stays for a reconnect, which needs the database it was for.
+            _keptDatabase = SelectedDatabase ?? _keptDatabase;
             Databases = [];
             SelectedDatabase = null;
             return;
         }
 
-        Databases = Merge(session.Snapshot.Databases, [session.Profile.Database]);
-        var preferred = Databases.FirstOrDefault(d => Same(d, session.Profile.Database)) ?? Databases.FirstOrDefault();
+        // Reconnecting to the same connection keeps an edited design or an open table, in its database.
+        var keep = (_edited || _original is not null) && session.Profile.Id == _designProfileId;
+        var previous = SelectedDatabase ?? _keptDatabase;
+        _keptDatabase = null;
+        _designProfileId = session.Profile.Id;
+        if (!keep) _dismissed.Clear();
+        Databases = Merge(session.Snapshot.Databases, [session.Profile.Database, keep ? previous : null]);
+        var preferred = (keep ? Databases.FirstOrDefault(d => Same(d, previous)) : null) ??
+                        Databases.FirstOrDefault(d => Same(d, session.Profile.Database)) ?? Databases.FirstOrDefault();
         if (string.Equals(SelectedDatabase, preferred, StringComparison.Ordinal)) _ = LoadContextAsync();
         else SelectedDatabase = preferred;
-        NewDesign();
+        if (!keep) NewDesign();
         _ = LoadServerDatabasesAsync(session);
     }
 
@@ -122,8 +135,9 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     partial void OnSelectedDatabaseChanged(string? value)
     {
-        // Another database than the open table's: back to designing a new table there.
-        if (!_opening && _original is not null && !Same(value, _original.Database))
+        // Another database than the open table's: back to designing a new table there. Not while disconnected: the
+        // picker is only emptied then, and the open table stays for a reconnect.
+        if (!_opening && _session is not null && _original is not null && !Same(value, _original.Database))
         {
             SetOriginal(null);
             _edited = false;
@@ -409,6 +423,9 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     public async Task OpenTableAsync(DbObject table)
     {
         if (_session is not { } session) return;
+        // A later open (another table picked meanwhile) wins over this one.
+        var version = ++_openVersion;
+        bool Stale() => version != _openVersion || !ReferenceEquals(session, _session);
         _opening = true;
         try
         {
@@ -420,10 +437,12 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             }
             Status = $"Reading {table.FullName}…";
             await LoadContextAsync();
+            if (Stale()) return;
             // The session's own catalog first: it is the one Execute refreshes.
             var snapshot = !string.IsNullOrEmpty(database) && session.Snapshot.ContainsDatabase(database) ? session.Snapshot.ForDatabase(database)
                 : string.IsNullOrEmpty(database) || Same(database, session.Profile.Database) ? session.Snapshot
                 : await sessions.GetDatabaseSnapshotAsync(session, database);
+            if (Stale()) return;
             var found = snapshot.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table && Same(o.Schema, table.Schema) && Same(o.Name, table.Name));
             if (found is null)
             {
@@ -431,7 +450,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
                 return;
             }
             var constraints = await session.Provider.GetTableConstraintsAsync(found);
-            if (!ReferenceEquals(session, _session)) return;
+            if (Stale()) return;
             var loaded = TableDesignLoader.Load(found, snapshot, constraints, ProviderKey);
             _dismissed.Clear();
             LastCreated = null;
@@ -445,11 +464,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         }
         catch (Exception ex)
         {
-            Status = $"Could not read {table.FullName}: {ex.Message}";
+            if (!Stale()) Status = $"Could not read {table.FullName}: {ex.Message}";
         }
         finally
         {
-            _opening = false;
+            if (version == _openVersion) _opening = false;
         }
     }
 

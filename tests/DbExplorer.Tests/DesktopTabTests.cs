@@ -152,6 +152,123 @@ public class DesktopTabTests
         return (vm, dialogs);
     }
 
+    [Fact]
+    public async Task Table_designer_keeps_an_edited_new_table_across_a_reconnect()
+    {
+        var profile = new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" };
+        var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
+        vm.Attach(DesignerSession(profile, Constraints()));
+        await Until(() => vm.Status.Contains("existing table(s)"));
+
+        vm.TableName = "Invoices";
+        vm.Attach(null);
+        vm.Attach(DesignerSession(profile, Constraints()));
+        await Until(() => vm.Status.Contains("existing table(s)"));
+
+        Assert.Equal("Invoices", vm.TableName);
+        Assert.Equal("main", vm.SelectedDatabase);
+    }
+
+    [Fact]
+    public async Task Table_designer_keeps_an_open_table_to_alter_across_a_reconnect()
+    {
+        var profile = new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" };
+        var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
+        vm.Attach(DesignerSession(profile, Constraints()));
+        await vm.OpenTableAsync(new DbObject { Database = "main", Schema = "dbo", Name = "Orders", Type = DbObjectType.Table });
+        Assert.True(vm.IsAltering);
+
+        vm.Attach(null);
+        Assert.True(vm.IsAltering);
+        vm.Attach(DesignerSession(profile, Constraints()));
+        await Task.Delay(300); // the context read the reconnect starts (it would reset the design if anything did)
+
+        Assert.True(vm.IsAltering);
+        Assert.Equal("Changing dbo.Orders", vm.ModeText);
+        Assert.Equal("main", vm.SelectedDatabase);
+    }
+
+    [Fact]
+    public async Task Table_designer_shows_the_table_opened_last_when_an_earlier_open_finishes_later()
+    {
+        var slow = Constraints();
+        var calls = new Queue<TaskCompletionSource<DbTableConstraints>>([slow, Constraints()]);
+        var vm = new TableDesignerViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _));
+        vm.Attach(DesignerSession(new ConnectionProfile { ProviderKey = SqlServer, Name = "fake", Database = "main" }, calls.Dequeue));
+
+        var first = vm.OpenTableAsync(new DbObject { Database = "main", Schema = "dbo", Name = "Orders", Type = DbObjectType.Table });
+        await Until(() => calls.Count == 1);
+        var second = vm.OpenTableAsync(new DbObject { Database = "main", Schema = "dbo", Name = "Customers", Type = DbObjectType.Table });
+        calls.Peek().SetResult(DbTableConstraints.None);
+        await second;
+        slow.SetResult(DbTableConstraints.None);
+        await first;
+
+        Assert.Equal("Changing dbo.Customers", vm.ModeText);
+        Assert.Equal("Customers", vm.TableName);
+    }
+
+    [Fact]
+    public void Er_model_flush_writes_the_pending_autosave_at_once()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dbx-er-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var vm = new ErModelViewModel(new SessionService(null!, null!, null!), DialogFake.Create(out _), new Application.AppPaths(root));
+            vm.AddTableCommand.Execute(null);
+            vm.FlushAutosave();
+
+            var saved = Application.Modeling.ErModelFile.Read(File.ReadAllText(Path.Combine(root, "er-model." + Application.Modeling.ErModelFile.Extension)));
+            Assert.Equal(vm.Model.Tables.Count, saved.Tables.Count);
+            Assert.NotEmpty(saved.Tables);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private const string SqlServer = Application.Copy.SqlDialect.SqlServerKey;
+
+    private static TaskCompletionSource<DbTableConstraints> Constraints() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>A SQL Server session on "main" with tables dbo.Orders and dbo.Customers; each read of a table's
+    /// constraints waits on what <paramref name="constraints"/> hands out (a fresh, already finished one by default).</summary>
+    private static DatabaseSession DesignerSession(ConnectionProfile profile, TaskCompletionSource<DbTableConstraints> first) =>
+        DesignerSession(profile, () =>
+        {
+            first.TrySetResult(DbTableConstraints.None);
+            return first;
+        });
+
+    private static DatabaseSession DesignerSession(ConnectionProfile profile, Func<TaskCompletionSource<DbTableConstraints>> constraints)
+    {
+        var provider = ScriptedProvider.Create(new()
+        {
+            [nameof(IDatabaseProvider.GetTableConstraintsAsync)] = _ => constraints().Task
+        }, SqlServer);
+        DbColumn Id(string table) => new() { Database = "main", Schema = "dbo", Table = table, Name = table + "Id", DataType = "int", BaseType = "int", Ordinal = 1 };
+        return new DatabaseSession(profile, null!, provider, "1", new MetadataSnapshot
+        {
+            Objects =
+            [
+                new DbObject { Database = "main", Schema = "dbo", Name = "Orders", Type = DbObjectType.Table },
+                new DbObject { Database = "main", Schema = "dbo", Name = "Customers", Type = DbObjectType.Table }
+            ],
+            Columns = [Id("Orders"), Id("Customers")], Modules = [], ForeignKeys = [], Indexes = [], RefreshedAt = DateTimeOffset.Now
+        });
+    }
+
+    private static async Task Until(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("The condition did not come true.");
+            await Task.Delay(10);
+        }
+    }
+
     private static DbIndex Index(string name) => new() { Schema = "dbo", Table = "t", Name = name };
 
     internal static DatabaseSession Session(IDatabaseProvider provider, string providerKey = "Fake", string database = "", params DbObject[] objects) =>

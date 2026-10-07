@@ -39,6 +39,10 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     private string? _editKey;
     private bool _loadingEditor;
     private CancellationTokenSource? _autosave;
+    private readonly object _autosaveGate = new();
+
+    /// <summary>The model text the pending autosave will write; null once it is on disk.</summary>
+    private string? _unsaved;
 
     [ObservableProperty] private ErModel _model;
     [ObservableProperty] private ErDiagram _diagram = ErDiagram.Empty;
@@ -345,14 +349,13 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         _autosave?.Cancel();
         var cts = _autosave = new CancellationTokenSource();
         var text = ErModelFile.Write(Model);
+        lock (_autosaveGate) _unsaved = text;
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(800, cts.Token);
-                var temp = _autosavePath + ".tmp";
-                await File.WriteAllTextAsync(temp, text, cts.Token);
-                File.Move(temp, _autosavePath, overwrite: true);
+                WriteAutosave(text);
             }
             catch (OperationCanceledException)
             {
@@ -362,6 +365,36 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
                 ErrorLog.Write("er model autosave", ex);
             }
         });
+    }
+
+    /// <summary>Writes the pending autosave now instead of after the delay (the app is closing).</summary>
+    public void FlushAutosave()
+    {
+        _autosave?.Cancel();
+        string? text;
+        lock (_autosaveGate) text = _unsaved;
+        if (text is null) return;
+        try
+        {
+            WriteAutosave(text);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("er model autosave", ex);
+        }
+    }
+
+    /// <summary>Writes <paramref name="text"/> unless a newer model was scheduled since or it is already written.</summary>
+    private void WriteAutosave(string text)
+    {
+        lock (_autosaveGate)
+        {
+            if (!ReferenceEquals(text, _unsaved)) return;
+            var temp = _autosavePath + ".tmp";
+            File.WriteAllText(temp, text);
+            File.Move(temp, _autosavePath, overwrite: true);
+            _unsaved = null;
+        }
     }
 
     // ----- Model commands -----

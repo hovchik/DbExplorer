@@ -197,6 +197,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public async Task ShutdownAsync()
     {
         await Step(Query.SaveTabsAsync);
+        await Step(() => { ErModel.FlushAutosave(); return Task.CompletedTask; });
         await Step(Query.RollbackOpenTransactionsAsync);
         foreach (var tab in _tabs) await Step(() => { tab.Attach(null); return Task.CompletedTask; });
         await Step(() => Comparer.DisposeIndependentSessionsAsync().AsTask());

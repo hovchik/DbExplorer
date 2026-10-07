@@ -168,17 +168,77 @@ public sealed class TeamSyncTests : IDisposable
         mine.Password = "bobs own";        // typed on first connect: not an edit
         mine.SavePassword = true;
 
-        shop.Host = "db2.local";
+        shop.Database = "app2";
         alice.ShareConnection(shop, includePasswords: false);
         Assert.Equal(TeamItemStatus.Updated, Item(bob, "Shop").Status);
         var second = bob.PullConnections([Item(bob, "Shop")], [mine]);
 
         var updated = Assert.Single(second.Profiles);
         Assert.Equal(["Shop"], second.Updated);
-        Assert.Equal("db2.local", updated.Host);
+        Assert.Equal("app2", updated.Database);
         Assert.Equal("bobs own", updated.Password);
         Assert.True(updated.SavePassword);
         Assert.Equal(0, bob.Scan().ChangedCount);
+    }
+
+    [Theory]
+    [InlineData("host")]
+    [InlineData("port")]
+    [InlineData("user")]
+    [InlineData("ssh host")]
+    [InlineData("ssh user")]
+    public void Shared_update_pointing_elsewhere_drops_the_local_passwords(string change)
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        var shop = Profile("Shop");
+        shop.Ssh.Enabled = true;
+        shop.Ssh.Host = "bastion.local";
+        shop.Ssh.UserName = "tunnel";
+        alice.ShareConnection(shop, includePasswords: false);
+        var mine = Assert.Single(bob.PullConnections([Item(bob, "Shop")], []).Profiles);
+        mine.Password = "bobs own";
+        mine.SavePassword = true;
+        mine.Ssh.Password = "ssh secret";
+        mine.Ssh.Passphrase = "key secret";
+
+        switch (change)
+        {
+            case "host": shop.Host = "evil.example"; break;
+            case "port": shop.Port = 15432; break;
+            case "user": shop.UserName = "someone"; break;
+            case "ssh host": shop.Ssh.Host = "evil.example"; break;
+            case "ssh user": shop.Ssh.UserName = "someone"; break;
+        }
+        alice.ShareConnection(shop, includePasswords: false);
+        var updated = Assert.Single(bob.PullConnections([Item(bob, "Shop")], [mine]).Profiles);
+
+        Assert.Null(updated.Password);
+        Assert.Null(updated.Ssh.Password);
+        Assert.Null(updated.Ssh.Passphrase);
+    }
+
+    [Fact]
+    public void Shared_update_to_the_same_server_keeps_the_local_ssh_passwords()
+    {
+        var alice = Member("alice");
+        var bob = Member("bob");
+        var shop = Profile("Shop");
+        shop.Ssh.Enabled = true;
+        shop.Ssh.Host = "bastion.local";
+        shop.Ssh.UserName = "tunnel";
+        alice.ShareConnection(shop, includePasswords: false);
+        var mine = Assert.Single(bob.PullConnections([Item(bob, "Shop")], []).Profiles);
+        mine.Password = "bobs own";
+        mine.Ssh.Password = "ssh secret";
+
+        shop.Database = "other";
+        alice.ShareConnection(shop, includePasswords: false);
+        var updated = Assert.Single(bob.PullConnections([Item(bob, "Shop")], [mine]).Profiles);
+
+        Assert.Equal("other", updated.Database);
+        Assert.Equal("bobs own", updated.Password);
+        Assert.Equal("ssh secret", updated.Ssh.Password);
     }
 
     [Fact]

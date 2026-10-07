@@ -228,8 +228,8 @@ public sealed class TeamSync
     /// <summary>
     /// Adds or updates saved connections from shared files. A connection already taken from the team is updated in
     /// place unless it was edited here since; then both are kept (the local one becomes a connection of its own).
-    /// A new connection whose name is taken is added as "Name (2)". Local passwords stay when the file has none.
-    /// A file that cannot be read is skipped, reported in
+    /// A new connection whose name is taken is added as "Name (2)". Local passwords stay when the file has none
+    /// and the connection still goes to the same server. A file that cannot be read is skipped, reported in
     /// <see cref="TeamPullResult.Failed"/> and stays unseen.
     /// </summary>
     public TeamPullResult PullConnections(IEnumerable<TeamItem> items, IReadOnlyList<ConnectionProfile> local)
@@ -366,20 +366,41 @@ public sealed class TeamSync
         return JsonSerializer.Serialize(copy, FingerprintJson);
     }
 
-    /// <summary>The shared version, keeping this machine's passwords and key file where the file has none.</summary>
+    /// <summary>
+    /// The shared version, keeping this machine's passwords and key file where the file has none. Saved secrets are
+    /// kept only while the connection still goes to the same server as the same user (and through the same SSH
+    /// server): otherwise anyone who can write to the team folder could point it at their own server and collect
+    /// them. Dropped secrets are asked for on connect.
+    /// </summary>
     private static ConnectionProfile WithLocalSecrets(ConnectionProfile shared, ConnectionProfile current)
     {
         var result = shared.Clone();
         result.Id = current.Id;
-        if (string.IsNullOrEmpty(result.Password)) result.Password = current.Password;
-        if (string.IsNullOrEmpty(result.Ssh.Password)) result.Ssh.Password = current.Ssh.Password;
-        if (string.IsNullOrEmpty(result.Ssh.Passphrase)) result.Ssh.Passphrase = current.Ssh.Passphrase;
+        if (SameEndpoint(shared, current))
+        {
+            if (string.IsNullOrEmpty(result.Password)) result.Password = current.Password;
+            if (string.IsNullOrEmpty(result.Ssh.Password)) result.Ssh.Password = current.Ssh.Password;
+            if (string.IsNullOrEmpty(result.Ssh.Passphrase)) result.Ssh.Passphrase = current.Ssh.Passphrase;
+        }
         result.SavePassword = shared.SavePassword || current.SavePassword;
         if (!string.IsNullOrEmpty(current.Ssh.PrivateKeyPath) &&
             (string.IsNullOrEmpty(result.Ssh.PrivateKeyPath) || !File.Exists(result.Ssh.PrivateKeyPath)))
             result.Ssh.PrivateKeyPath = current.Ssh.PrivateKeyPath;
         return result;
     }
+
+    /// <summary>Same provider, server, port and user, and the same SSH tunnel (if any).</summary>
+    private static bool SameEndpoint(ConnectionProfile a, ConnectionProfile b) =>
+        string.Equals(a.ProviderKey, b.ProviderKey, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(a.Host.Trim(), b.Host.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        a.Port == b.Port &&
+        a.IntegratedSecurity == b.IntegratedSecurity &&
+        string.Equals(a.UserName ?? "", b.UserName ?? "", StringComparison.Ordinal) &&
+        a.Ssh.Enabled == b.Ssh.Enabled &&
+        (!a.Ssh.Enabled ||
+         (string.Equals(a.Ssh.Host.Trim(), b.Ssh.Host.Trim(), StringComparison.OrdinalIgnoreCase) &&
+          a.Ssh.Port == b.Ssh.Port &&
+          string.Equals(a.Ssh.UserName, b.Ssh.UserName, StringComparison.Ordinal)));
 
     private static bool SameName(ConnectionProfile a, ConnectionProfile b) =>
         string.Equals(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase);

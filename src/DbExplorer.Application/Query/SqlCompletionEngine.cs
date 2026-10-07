@@ -211,6 +211,9 @@ public sealed class SqlCompletionEngine
     /// <summary>The most frequent values of a column, or null while unknown (see <see cref="ColumnValueCache"/>).</summary>
     public Func<DbObject, DbColumn, IReadOnlyList<ValueFrequency>?>? ValueSource { get; init; }
 
+    /// <summary>The user's saved snippets, read on every request so newly saved ones show at once.</summary>
+    public Func<IReadOnlyList<UserSnippet>>? UserSnippets { get; init; }
+
     private bool IsSqlServer => _providerKey is null or "SqlServer";
     private bool IsPostgres => _providerKey is null or "Postgres";
 
@@ -641,6 +644,10 @@ public sealed class SqlCompletionEngine
             : Snippet("BEGIN … COMMIT", "BEGIN;\n\n|\n\nCOMMIT;", "explicit transaction");
         if (IsSqlServer)
             yield return Snippet("IF EXISTS (…)", "IF EXISTS (SELECT 1 FROM | WHERE )\nBEGIN\n    \nEND", "conditional block");
+
+        // Inserted exactly as saved: "|" is ordinary SQL in a user's text (Postgres "||"), so it marks no caret.
+        foreach (var user in UserSnippets?.Invoke() ?? [])
+            yield return new CompletionItem(user.Name, user.Sql, CompletionKind.Snippet, "my snippet");
     }
 
     /// <summary>Complete "ON" conditions for the table joined last, from foreign keys in either direction.</summary>

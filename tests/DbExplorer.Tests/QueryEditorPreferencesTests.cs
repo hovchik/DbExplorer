@@ -113,6 +113,21 @@ public class QueryEditorPreferencesTests : IDisposable
     }
 
     [Fact]
+    public void Sql_warnings_start_on_and_turning_them_off_is_remembered()
+    {
+        var settings = new AppSettingsService(new AppPaths(_root));
+        Assert.True(settings.SqlInspections);
+
+        var changes = 0;
+        settings.EditorChanged += () => changes++;
+        settings.SetSqlInspections(false);
+        settings.SetSqlInspections(false);
+
+        Assert.Equal(1, changes);
+        Assert.False(new AppSettingsService(new AppPaths(_root)).SqlInspections);
+    }
+
+    [Fact]
     public void Settings_written_before_editor_preferences_keep_the_theme_and_default_zoom()
     {
         File.WriteAllText(Path.Combine(_root, "settings.json"), "{ \"Theme\": 2 }");

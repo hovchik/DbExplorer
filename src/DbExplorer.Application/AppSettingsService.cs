@@ -16,8 +16,8 @@ public enum ExperimentalFeature
     Expectations
 }
 
-/// <summary>Small app-wide preferences persisted as JSON: the UI theme, the SQL editor's zoom and word wrap, and which
-/// experimental features are on.</summary>
+/// <summary>Small app-wide preferences persisted as JSON: the UI theme, the SQL editor's zoom, word wrap and live SQL
+/// warnings, and which experimental features are on.</summary>
 public sealed class AppSettingsService
 {
     public const double DefaultEditorFontSize = 13;
@@ -34,6 +34,7 @@ public sealed class AppSettingsService
         Theme = stored.Theme;
         EditorFontSize = ClampFontSize(stored.EditorFontSize ?? DefaultEditorFontSize);
         EditorWordWrap = stored.EditorWordWrap;
+        SqlInspections = !stored.SqlInspectionsOff;
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
             .OfType<ExperimentalFeature>().ToHashSet();
@@ -48,6 +49,10 @@ public sealed class AppSettingsService
 
     /// <summary>Whether the SQL editors wrap long lines (Alt+Z).</summary>
     public bool EditorWordWrap { get; private set; }
+
+    /// <summary>Whether the SQL editors underline unknown tables and columns, ambiguous names and GROUP BY mistakes while
+    /// typing (checked against the cached catalog, never on the server).</summary>
+    public bool SqlInspections { get; private set; }
 
     public event Action<AppThemeMode>? ThemeChanged;
 
@@ -65,7 +70,7 @@ public sealed class AppSettingsService
         Save();
     }
 
-    /// <summary>Raised when the editor font size or word wrap changed, so every open editor follows.</summary>
+    /// <summary>Raised when the editor font size, word wrap or live SQL warnings changed, so every open editor follows.</summary>
     public event Action? EditorChanged;
 
     public void SetTheme(AppThemeMode theme)
@@ -93,6 +98,14 @@ public sealed class AppSettingsService
         Save();
     }
 
+    public void SetSqlInspections(bool on)
+    {
+        if (SqlInspections == on) return;
+        SqlInspections = on;
+        EditorChanged?.Invoke();
+        Save();
+    }
+
     public static double ClampFontSize(double size) =>
         double.IsFinite(size) ? Math.Clamp(Math.Round(size), MinEditorFontSize, MaxEditorFontSize) : DefaultEditorFontSize;
 
@@ -115,7 +128,7 @@ public sealed class AppSettingsService
         {
             var stored = new StoredSettings
             {
-                Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap,
+                Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
             };
             File.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
@@ -131,6 +144,9 @@ public sealed class AppSettingsService
         public AppThemeMode Theme { get; set; }
         public double? EditorFontSize { get; set; }
         public bool EditorWordWrap { get; set; }
+
+        /// <summary>Stored as "off" so the warnings start on.</summary>
+        public bool SqlInspectionsOff { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

@@ -7,7 +7,8 @@ namespace DbExplorer.Desktop.Editor;
 
 /// <summary>
 /// Background marks in the query editor: the matching parenthesis, other occurrences of the name under the caret,
-/// the statement that was just run, and the error position (wavy underline).
+/// the statement that was just run, the error position of the last run, and the live SQL warnings (wavy underlines:
+/// red for errors, amber for warnings).
 /// </summary>
 public sealed class EditorDecorations : IBackgroundRenderer
 {
@@ -17,11 +18,13 @@ public sealed class EditorDecorations : IBackgroundRenderer
     private static readonly IBrush ExecutedFill = new SolidColorBrush(Color.FromArgb(0x22, 0x3C, 0xB3, 0x71));
     private static readonly IBrush ErrorFill = new SolidColorBrush(Color.FromArgb(0x30, 0xE5, 0x39, 0x35));
     private static readonly IPen ErrorPen = new Pen(new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)), 1.2);
+    private static readonly IPen WarningPen = new Pen(new SolidColorBrush(Color.FromRgb(0xE0, 0xA0, 0x00)), 1.2);
 
     public IReadOnlyList<(int Start, int Length)> Brackets { get; set; } = [];
     public IReadOnlyList<(int Start, int Length)> Occurrences { get; set; } = [];
     public (int Start, int Length)? Executed { get; set; }
     public (int Start, int Length)? Error { get; set; }
+    public IReadOnlyList<(int Start, int Length, bool IsError)> Problems { get; set; } = [];
 
     public KnownLayer Layer => KnownLayer.Selection;
 
@@ -41,6 +44,14 @@ public sealed class EditorDecorations : IBackgroundRenderer
                 drawingContext.FillRectangle(BracketFill, rect, 2);
                 drawingContext.DrawRectangle(BracketPen, rect, 2);
             }
+
+        foreach (var problem in Problems)
+        {
+            // A zero-width span (a name typed at the end) still gets a short underline.
+            var span = (problem.Start, Math.Max(1, problem.Length));
+            foreach (var rect in Rects(textView, document, span))
+                drawingContext.DrawGeometry(null, problem.IsError ? ErrorPen : WarningPen, Wave(rect));
+        }
 
         if (Error is { } error)
             foreach (var rect in Rects(textView, document, error))

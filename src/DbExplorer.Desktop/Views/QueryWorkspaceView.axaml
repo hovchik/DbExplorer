@@ -5,19 +5,81 @@
 			 x:Class="DbExplorer.Desktop.Views.QueryWorkspaceView"
 			 x:DataType="vm:QueryWorkspaceViewModel">
   <UserControl.Styles>
+	<!-- Document tabs: flat, compact, with the active tab lifted onto the editor background and an accent underline -->
 	<Style Selector="TabControl.docs TabItem">
 	  <Setter Property="FontSize" Value="13" />
-	  <Setter Property="MinHeight" Value="30" />
-	  <Setter Property="Padding" Value="10,0,4,0" />
+	  <Setter Property="MinHeight" Value="32" />
+	  <Setter Property="Padding" Value="12,0,6,0" />
+	  <Setter Property="Margin" Value="0,0,2,0" />
+	  <Setter Property="CornerRadius" Value="6,6,0,0" />
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="VerticalContentAlignment" Value="Center" />
 	</Style>
+	<Style Selector="TabControl.docs TabItem /template/ Border#PART_LayoutRoot">
+	  <Setter Property="CornerRadius" Value="6,6,0,0" />
+	  <Setter Property="Background" Value="Transparent" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem:pointerover /template/ Border#PART_LayoutRoot">
+	  <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem:selected /template/ Border#PART_LayoutRoot">
+	  <Setter Property="Background" Value="{DynamicResource AppCodeBackgroundBrush}" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem /template/ Border#PART_SelectedPipe">
+	  <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+	  <Setter Property="Height" Value="2" />
+	  <Setter Property="Margin" Value="0" />
+	  <Setter Property="CornerRadius" Value="1" />
+	  <Setter Property="VerticalAlignment" Value="Bottom" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem TextBlock.title">
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem:pointerover TextBlock.title">
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	</Style>
+	<Style Selector="TabControl.docs TabItem:selected TextBlock.title">
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	  <Setter Property="FontWeight" Value="SemiBold" />
+	</Style>
+	<!-- The tab being dragged -->
+	<Style Selector="TabControl.docs TabItem.dragging">
+	  <Setter Property="Opacity" Value="0.55" />
+	</Style>
+
+	<!-- Close button: a drawn x (no font glyph), shown on the active and the hovered tab; space is kept so tabs don't jump -->
 	<Style Selector="Button.close">
-	  <Setter Property="MinHeight" Value="20" />
-	  <Setter Property="MinWidth" Value="20" />
+	  <Setter Property="Width" Value="20" />
+	  <Setter Property="Height" Value="20" />
+	  <Setter Property="MinHeight" Value="0" />
+	  <Setter Property="MinWidth" Value="0" />
 	  <Setter Property="Padding" Value="0" />
 	  <Setter Property="Margin" Value="6,0,0,0" />
-	  <Setter Property="FontSize" Value="11" />
+	  <Setter Property="CornerRadius" Value="4" />
 	  <Setter Property="Background" Value="Transparent" />
 	  <Setter Property="BorderThickness" Value="0" />
+	  <Setter Property="HorizontalContentAlignment" Value="Center" />
+	  <Setter Property="VerticalContentAlignment" Value="Center" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	  <Setter Property="Opacity" Value="0" />
+	</Style>
+	<Style Selector="TabItem:selected Button.close, TabItem:pointerover Button.close, Button.close:focus-visible">
+	  <Setter Property="Opacity" Value="1" />
+	</Style>
+	<Style Selector="Button.close /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="Transparent" />
+	</Style>
+	<Style Selector="Button.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="{DynamicResource AppBorderBrush}" />
+	</Style>
+	<Style Selector="Button.close:pressed /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="{DynamicResource AppHintForegroundBrush}" />
+	</Style>
+	<Style Selector="Button.close Path">
+	  <Setter Property="Stroke" Value="{DynamicResource AppHintForegroundBrush}" />
+	</Style>
+	<Style Selector="Button.close:pointerover Path">
+	  <Setter Property="Stroke" Value="{DynamicResource AppForegroundBrush}" />
 	</Style>
 	<Style Selector="Button.bar">
 	  <Setter Property="MinHeight" Value="26" />
@@ -27,14 +89,24 @@
   </UserControl.Styles>
 
   <Grid>
-	<TabControl Classes="docs" Padding="0" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}">
+	<TabControl x:Name="DocTabs" Classes="docs" Padding="0" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:QueryViewModel">
-		  <StackPanel Orientation="Horizontal" ToolTip.Tip="{Binding FilePath}" Background="Transparent">
+		  <StackPanel Orientation="Horizontal" Background="Transparent">
+			<ToolTip.Tip>
+			  <StackPanel>
+				<TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+				<TextBlock Classes="hint" Text="{Binding FilePath}" IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}" />
+				<TextBlock Classes="hint" Text="Drag to move · middle-click to close" Margin="0,4,0,0" />
+			  </StackPanel>
+			</ToolTip.Tip>
 			<StackPanel.ContextMenu>
 			  <ContextMenu>
 				<MenuItem Header="Rename…" Command="{Binding $parent[TabControl].DataContext.RenameTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Duplicate" Command="{Binding $parent[TabControl].DataContext.DuplicateTabCommand}" CommandParameter="{Binding}" />
+				<Separator />
+				<MenuItem Header="Move left" InputGesture="Ctrl+Shift+PageUp" Command="{Binding $parent[TabControl].DataContext.MoveTabLeftCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Move right" InputGesture="Ctrl+Shift+PageDown" Command="{Binding $parent[TabControl].DataContext.MoveTabRightCommand}" CommandParameter="{Binding}" />
 				<Separator />
 				<MenuItem Header="Close" InputGesture="Ctrl+W" Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close others" Command="{Binding $parent[TabControl].DataContext.CloseOtherTabsCommand}" CommandParameter="{Binding}" />
@@ -42,9 +114,11 @@
 				<MenuItem Header="Close all" Command="{Binding $parent[TabControl].DataContext.CloseAllTabsCommand}" />
 			  </ContextMenu>
 			</StackPanel.ContextMenu>
-			<TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
-			<Button Classes="close" Content="✕" ToolTip.Tip="Close (Ctrl+W)"
-					Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />
+			<TextBlock Classes="title" Text="{Binding Header}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
+			<Button Classes="close" ToolTip.Tip="Close (Ctrl+W)"
+					Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}">
+			  <Path Data="M0,0 L8,8 M8,0 L0,8" StrokeThickness="1.5" StrokeLineCap="Round" Width="8" Height="8" Stretch="None" />
+			</Button>
 		  </StackPanel>
 		</DataTemplate>
 	  </TabControl.ItemTemplate>
@@ -54,6 +128,11 @@
 		</DataTemplate>
 	  </TabControl.ContentTemplate>
 	</TabControl>
+
+	<!-- Where a dragged tab will land -->
+	<Canvas IsHitTestVisible="False">
+	  <Border x:Name="DropMarker" Width="2" CornerRadius="1" IsVisible="False" Background="{DynamicResource SystemAccentColor}" />
+	</Canvas>
 
 	<!-- File and history actions share the tab strip's empty right-hand side -->
 	<StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">

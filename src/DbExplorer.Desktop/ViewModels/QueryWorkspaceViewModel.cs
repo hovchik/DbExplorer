@@ -131,6 +131,41 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (!await TryCloseAsync(d)) return;
     }
 
+    [RelayCommand]
+    private Task MoveTabLeftAsync(QueryViewModel? doc) => ShiftTabAsync(doc, -1);
+
+    [RelayCommand]
+    private Task MoveTabRightAsync(QueryViewModel? doc) => ShiftTabAsync(doc, 1);
+
+    private Task ShiftTabAsync(QueryViewModel? doc, int offset)
+    {
+        doc ??= SelectedDocument;
+        var from = doc is null ? -1 : Documents.IndexOf(doc);
+        return MoveTabAsync(doc, TabOrder.Shift(from, offset, Documents.Count));
+    }
+
+    /// <summary>Moves <paramref name="doc"/> to <paramref name="index"/>, keeps the selection and remembers the new order.</summary>
+    public async Task MoveTabAsync(QueryViewModel? doc, int index)
+    {
+        if (doc is null) return;
+        var from = Documents.IndexOf(doc);
+        if (from < 0 || index < 0 || index >= Documents.Count || index == from) return;
+        var selected = SelectedDocument;
+        Documents.Move(from, index);
+        // The tab strip can drop its selection while the item is moved.
+        SelectedDocument = null;
+        SelectedDocument = selected ?? doc;
+        await SaveTabsAsync();
+    }
+
+    /// <summary>Selects the tab <paramref name="offset"/> places away, wrapping around (Ctrl+PageUp / Ctrl+PageDown).</summary>
+    public void SelectNeighbour(int offset)
+    {
+        if (Documents.Count == 0) return;
+        var from = SelectedDocument is null ? 0 : Math.Max(0, Documents.IndexOf(SelectedDocument));
+        SelectedDocument = Documents[((from + offset) % Documents.Count + Documents.Count) % Documents.Count];
+    }
+
     /// <summary>A copy of the tab's text in a new tab, in the same database.</summary>
     [RelayCommand]
     private void DuplicateTab(QueryViewModel? doc)

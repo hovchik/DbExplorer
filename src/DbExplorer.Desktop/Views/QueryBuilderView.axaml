@@ -1,0 +1,176 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:conv="using:DbExplorer.Desktop.Converters"
+             xmlns:models="using:DbExplorer.Core.Models"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="DbExplorer.Desktop.Views.QueryBuilderView">
+  <UserControl.Styles>
+    <Style Selector="ItemsControl.rows ComboBox, ItemsControl.rows TextBox">
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="ItemsControl.rows Button">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="Margin" Value="0,0,2,0" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Grid.header TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <TextBlock Text="Database" IsVisible="{Binding HasMultipleDatabases}" />
+      <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                               IsVisible="{Binding HasMultipleDatabases}"
+                               ToolTip.Tip="Database whose tables you build from. Type to filter the list. Changing it starts over." />
+      <CheckBox Content="Distinct" IsChecked="{Binding Distinct}" ToolTip.Tip="SELECT DISTINCT: drop duplicate rows" />
+      <TextBlock Text="Limit" />
+      <NumericUpDown Width="120" Minimum="0" Maximum="100000000" Increment="100" FormatString="0" Value="{Binding Limit}"
+                     ToolTip.Tip="TOP / LIMIT. 0 returns every row." />
+      <Button Content="Open in Query tab" Classes="accent" Command="{Binding OpenInQueryTabCommand}"
+              ToolTip.Tip="Open the SQL in a new query tab on this database. Nothing runs until you run it there." />
+      <Button Content="Copy SQL" Click="OnCopySql" IsEnabled="{Binding HasTables}" />
+      <Button Content="Clear" Command="{Binding ClearCommand}" IsEnabled="{Binding HasTables}" ToolTip.Tip="Remove every table and start over" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </WrapPanel>
+
+    <Grid ColumnDefinitions="240,6,*">
+      <!-- Tables to drag in -->
+      <DockPanel Grid.Column="0">
+        <TextBox DockPanel.Dock="Top" Text="{Binding TableFilter}" Watermark="Filter tables and views…" Margin="0,0,0,4" />
+        <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="2,0,0,4"
+                   Text="Drag onto the canvas, or double-click." />
+        <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+          <ListBox x:Name="TableList" ItemsSource="{Binding AvailableTables}" SelectedItem="{Binding SelectedAvailableTable}"
+                   Background="Transparent" DoubleTapped="OnTableDoubleTapped">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="8,4" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="models:DbObject">
+                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" ToolTip.Tip="{Binding Type}">
+                  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" />
+                  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
+      </DockPanel>
+
+      <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
+
+      <Grid Grid.Column="2" RowDefinitions="*,6,300">
+        <!-- Canvas -->
+        <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+          <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <controls:QueryCanvasControl x:Name="Canvas" Builder="{Binding}" />
+          </ScrollViewer>
+        </Border>
+
+        <GridSplitter Grid.Row="1" Background="Transparent" ResizeDirection="Rows" />
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,6,440">
+          <!-- Columns and joins -->
+          <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="8" Spacing="4">
+                <TextBlock Classes="section" Text="Columns" Margin="0" />
+                <TextBlock Classes="hint" IsVisible="{Binding !HasColumns}" TextWrapping="Wrap"
+                           Text="Click columns on the canvas to add them here. With none ticked the query selects every column (*)." />
+                <Grid Classes="header" ColumnDefinitions="52,170,150,150,130,220,Auto" IsVisible="{Binding HasColumns}">
+                  <TextBlock Grid.Column="0" Text="Output" ToolTip.Tip="In the SELECT list. Untick to only filter or sort by it." />
+                  <TextBlock Grid.Column="1" Text="Column" />
+                  <TextBlock Grid.Column="2" Text="Alias" ToolTip.Tip="Name of the result column (AS …)" />
+                  <TextBlock Grid.Column="3" Text="Aggregate" ToolTip.Tip="Any aggregate groups the query by every other output column" />
+                  <TextBlock Grid.Column="4" Text="Sort" ToolTip.Tip="Sorted in the order the rows are listed: move rows to change it" />
+                  <TextBlock Grid.Column="5" Text="Filter" ToolTip.Tip="&gt; 100, = 'AM', LIKE 'A%', IS NULL, IN (1, 2), BETWEEN 1 AND 5, or a bare value" />
+                </Grid>
+                <ItemsControl Classes="rows" ItemsSource="{Binding Columns}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ColumnItem">
+                      <Grid ColumnDefinitions="52,170,150,150,130,220,Auto" Margin="0,0,0,4">
+                        <CheckBox Grid.Column="0" IsChecked="{Binding Output}" MinWidth="0" Margin="10,0,0,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding Source}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding Source}" Margin="0,0,6,0" />
+                        <TextBox Grid.Column="2" Text="{Binding OutputAlias}" Watermark="as…" />
+                        <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                                  ItemsSource="{x:Static vm:QueryBuilderViewModel.Aggregates}" SelectedItem="{Binding Aggregate}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox Grid.Column="4" HorizontalAlignment="Stretch"
+                                  ItemsSource="{x:Static vm:QueryBuilderViewModel.SortDirections}" SelectedItem="{Binding Sort}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBox Grid.Column="5" Text="{Binding Filter}" Watermark="&gt; 100, LIKE 'A%'…"
+                                 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+                        <StackPanel Grid.Column="6" Orientation="Horizontal">
+                          <Button Content="↑" Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move up" />
+                          <Button Content="↓" Command="{Binding $parent[UserControl].DataContext.MoveColumnDownCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move down" />
+                          <Button Content="✕" Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove" />
+                        </StackPanel>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Classes="section" Text="Joins" Margin="0,10,0,0" />
+                <TextBlock Classes="hint" IsVisible="{Binding !HasJoins}" TextWrapping="Wrap"
+                           Text="Tables join on their foreign keys when you add them. To join by hand, drag a column onto another table's column." />
+                <ItemsControl Classes="rows" ItemsSource="{Binding Joins}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:JoinItem">
+                      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <ComboBox Width="100" ItemsSource="{x:Static vm:QueryBuilderViewModel.JoinKinds}" SelectedItem="{Binding Kind}"
+                                  ToolTip.Tip="Inner: matching rows only. Left: every row of the left table. Right: every row of the right one. Full: both." />
+                        <TextBlock Text="{Binding LeftAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <ComboBox Width="160" ItemsSource="{Binding LeftColumns}" SelectedItem="{Binding LeftColumn}" />
+                        <TextBlock Text="=" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="{Binding RightAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <ComboBox Width="160" ItemsSource="{Binding RightColumns}" SelectedItem="{Binding RightColumn}" />
+                        <TextBlock Classes="hint" Text="{Binding Origin}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Button Content="✕" Command="{Binding $parent[UserControl].DataContext.RemoveJoinCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove this condition" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+
+          <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
+
+          <!-- SQL -->
+          <DockPanel Grid.Column="2">
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="SQL" Margin="0,0,0,4" />
+            <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasWarnings}" Margin="0,6,0,0" Padding="8,6" CornerRadius="6"
+                    BorderThickness="1" BorderBrush="#E87A00">
+              <TextBlock Text="{Binding Warnings}" Foreground="#E87A00" TextWrapping="Wrap" />
+            </Border>
+            <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
+              <ae:TextEditor x:Name="SqlEditor" IsReadOnly="True" ShowLineNumbers="False" WordWrap="False"
+                             FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                             Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4,0,0" />
+            </Border>
+          </DockPanel>
+        </Grid>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</UserControl>

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
              xmlns:lab="using:DbExplorer.Application.Lab"
              xmlns:vm="using:DbExplorer.Desktop.ViewModels"
              x:Class="DbExplorer.Desktop.Views.LabView">
@@ -9,9 +10,9 @@
     <TabItem Header="Change recorder">
       <Grid DataContext="{Binding Recorder}" RowDefinitions="Auto,Auto,Auto,*,6,200">
         <WrapPanel Grid.Row="0" Classes="toolbar">
-          <ComboBox Width="200" ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}"
+          <controls:DatabasePicker Width="200" ItemsSource="{Binding Databases}" SelectedItem="{Binding Database}"
                     PlaceholderText="Connection's database" IsEnabled="{Binding !IsRecording}"
-                    ToolTip.Tip="Database to watch" Margin="0,0,8,4" />
+                    ToolTip.Tip="Database to watch. Type to filter the list." Margin="0,0,8,4" />
           <Button Content="● Start" Classes="accent" Command="{Binding StartCommand}"
                   ToolTip.Tip="Reads every table's insert/update/delete counters (and snapshots small tables) as the starting point" />
           <Button Content="■ Stop" Command="{Binding StopCommand}"

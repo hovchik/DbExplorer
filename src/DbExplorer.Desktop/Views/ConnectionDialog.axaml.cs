@@ -10,13 +10,15 @@ public partial class ConnectionDialog : Window
     public ConnectionDialog()
     {
         InitializeComponent();
-        // Picking a database fills the box and closes the list.
-        DatabaseList.SelectionChanged += (_, _) =>
+        // Typing in the list filters it; picking a database fills the box and closes the list.
+        DatabaseList.Picked += name =>
         {
-            if (DatabaseList.SelectedItem is null) return;
+            if (_vm is not null) _vm.Database = name;
             BrowseDatabases.Flyout?.Hide();
             DatabaseBox.Focus();
         };
+        DatabaseList.Dismissed += () => BrowseDatabases.Flyout?.Hide();
+        if (BrowseDatabases.Flyout is { } flyout) flyout.Opened += (_, _) => DatabaseList.Reset(_vm?.Database);
     }
 
     protected override void OnDataContextChanged(EventArgs e)

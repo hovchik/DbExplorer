@@ -1,12 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
              x:Class="DbExplorer.Desktop.Views.ObjectsView">
   <Grid Margin="4" ColumnDefinitions="2*,6,3*">
     <DockPanel Grid.Column="0">
       <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
         <TextBox Width="220" Text="{Binding FilterText}" Watermark="Filter by schema.name…" />
         <ComboBox Width="130" ItemsSource="{Binding TypeFilters}" SelectedItem="{Binding SelectedTypeFilter}" ToolTip.Tip="Object type" />
-        <ComboBox Width="160" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" ToolTip.Tip="Database" />
+        <controls:DatabasePicker Width="160" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" ToolTip.Tip="Database. Type to filter the list." />
         <TextBlock Classes="hint" Text="{Binding Summary}" />
       </WrapPanel>
       <DataGrid x:Name="ObjectsGrid" ItemsSource="{Binding Objects}"

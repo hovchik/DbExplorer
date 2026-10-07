@@ -382,60 +382,6 @@ public partial class QueryView : UserControl
         return true;
     }
 
-    // ----- Database picker: a filter box over the list, so a name can be found by typing any part of it -----
-
-    private void OnDatabasePickerOpened(object? sender, EventArgs e)
-    {
-        if (_vm is null) return;
-        _vm.DatabasePickerFilter = "";
-        DatabasePickerList.SelectedItem = _vm.CurrentDatabase;
-        if (_vm.CurrentDatabase is { } current) DatabasePickerList.ScrollIntoView(current);
-        Dispatcher.UIThread.Post(() => DatabasePickerFilterBox.Focus(), DispatcherPriority.Input);
-    }
-
-    private void OnDatabasePickerFilterKeyDown(object? sender, KeyEventArgs e)
-    {
-        var count = DatabasePickerList.ItemCount;
-        switch (e.Key)
-        {
-            case Key.Down or Key.Up when count > 0:
-                // Arrows move through the filtered list while the caret stays in the filter box.
-                var index = DatabasePickerList.SelectedIndex + (e.Key == Key.Down ? 1 : -1);
-                DatabasePickerList.SelectedIndex = Math.Clamp(index, 0, count - 1);
-                DatabasePickerList.ScrollIntoView(DatabasePickerList.SelectedIndex);
-                e.Handled = true;
-                break;
-            case Key.Enter:
-                PickDatabase(DatabasePickerList.SelectedItem as string ?? (count > 0 ? DatabasePickerList.Items[0] as string : null));
-                e.Handled = true;
-                break;
-            case Key.Escape:
-                DatabasePicker.Flyout?.Hide();
-                e.Handled = true;
-                break;
-        }
-    }
-
-    private void OnDatabasePickerListTapped(object? sender, TappedEventArgs e)
-    {
-        // Only a tap on a name picks it, not one on the scroll bar.
-        if ((e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { DataContext: string name }) PickDatabase(name);
-    }
-
-    private void OnDatabasePickerListKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter) return;
-        PickDatabase(DatabasePickerList.SelectedItem as string);
-        e.Handled = true;
-    }
-
-    private void PickDatabase(string? name)
-    {
-        if (_vm is null || name is null) return;
-        _vm.CurrentDatabase = name;
-        DatabasePicker.Flyout?.Hide();
-    }
-
     // ----- Commands -----
 
     private void OnRun(object? sender, RoutedEventArgs e) => Run(currentStatement: false);

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:controls="using:DbExplorer.Desktop.Controls"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:conv="using:DbExplorer.Desktop.Converters"
 			 xmlns:models="using:DbExplorer.Core.Models"
@@ -81,7 +82,7 @@
 					ToolTip.Tip="Use the connection already open in the main window" />
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
+			  <controls:DatabasePicker Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsLeftConnected}" ToolTip.Tip="Database of the left server" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
@@ -124,7 +125,7 @@
 					ToolTip.Tip="Use the connection already open in the main window" />
 
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <ComboBox Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
+			  <controls:DatabasePicker Grid.Column="0" Width="200" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}"
 						ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
 			  <AutoCompleteBox Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"

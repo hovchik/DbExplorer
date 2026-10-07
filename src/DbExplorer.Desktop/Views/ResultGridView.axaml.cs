@@ -129,6 +129,7 @@ public partial class ResultGridView : UserControl
         Grid.CurrentCellChanged += (_, _) => UpdateAggregates();
         Grid.DoubleTapped += OnGridDoubleTapped;
         Grid.Sorting += OnSorting;
+        Grid.ColumnReordering += OnColumnReordering;
         Grid.CellPointerPressed += OnCellPointerPressed;
         Grid.AddHandler(PointerReleasedEvent, OnGridPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         Grid.BeginningEdit += (_, e) =>
@@ -381,6 +382,23 @@ public partial class ResultGridView : UserControl
         ToolTip.SetTip(panel, $"{c.Name}{about}\nClick to sort · Shift+Click to add to the sort · right-click for more");
         panel.ContextMenu = BuildHeaderMenu(c);
         return panel;
+    }
+
+    /// <summary>The grid's drag indicator copies the header's content, and our header content is a control that is
+    /// already shown in the real header, so dragging would add it to a second parent and throw. Give the indicator its
+    /// own label instead.</summary>
+    private void OnColumnReordering(object? sender, DataGridColumnReorderingEventArgs e)
+    {
+        if (e.DragIndicator is not ContentControl indicator) return;
+        var state = _columns.FirstOrDefault(c => c.Column == e.Column);
+        indicator.Content = new TextBlock
+        {
+            Text = state?.Name ?? "",
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        indicator.ContentTemplate = null;
     }
 
     private ContextMenu BuildHeaderMenu(ColumnState c)

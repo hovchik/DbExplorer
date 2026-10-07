@@ -55,6 +55,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Query = query;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
+        Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
         _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, query, comparer, lab];
 
@@ -241,6 +242,88 @@ public partial class MainWindowViewModel : ViewModelBase
         await SaveProfilesAsync();
     }
 
+    private bool CanExport => Profiles.Count > 0 && !IsBusy;
+
+    [RelayCommand(CanExecute = nameof(CanExport))]
+    private async Task ExportConnectionsAsync()
+    {
+        var request = await _dialogs.PromptConnectionExportAsync(Profiles.ToList());
+        if (request is null) return;
+
+        try
+        {
+            var json = ConnectionTransfer.Export(request.Profiles, request.Password);
+            var name = await _dialogs.SaveTextFileAsync(
+                "Export connections", "connections", ConnectionTransfer.FileExtension, "DB Explorer connections", json);
+            if (name is null) return;
+            StatusText = $"Exported {request.Profiles.Count} connection(s) to {name}" +
+                         (request.Password is null ? " without passwords" : " with encrypted passwords");
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Could not export connections: " + ex.Message;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCreate))]
+    private async Task ImportConnectionsAsync()
+    {
+        try
+        {
+            var opened = await _dialogs.OpenTextFileAsync("Import connections", ConnectionTransfer.FileExtension, "DB Explorer connections");
+            if (opened is not { } picked) return;
+
+            var file = ConnectionTransfer.Read(picked.Content);
+            IReadOnlyList<ConnectionProfile>? incoming = null;
+            if (!file.HasPasswords) incoming = ConnectionTransfer.Profiles(file);
+
+            string? error = null;
+            while (incoming is null)
+            {
+                var answer = await _dialogs.PromptImportPasswordAsync(picked.Name, error);
+                if (answer is null) return;
+                try
+                {
+                    incoming = ConnectionTransfer.Profiles(file, answer.Password);
+                }
+                catch (WrongExportPasswordException ex)
+                {
+                    error = ex.Message;
+                }
+            }
+
+            if (incoming.Count == 0)
+            {
+                StatusText = $"{picked.Name} has no connections";
+                return;
+            }
+
+            var choice = ImportConflictChoice.KeepBoth;
+            var conflicts = ConnectionTransfer.Conflicts(Profiles, incoming);
+            if (conflicts.Count > 0)
+            {
+                if (await _dialogs.PromptImportConflictAsync(conflicts) is not { } conflictChoice) return;
+                choice = conflictChoice;
+            }
+
+            var selectedId = SelectedProfile?.Id;
+            var result = ConnectionTransfer.Merge(Profiles, incoming, choice);
+            Profiles.Clear();
+            foreach (var profile in result.Profiles) Profiles.Add(profile);
+            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
+            await SaveProfilesAsync();
+
+            var parts = new List<string> { $"added {result.Added}" };
+            if (result.Replaced > 0) parts.Add($"overwrote {result.Replaced}");
+            if (result.Skipped > 0) parts.Add($"skipped {result.Skipped}");
+            StatusText = $"Imported connections from {picked.Name}: {string.Join(", ", parts)}";
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Could not import connections: " + ex.Message;
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectAsync()
     {
@@ -375,6 +458,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Connect", ConnectCommand, SelectedProfile?.ToString());
         Command("New connection…", NewConnectionCommand);
         Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
+        Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
+        Command("Import connections…", ImportConnectionsCommand);
 
         if (!IsConnected && !IsBusy)
         {
@@ -449,6 +534,8 @@ public partial class MainWindowViewModel : ViewModelBase
         NewConnectionCommand.NotifyCanExecuteChanged();
         EditConnectionCommand.NotifyCanExecuteChanged();
         DeleteConnectionCommand.NotifyCanExecuteChanged();
+        ExportConnectionsCommand.NotifyCanExecuteChanged();
+        ImportConnectionsCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();

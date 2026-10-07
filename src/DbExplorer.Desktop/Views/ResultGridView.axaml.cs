@@ -1363,6 +1363,8 @@ public partial class ResultGridView : UserControl
         }
         catch (Exception ex)
         {
+            // In an open transaction the rows saved before the failure are kept as saved; deleted ones leave the grid.
+            if (rs.RemoveRows(r => r.State == ResultRowState.Removed) > 0 && ReferenceEquals(rs, ResultSet)) ApplyView();
             if (ReferenceEquals(rs, ResultSet)) ShowEditMessage("Not saved: " + ex.Message, error: true);
         }
         finally

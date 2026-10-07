@@ -27,7 +27,8 @@ public static class ResultEditing
     /// Runs the statements for the changed rows — inside <paramref name="openTransaction"/> when the caller has one (they stay
     /// uncommitted with it), otherwise in a transaction of their own that is committed only when every row was found.
     /// New or deleted rows show the exact SQL for review first; on production connections every change does, and must be
-    /// confirmed by typing PRODUCTION. The rows keep their changes on failure. Deleted rows are
+    /// confirmed by typing PRODUCTION. On failure the rows keep their changes, except in the open transaction: there the rows
+    /// whose statements already ran are marked saved, as those statements stay applied. Deleted rows are
     /// <see cref="ResultRowState.Removed"/> afterwards, for the caller to take out of the result.
     /// </summary>
     /// <returns>A status line, or null when the user cancelled.</returns>
@@ -38,7 +39,13 @@ public static class ResultEditing
         var changed = rows.Where(r => r.HasChanges).ToList();
         if (changed.Count == 0) return "Nothing to commit.";
         if (session.Profile.ReadOnly) return ReadOnlyGuard.Refusal(session.Profile, "Commit") + " Your changes are kept.";
-        var statements = BuildChanges(session, source, changed);
+        // Each row with its statements, in the order they run: DELETEs, then UPDATEs, then INSERTs.
+        var perRow = changed.Where(r => r.IsDeleted)
+            .Concat(changed.Where(r => r.State == ResultRowState.Unchanged && r.IsModified))
+            .Concat(changed.Where(r => r.IsNew))
+            .Select(r => (Row: r, Statements: BuildChanges(session, source, [r])))
+            .ToList();
+        var statements = perRow.SelectMany(p => p.Statements).ToList();
         var summary = Summary(statements);
 
         var production = session.Profile.IsProduction;
@@ -56,18 +63,20 @@ public static class ResultEditing
         }
 
         var stored = new Dictionary<ResultRow, IReadOnlyList<object?>>(ReferenceEqualityComparer.Instance);
-        var newRows = changed.Where(r => r.IsNew).ToList();
         async Task RunAllAsync(IScriptSession tx, bool inOpenTransaction)
         {
-            var inserted = 0;
-            foreach (var statement in statements)
+            foreach (var (row, rowStatements) in perRow)
             {
-                if (statement.Kind == ResultChangeKind.Insert)
+                IReadOnlyList<object?>? values = null;
+                foreach (var statement in rowStatements)
                 {
-                    var row = newRows[inserted++];
-                    if (await InsertAsync(tx, statement, row) is { } values) stored[row] = values;
+                    if (statement.Kind == ResultChangeKind.Insert) values = await InsertAsync(tx, statement, row);
+                    else await RunAsync(tx, statement, inOpenTransaction);
                 }
-                else await RunAsync(tx, statement, inOpenTransaction);
+                // In the open transaction the row's statements stay applied even when a later row fails: mark it saved
+                // now, so saving again does not insert it twice or look for a row it already deleted.
+                if (inOpenTransaction) row.AcceptChanges(values);
+                else if (values is not null) stored[row] = values;
             }
         }
 
@@ -120,7 +129,7 @@ public static class ResultEditing
         if (affected == 0)
             throw new InvalidOperationException(
                 $"No row of {update.Table.FullName} matched — it was changed or deleted since it was read. " +
-                (inOpenTransaction ? "Statements before it ran in the open transaction; Rollback undoes them." : "Nothing was saved.") +
+                (inOpenTransaction ? "The rows before it were saved in the open transaction; Rollback undoes them." : "Nothing was saved.") +
                 $"\n{update.Sql}");
     }
 

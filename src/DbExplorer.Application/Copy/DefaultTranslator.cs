@@ -29,8 +29,11 @@ public static class DefaultTranslator
             core = Unwrap(cast.Groups["value"].Value.Trim());
 
         var target = targetBaseType.ToLowerInvariant();
-        var lower = core.ToLowerInvariant();
+        // MySQL writes the precision into its clock functions: CURRENT_TIMESTAMP(6), now(3).
+        var lower = PrecisionSuffix.Replace(core.ToLowerInvariant(), "()");
+        if (lower == "current_timestamp()") lower = "current_timestamp";
         var toPostgres = targetProviderKey == SqlDialect.PostgresKey;
+        var toMySql = targetProviderKey == SqlDialect.MySqlKey;
 
         if (Number.IsMatch(core))
         {
@@ -39,26 +42,34 @@ public static class DefaultTranslator
         }
 
         if (lower is "true" or "false")
-            return toPostgres ? lower.ToUpperInvariant() : lower == "true" ? "1" : "0";
+            return toPostgres || toMySql ? lower.ToUpperInvariant() : lower == "true" ? "1" : "0";
 
         if (Text.Match(core) is { Success: true } text)
         {
             var value = text.Groups[1].Value;
-            return toPostgres ? $"'{value}'" : $"N'{value}'";
+            return toPostgres ? $"'{value}'" : toMySql ? $"'{value.Replace("\\", "\\\\")}'" : $"N'{value}'";
         }
 
+        var clock = target is "datetime" or "timestamp" or "timestamptz" or "datetime2" or "smalldatetime" or "datetimeoffset";
         return lower switch
         {
-            "getdate()" or "sysdatetime()" or "current_timestamp" or "now()" or "localtimestamp" or "transaction_timestamp()"
-                => toPostgres ? "CURRENT_TIMESTAMP" : target == "datetime" ? "GETDATE()" : "SYSDATETIME()",
-            "getutcdate()" or "sysutcdatetime()" => toPostgres ? "(now() AT TIME ZONE 'utc')" : null,
-            "sysdatetimeoffset()" => toPostgres ? "CURRENT_TIMESTAMP" : null,
-            "current_date" => toPostgres ? "CURRENT_DATE" : "CAST(GETDATE() AS date)",
-            "newid()" or "newsequentialid()" => toPostgres ? "gen_random_uuid()" : null,
-            "gen_random_uuid()" or "uuid_generate_v4()" => toPostgres ? null : "NEWID()",
+            "getdate()" or "sysdatetime()" or "current_timestamp" or "now()" or "localtimestamp" or "localtimestamp()"
+                or "transaction_timestamp()" or "localtime" or "localtime()"
+                => toPostgres ? "CURRENT_TIMESTAMP"
+                   : toMySql ? (clock ? "CURRENT_TIMESTAMP" : null)
+                   : target == "datetime" ? "GETDATE()" : "SYSDATETIME()",
+            "getutcdate()" or "sysutcdatetime()" or "utc_timestamp()" =>
+                toPostgres ? "(now() AT TIME ZONE 'utc')" : toMySql ? "(UTC_TIMESTAMP())" : "SYSUTCDATETIME()",
+            "sysdatetimeoffset()" => toPostgres ? "CURRENT_TIMESTAMP" : toMySql && clock ? "CURRENT_TIMESTAMP" : null,
+            "current_date" or "curdate()" => toPostgres ? "CURRENT_DATE" : toMySql ? "(CURRENT_DATE)" : "CAST(GETDATE() AS date)",
+            "newid()" or "newsequentialid()" => toPostgres ? "gen_random_uuid()" : toMySql ? "(UUID())" : null,
+            "gen_random_uuid()" or "uuid_generate_v4()" => toPostgres ? null : toMySql ? "(UUID())" : "NEWID()",
+            "uuid()" => toPostgres ? "gen_random_uuid()" : toMySql ? null : "NEWID()",
             _ => null
         };
     }
+
+    private static readonly Regex PrecisionSuffix = new(@"\(\d+\)$", RegexOptions.CultureInvariant);
 
     /// <summary>SQL Server stores defaults wrapped in parentheses, e.g. "((0))" or "(getdate())".</summary>
     private static string Unwrap(string expression)

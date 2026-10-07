@@ -357,7 +357,7 @@ public static class ResultSourceResolver
             .ToList();
         if (candidates.Count > 1 && schema is null)
         {
-            var defaultSchema = providerKey == "Postgres" ? "public" : "dbo";
+            var defaultSchema = providerKey switch { "Postgres" => "public", "MySql" => db ?? "", _ => "dbo" };
             var preferred = candidates.Where(o => Same(o.Schema, defaultSchema)).ToList();
             if (preferred.Count > 0) candidates = preferred;
         }

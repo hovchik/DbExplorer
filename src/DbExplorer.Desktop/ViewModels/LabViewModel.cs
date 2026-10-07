@@ -173,7 +173,12 @@ public sealed partial class ChangeRecorderViewModel(ChangeRecorder recorder, IDi
         catch (Exception ex)
         {
             Status = "Error: " + ex.Message +
-                     (_session?.Provider.ProviderKey == "SqlServer" ? " (the counters need VIEW DATABASE STATE)" : "");
+                     _session?.Provider.ProviderKey switch
+                     {
+                         "SqlServer" => " (the counters need VIEW DATABASE STATE)",
+                         "MySql" => " (the counters come from performance_schema)",
+                         _ => ""
+                     };
         }
         finally
         {

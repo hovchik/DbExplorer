@@ -9,7 +9,8 @@ namespace DbExplorer.Application.Export;
 public enum SqlDialect
 {
     SqlServer,
-    Postgres
+    Postgres,
+    MySql
 }
 
 public enum ExportFormat
@@ -38,7 +39,9 @@ public static partial class ResultExporter
     };
 
     public static SqlDialect DialectFor(string providerKey) =>
-        string.Equals(providerKey, "Postgres", StringComparison.OrdinalIgnoreCase) ? SqlDialect.Postgres : SqlDialect.SqlServer;
+        string.Equals(providerKey, "Postgres", StringComparison.OrdinalIgnoreCase) ? SqlDialect.Postgres
+        : string.Equals(providerKey, "MySql", StringComparison.OrdinalIgnoreCase) ? SqlDialect.MySql
+        : SqlDialect.SqlServer;
 
     /// <summary>
     /// RFC 4180 CSV. Text that a spreadsheet would evaluate as a formula (leading = + - @ tab CR)
@@ -154,7 +157,9 @@ public static partial class ResultExporter
 
     public static string SqlLiteral(object? value, SqlDialect dialect)
     {
-        string Str(string s) => (dialect == SqlDialect.SqlServer ? "N'" : "'") + s.Replace("'", "''") + "'";
+        string Str(string s) => dialect == SqlDialect.MySql
+            ? "'" + s.Replace("\\", "\\\\").Replace("'", "''") + "'"
+            : (dialect == SqlDialect.SqlServer ? "N'" : "'") + s.Replace("'", "''") + "'";
 
         return value switch
         {
@@ -164,8 +169,8 @@ public static partial class ResultExporter
                 => Convert.ToString(value, CultureInfo.InvariantCulture)!,
             double d => double.IsFinite(d) ? d.ToString("R", CultureInfo.InvariantCulture) : Str(d.ToString(CultureInfo.InvariantCulture)),
             float f => float.IsFinite(f) ? f.ToString("R", CultureInfo.InvariantCulture) : Str(f.ToString(CultureInfo.InvariantCulture)),
-            byte[] bytes => dialect == SqlDialect.SqlServer
-                ? "0x" + Convert.ToHexString(bytes)
+            byte[] bytes => dialect == SqlDialect.SqlServer ? "0x" + Convert.ToHexString(bytes)
+                : dialect == SqlDialect.MySql ? "X'" + Convert.ToHexString(bytes) + "'"
                 : "'\\x" + Convert.ToHexString(bytes) + "'::bytea",
             _ => Str(FormatInvariant(value))
         };

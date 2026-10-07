@@ -57,9 +57,12 @@ public sealed class DryRunService
         await using var tx = await session.Provider.BeginScriptSessionAsync(database, transactional: true, ct);
         try
         {
-            await tx.ExecuteAsync(dialect.ProviderKey == SqlDialect.SqlServerKey
-                ? "SET LOCK_TIMEOUT 5000;"
-                : "SET LOCAL lock_timeout = '5s';", timeoutSeconds, ct);
+            await tx.ExecuteAsync(dialect.ProviderKey switch
+            {
+                SqlDialect.SqlServerKey => "SET LOCK_TIMEOUT 5000;",
+                SqlDialect.MySqlKey => "SET SESSION innodb_lock_wait_timeout = 5; SET SESSION lock_wait_timeout = 5;",
+                _ => "SET LOCAL lock_timeout = '5s';"
+            }, timeoutSeconds, ct);
 
             var probe = new Probe(tx, dialect, timeoutSeconds);
             for (var i = 0; i < statements.Count; i++)
@@ -90,6 +93,11 @@ public sealed class DryRunService
 
         try
         {
+            // MySQL commits DDL (and LOCK TABLES and the like) on the spot, so running it would end the dry run's transaction.
+            if (probe.Dialect.ProviderKey == SqlDialect.MySqlKey && kind == DmlKind.Other && !MySqlSafeOther(sql))
+                return new DryRunStatement(sql, kind, tableName, 0, [], null,
+                    "MySQL commits this kind of statement immediately, so it can't be tried and rolled back. The dry run stopped before it.");
+
             switch (kind)
             {
                 case DmlKind.Update or DmlKind.Delete when dml is not null:
@@ -126,9 +134,12 @@ public sealed class DryRunService
 
                 case DmlKind.Insert when dml is not null && dml.ReturningAt < 0:
                 {
-                    var returning = probe.Dialect.ProviderKey == SqlDialect.SqlServerKey
-                        ? dml.InsertOutputAt < 0 ? null : sql[..dml.InsertOutputAt] + " OUTPUT inserted.* " + sql[dml.InsertOutputAt..]
-                        : sql + " RETURNING *";
+                    var returning = probe.Dialect.ProviderKey switch
+                    {
+                        SqlDialect.SqlServerKey => dml.InsertOutputAt < 0 ? null : sql[..dml.InsertOutputAt] + " OUTPUT inserted.* " + sql[dml.InsertOutputAt..],
+                        SqlDialect.MySqlKey => null, // no RETURNING on MySQL
+                        _ => sql + " RETURNING *"
+                    };
                     if (returning is not null && await probe.TryQueryAsync(returning, maxRows, ct) is { } inserted)
                     {
                         var rows = inserted.Rows.Select(r => new RowChange(table?.Schema ?? "", table?.Name ?? dml.Target, RowChangeKind.Inserted,
@@ -153,6 +164,13 @@ public sealed class DryRunService
         {
             return new DryRunStatement(sql, kind, tableName, 0, [], null, ex.Message);
         }
+    }
+
+    /// <summary>Non-DML MySQL statements that neither commit nor write: SET, SHOW, EXPLAIN, REPLACE (a DML) and the like.</summary>
+    private static bool MySqlSafeOther(string sql)
+    {
+        var word = new string(sql.TrimStart().TakeWhile(char.IsLetter).ToArray());
+        return word.ToUpperInvariant() is "SET" or "SHOW" or "DESCRIBE" or "DESC" or "EXPLAIN" or "DO" or "USE" or "REPLACE" or "VALUES" or "TABLE";
     }
 
     /// <summary>The table an UPDATE / DELETE / INSERT writes to, resolving SQL Server's "UPDATE alias … FROM table alias".</summary>

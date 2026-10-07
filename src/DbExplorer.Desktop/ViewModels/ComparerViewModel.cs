@@ -592,7 +592,7 @@ public partial class ComparerViewModel(
             // A right object left over from the previous pick would pair two unrelated objects.
             SelectedRightObject = MatchOnRight(value);
             SetCopyTarget(LeftSession is { } l && RightSession is { } r
-                ? ObjectCopyService.MapSchema(value.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey)
+                ? ObjectCopyService.MapSchema(value.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey, SelectedRightDatabase)
                 : value.Schema, value.Name);
         }
         OnPropertyChanged(nameof(LeftObjectInfo));

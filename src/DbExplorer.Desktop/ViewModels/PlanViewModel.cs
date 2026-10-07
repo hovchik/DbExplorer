@@ -33,8 +33,13 @@ public sealed partial class PlanViewModel : ObservableObject
 
     public string WarningsHeader => $"{Warnings.Count} thing{(Warnings.Count == 1 ? "" : "s")} worth a look";
 
-    /// <summary>".sqlplan" opens in SQL Server Management Studio and Azure Data Studio; PostgreSQL plans save as JSON.</summary>
-    public string RawExtension => Plan.Provider == "SqlServer" ? "sqlplan" : "json";
+    /// <summary>".sqlplan" opens in SQL Server Management Studio and Azure Data Studio; PostgreSQL and MariaDB plans save as JSON, MySQL's tree as text.</summary>
+    public string RawExtension => Plan.Provider switch
+    {
+        "SqlServer" => "sqlplan",
+        "MySql" when !Plan.Raw.TrimStart().StartsWith('{') => "txt",
+        _ => "json"
+    };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedTitle), nameof(SelectedObject), nameof(SelectedFacts), nameof(SelectedWarnings),

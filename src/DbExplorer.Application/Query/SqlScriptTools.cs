@@ -42,10 +42,13 @@ public static class SqlScriptTools
                 continue;
             }
 
-            if (t.Kind == SqlTokenKind.Semicolon && depth == 0 && blocks == 0)
+            if (t.Kind == SqlTokenKind.Semicolon && (depth == 0 && blocks == 0 || t.Text != ";"))
             {
-                if (start >= 0) end = t.End;
+                // A DELIMITER-set delimiter ($$, //) always ends the statement and is not part of it: the server only knows ';'.
+                if (start >= 0 && t.Text == ";") end = t.End;
                 Close();
+                depth = t.Text == ";" ? depth : 0;
+                blocks = t.Text == ";" ? blocks : 0;
                 continue;
             }
 

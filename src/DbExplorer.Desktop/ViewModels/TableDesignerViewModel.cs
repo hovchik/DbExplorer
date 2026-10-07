@@ -148,7 +148,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             var context = await Task.Run(() => DesignContext.From(snapshot, provider));
             if (version != _contextVersion || !ReferenceEquals(session, _session)) return;
             _context = context;
-            Schemas = context.Schemas.Count > 0 ? context.Schemas : [TableScriptBuilder.DefaultSchema(provider)];
+            Schemas = context.Schemas.Count > 0 ? context.Schemas : [TableScriptBuilder.DefaultSchema(provider, database)];
             TableNames = context.Tables.Select(t => t.FullName).ToList();
             foreach (var fk in ForeignKeys) fk.RefreshChoices();
             if (!_edited && _original is null) NewDesign();
@@ -200,7 +200,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         _edited = false;
         SetOriginal(null);
         var provider = ProviderKey;
-        var draft = new TableDesign { Schema = _context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider) };
+        var draft = new TableDesign { Schema = _context.MainSchema ?? TableScriptBuilder.DefaultSchema(provider, SelectedDatabase) };
         var (type, _) = ColumnTypes.Preferred(provider, TypeFamily.Integer);
         LoadDesign(draft.AddColumn(new ColumnDesign
         {
@@ -545,7 +545,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var production = session.Profile.IsProduction;
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
         var ok = await dialogs.ConfirmAsync(
-            $"Create {schema}.{name} in {where}? This runs the script below in one transaction.",
+            $"Create {schema}.{name} in {where}? {RunsInOneTransaction}",
             "Create table", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script);
         if (!ok) return;
@@ -586,6 +586,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         Status = $"Created {schema}.{name} in {where}. The designer is ready for the next table.";
     }
 
+    /// <summary>MySQL commits each DDL statement on its own, so a failure part way leaves the earlier steps applied.</summary>
+    private string RunsInOneTransaction => ProviderKey == SqlDialect.MySqlKey
+        ? "This runs the script below. MySQL applies each statement as it goes, so if one fails the steps before it stay."
+        : "This runs the script below in one transaction.";
+
     /// <summary>Execute for an open table: the same confirm-then-one-transaction flow as creating, then the table is read
     /// again so the designer shows it as it now is.</summary>
     private async Task AlterAsync(DatabaseSession session, TableDesign original, TableDesign design, IReadOnlyList<DesignSuggestion> review)
@@ -608,7 +613,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
         var risks = review.Count(s => s.Severity == DesignSeverity.Warning && s.Key.StartsWith("alter-", StringComparison.Ordinal));
         var ok = await dialogs.ConfirmAsync(
-            $"Change {original.Schema}.{original.Name} in {where}? This runs the script below in one transaction." +
+            $"Change {original.Schema}.{original.Name} in {where}? {RunsInOneTransaction}" +
             (risks > 0 ? $" {risks} change(s) are flagged in Suggestions as risky for existing data." : ""),
             "Alter table", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, script);

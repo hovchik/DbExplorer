@@ -1,7 +1,7 @@
 # DB Explorer
 
 A cross-platform desktop app (.NET 8 + Avalonia) for exploring databases without disturbing them.
-SQL Server is the primary engine; PostgreSQL is included as a second provider to prove the extension point.
+SQL Server is the primary engine; PostgreSQL and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
 
 ## Features
 
@@ -60,7 +60,9 @@ Integration tests for the Lab features run against real servers when these are s
 
 ```bash
 DBEXPLORER_TEST_PG="localhost;5432;postgres;<password>" \
-DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" dotnet test
+DBEXPLORER_TEST_MSSQL="localhost;1433;sa;<password>" \
+DBEXPLORER_TEST_MYSQL="localhost;3306;root;<password>" \
+DBEXPLORER_TEST_MARIADB="localhost;3307;root;<password>" dotnet test
 ```
 
 Open `DbExplorer.sln` in Visual Studio 2022 / Rider, set `DbExplorer.Desktop` as the startup project.
@@ -95,6 +97,7 @@ src/
   DbExplorer.Application           Use cases: sessions, metadata cache (SQLite), name/code search, data search, saved connections
   DbExplorer.Providers.SqlServer   Dapper + Microsoft.Data.SqlClient
   DbExplorer.Providers.Postgres    Dapper + Npgsql
+  DbExplorer.Providers.MySql       Dapper + MySqlConnector (MySQL 8+, MariaDB 10.6+)
   DbExplorer.Desktop               Avalonia UI, MVVM (CommunityToolkit.Mvvm), DI composition root
 tests/
   DbExplorer.Tests                 xUnit tests for pure logic (no database needed)
@@ -117,6 +120,14 @@ Dependencies point inward: providers and the UI depend on Core; the UI depends o
 
 **PostgreSQL**
 - MVCC readers never block writers. Each query runs in its own transaction with `SET TRANSACTION READ ONLY; SET LOCAL statement_timeout; SET LOCAL lock_timeout`, then rolls back. Column profiling uses the same read-only transaction.
+
+**MySQL / MariaDB**
+- A MySQL schema is a database, so each one shows as a database with a single schema of the same name.
+- Catalog reads, search and profiling run in `START TRANSACTION READ ONLY` with session lock and statement timeouts (`lock_wait_timeout`, `innodb_lock_wait_timeout`, `max_execution_time` on MySQL or `max_statement_time` on MariaDB), then roll back. InnoDB readers take no row locks.
+- Read-only connections run `SET SESSION TRANSACTION READ ONLY`, so the server refuses writes too. Limited read-only scripts use `sql_select_limit`.
+- Top queries, change counters and index usage come from `performance_schema`, which MariaDB leaves off by default; the app says how to turn it on. Locks come from `performance_schema.data_locks` (MySQL) or `information_schema.INNODB_LOCKS` (MariaDB).
+- Plans: `EXPLAIN FORMAT=TREE` / `EXPLAIN ANALYZE` on MySQL, `EXPLAIN FORMAT=JSON` / `ANALYZE FORMAT=JSON` on MariaDB.
+- MySQL commits DDL as it runs: the Table designer's script is not all-or-nothing there, and a dry run stops before a DDL statement instead of running it.
 
 **Large databases**
 - The metadata snapshot makes browsing, name/code search, diagrams and the schema overview independent of data size.

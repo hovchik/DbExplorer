@@ -1,0 +1,37 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "filesort": {
+      "sort_key": "c.`name`",
+      "temporary_table": {
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "c",
+              "access_type": "ALL",
+              "possible_keys": ["PRIMARY"],
+              "rows": 2,
+              "filtered": 100
+            }
+          },
+          {
+            "block-nl-join": {
+              "table": {
+                "table_name": "o",
+                "access_type": "ALL",
+                "possible_keys": ["fk_orders_customer"],
+                "rows": 3,
+                "filtered": 100,
+                "attached_condition": "o.`status` = 'new'"
+              },
+              "buffer_type": "flat",
+              "buffer_size": "4Kb",
+              "join_type": "BNL",
+              "attached_condition": "o.customer_id = c.`id`"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

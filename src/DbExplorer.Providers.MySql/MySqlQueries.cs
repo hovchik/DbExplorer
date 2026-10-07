@@ -197,8 +197,8 @@ internal static class MySqlQueries
         SELECT CAST(t.PROCESSLIST_ID AS SIGNED) AS `SessionId`,
                t.PROCESSLIST_USER AS `LoginName`, t.PROCESSLIST_HOST AS `HostName`, NULL AS `ProgramName`,
                l.OBJECT_SCHEMA AS `DatabaseName`,
-               l.LOCK_TYPE AS `ResourceType`,
-               CONCAT(l.OBJECT_SCHEMA, '.', l.OBJECT_NAME, CASE WHEN l.INDEX_NAME IS NULL THEN '' ELSE CONCAT(' (', l.INDEX_NAME, ')') END) AS `ObjectName`,
+               CONCAT(l.LOCK_TYPE, CASE WHEN l.INDEX_NAME IS NULL THEN '' ELSE CONCAT(' (', l.INDEX_NAME, ')') END) AS `ResourceType`,
+               CONCAT(l.OBJECT_SCHEMA, '.', l.OBJECT_NAME) AS `ObjectName`,
                CONCAT(l.LOCK_MODE, CASE WHEN l.LOCK_DATA IS NULL THEN '' ELSE CONCAT(' ', l.LOCK_DATA) END) AS `LockMode`,
                CASE WHEN l.LOCK_STATUS = 'GRANTED' THEN 'GRANT' ELSE 'WAIT' END AS `Status`,
                (SELECT CAST(bt.PROCESSLIST_ID AS SIGNED)
@@ -247,8 +247,8 @@ internal static class MySqlQueries
     public const string MariaDbLocks = """
         SELECT CAST(x.trx_mysql_thread_id AS SIGNED) AS `SessionId`,
                p.USER AS `LoginName`, p.HOST AS `HostName`, NULL AS `ProgramName`, p.DB AS `DatabaseName`,
-               l.lock_type AS `ResourceType`,
-               CONCAT(REPLACE(l.lock_table, '`', ''), CASE WHEN l.lock_index IS NULL THEN '' ELSE CONCAT(' (', l.lock_index, ')') END) AS `ObjectName`,
+               CONCAT(l.lock_type, CASE WHEN l.lock_index IS NULL THEN '' ELSE CONCAT(' (', l.lock_index, ')') END) AS `ResourceType`,
+               REPLACE(l.lock_table, '`', '') AS `ObjectName`,
                CONCAT(l.lock_mode, CASE WHEN l.lock_data IS NULL THEN '' ELSE CONCAT(' ', l.lock_data) END) AS `LockMode`,
                CASE WHEN l.lock_id = x.trx_requested_lock_id THEN 'WAIT' ELSE 'GRANT' END AS `Status`,
                CASE WHEN l.lock_id = x.trx_requested_lock_id THEN

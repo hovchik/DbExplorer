@@ -118,4 +118,34 @@ public sealed class SqlServerProviderIntegrationTests : IAsyncLifetime
         var result = await _provider.ExecuteRoutineAsync(proc, parameters, new Dictionary<string, object?> { ["@n"] = "21" }, 30);
         Assert.Equal("42", Convert.ToString(result.OutputValues["@n"]));
     }
+
+    [SkippableFact]
+    public async Task Disposing_the_provider_closes_its_pooled_connections()
+    {
+        Skip.If(Settings is null);
+        async Task<int> CountAsync()
+        {
+            await using var admin = new SqlConnection(AdminConnectionString);
+            await admin.OpenAsync();
+            await using var cmd = new SqlCommand(
+                "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE database_id = DB_ID(@db) AND program_name LIKE 'DbExplorer.%'", admin);
+            cmd.Parameters.AddWithValue("@db", Database);
+            return (int)(await cmd.ExecuteScalarAsync())!;
+        }
+
+        var provider = new SqlServerProvider(_profile!);
+        await provider.GetObjectsAsync();
+        await provider.QueryReadOnlyAsync("SELECT 1", null, Options);
+        await provider.ExecuteScriptAsync("SELECT 1", null, 30);
+        Assert.True(await CountAsync() > 0);
+
+        await provider.DisposeAsync();
+        var remaining = await CountAsync();
+        for (var i = 0; i < 50 && remaining > 0; i++)
+        {
+            await Task.Delay(100);
+            remaining = await CountAsync();
+        }
+        Assert.Equal(0, remaining);
+    }
 }

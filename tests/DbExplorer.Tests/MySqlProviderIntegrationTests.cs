@@ -282,6 +282,48 @@ public abstract class MySqlProviderIntegrationTestsBase(string variable) : IAsyn
     }
 
     [SkippableFact]
+    public async Task Disposing_the_provider_closes_its_pooled_connections()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        // A login of its own, so other tests' connections are not counted.
+        var user = "dbx_pool_" + variable.Split('_')[^1].ToLowerInvariant();
+        await using var admin = new MySqlConnection(AdminConnectionString);
+        await admin.OpenAsync();
+        await Exec(admin, $"DROP USER IF EXISTS '{user}'@'%'; CREATE USER '{user}'@'%' IDENTIFIED BY 'Dbx_pool_pw1'; GRANT SELECT ON {Database}.* TO '{user}'@'%';");
+        try
+        {
+            async Task<long> CountAsync()
+            {
+                await using var cmd = new MySqlCommand("SELECT COUNT(*) FROM information_schema.processlist WHERE user = @u", admin);
+                cmd.Parameters.AddWithValue("@u", user);
+                return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+            }
+
+            var profile = Profile(Database);
+            profile.UserName = user;
+            profile.Password = "Dbx_pool_pw1";
+            var provider = new MySqlProvider(profile);
+            await provider.GetObjectsAsync();
+            await provider.ExecuteScriptAsync("SELECT 1", null, 30);
+            await provider.ExecuteScriptAsync("SELECT 1", "information_schema", 30);
+            Assert.True(await CountAsync() > 0);
+
+            await provider.DisposeAsync();
+            var remaining = await CountAsync();
+            for (var i = 0; i < 50 && remaining > 0; i++)
+            {
+                await Task.Delay(100);
+                remaining = await CountAsync();
+            }
+            Assert.Equal(0, remaining);
+        }
+        finally
+        {
+            await Exec(admin, $"DROP USER IF EXISTS '{user}'@'%';");
+        }
+    }
+
+    [SkippableFact]
     public async Task Procedures_return_out_values_and_functions_their_result()
     {
         Skip.If(_settings is null, variable + " not set");

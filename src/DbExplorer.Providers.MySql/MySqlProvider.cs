@@ -352,7 +352,19 @@ public sealed class MySqlProvider : IDatabaseProvider
         _ => Convert.ToString(value, CultureInfo.InvariantCulture)
     };
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    /// <summary>
+    /// Closes the idle pooled connections this provider opened (one pool per connection string): they would otherwise
+    /// outlive the session, and an SSH tunnel closed after the provider would leave them pointing at nothing. Connections
+    /// still in use are dropped when they return to the pool.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var connectionString in _connectionStrings.Values)
+        {
+            await using var cn = new MySqlConnection(connectionString);
+            await MySqlConnection.ClearPoolAsync(cn);
+        }
+    }
 
     public async Task<IReadOnlyList<DbRoutineParameter>> GetRoutineParametersAsync(DbObject routine, CancellationToken ct = default)
     {

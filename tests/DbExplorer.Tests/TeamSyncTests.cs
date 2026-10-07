@@ -466,7 +466,7 @@ public sealed class TeamSyncTests : IDisposable
     private sealed class ReversibleProtector : ISecretProtector
     {
         public bool IsSupported => true;
-        public string Protect(string plainText) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(plainText).Reverse().ToArray());
-        public string? Unprotect(string protectedText) => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(protectedText).Reverse().ToArray());
+        public string Protect(string plainText) => Convert.ToBase64String(Enumerable.Reverse(System.Text.Encoding.UTF8.GetBytes(plainText)).ToArray());
+        public string? Unprotect(string protectedText) => System.Text.Encoding.UTF8.GetString(Enumerable.Reverse(Convert.FromBase64String(protectedText)).ToArray());
     }
 }

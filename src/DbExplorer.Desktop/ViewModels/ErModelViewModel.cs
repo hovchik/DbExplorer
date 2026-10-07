@@ -874,7 +874,8 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     partial void OnIsBusyChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
 
     /// <summary>Shows the exact script, asks (typing PRODUCTION on a production connection), runs it in one transaction
-    /// so a failure leaves nothing behind, then reads the changed tables back into the model.</summary>
+    /// so a failure leaves nothing behind (MySQL keeps the statements before a failure), then reads the changed tables
+    /// back into the model.</summary>
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task RunAsync()
     {
@@ -887,8 +888,12 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         var production = session.Profile.IsProduction;
         var where = string.IsNullOrEmpty(database) ? "the connection's database" : database;
+        // MySQL commits each DDL statement on its own, so a failure part way leaves the earlier steps applied.
+        var mySql = session.Provider.ProviderKey == SqlDialect.MySqlKey;
         var ok = await _dialogs.ConfirmAsync(
-            $"Change {where}? {generated.Summary} This runs the script below in one transaction.",
+            $"Change {where}? {generated.Summary} " + (mySql
+                ? "This runs the script below. MySQL applies each statement as it goes, so if one fails the steps before it stay."
+                : "This runs the script below in one transaction."),
             "Run script", production ? "PRODUCTION" : null,
             production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, generated.Script);
         if (!ok) return;
@@ -903,8 +908,26 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
         }
         catch (Exception ex)
         {
-            IsBusy = false;
-            Status = "The server did not run the script, nothing was changed: " + ex.Message;
+            if (!mySql)
+            {
+                IsBusy = false;
+                Status = "The server did not run the script, nothing was changed: " + ex.Message;
+                return;
+            }
+            Status = "The script stopped at an error; the statements before it were applied. Reading the catalog again…";
+            try
+            {
+                await _sessions.RefreshDatabaseSnapshotAsync(session, database);
+            }
+            catch (Exception refresh)
+            {
+                ErrorLog.Write("er model refresh", refresh);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+            Status = $"The script stopped at an error on {where}; MySQL kept the statements before it (metadata refreshed): " + ex.Message;
             return;
         }
 

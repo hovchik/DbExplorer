@@ -558,8 +558,14 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         }
         catch (Exception ex)
         {
-            IsBusy = false;
-            Status = "The server did not create the table, nothing was changed: " + ex.Message;
+            if (ProviderKey != SqlDialect.MySqlKey)
+            {
+                IsBusy = false;
+                Status = "The server did not create the table, nothing was changed: " + ex.Message;
+                return;
+            }
+            await RefreshAfterPartialRunAsync(session, database);
+            Status = "The script stopped at an error; MySQL kept the statements before it (metadata refreshed): " + ex.Message;
             return;
         }
 
@@ -590,6 +596,25 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private string RunsInOneTransaction => ProviderKey == SqlDialect.MySqlKey
         ? "This runs the script below. MySQL applies each statement as it goes, so if one fails the steps before it stay."
         : "This runs the script below in one transaction.";
+
+    /// <summary>After a MySQL script failed part way: the earlier statements stay, so the catalog is read again.</summary>
+    private async Task RefreshAfterPartialRunAsync(DatabaseSession session, string? database)
+    {
+        Status = "The script stopped at an error; the statements before it were applied. Reading the catalog again…";
+        try
+        {
+            await sessions.RefreshDatabaseSnapshotAsync(session, database);
+            await LoadContextAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("table designer refresh", ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     /// <summary>Execute for an open table: the same confirm-then-one-transaction flow as creating, then the table is read
     /// again so the designer shows it as it now is.</summary>
@@ -627,8 +652,14 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         }
         catch (Exception ex)
         {
-            IsBusy = false;
-            Status = "The server did not apply the changes, nothing was changed: " + ex.Message;
+            if (ProviderKey != SqlDialect.MySqlKey)
+            {
+                IsBusy = false;
+                Status = "The server did not apply the changes, nothing was changed: " + ex.Message;
+                return;
+            }
+            await RefreshAfterPartialRunAsync(session, database);
+            Status = "The script stopped at an error; MySQL kept the statements before it (metadata refreshed, reopen the table to see where it stands): " + ex.Message;
             return;
         }
 

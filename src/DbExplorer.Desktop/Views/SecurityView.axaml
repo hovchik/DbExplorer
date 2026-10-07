@@ -59,15 +59,15 @@
   <DockPanel Margin="4">
     <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
       <TextBlock Text="Database" />
-      <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+      <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}" IsEnabled="{Binding !IsBusy}"
                                ToolTip.Tip="Database whose users, roles and permissions are shown. Type to filter the list." />
-      <Button Content="Refresh" Command="{Binding RefreshCommand}" ToolTip.Tip="Read logins, users, roles and permissions again" />
+      <Button Content="Refresh" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsBusy}" ToolTip.Tip="Read logins, users, roles and permissions again" />
       <TextBox Width="180" Text="{Binding Filter}" Watermark="Filter by name" />
       <ComboBox Width="140" ItemsSource="{Binding KindFilters}" SelectedItem="{Binding KindFilter}" />
       <CheckBox Content="Show built-in" IsChecked="{Binding ShowSystem}"
                 ToolTip.Tip="Also list built-in principals such as sa, dbo, public, fixed roles and pg_* roles" />
-      <Button Content="＋ New login…" Command="{Binding NewLoginCommand}" ToolTip.Tip="A login with a password (PostgreSQL: a role WITH LOGIN)" />
-      <Button Content="＋ New role…" Command="{Binding NewRoleCommand}" ToolTip.Tip="A role to group permissions and members" />
+      <Button Content="＋ New login…" Command="{Binding NewLoginCommand}" IsEnabled="{Binding !IsBusy}" ToolTip.Tip="A login with a password (PostgreSQL: a role WITH LOGIN)" />
+      <Button Content="＋ New role…" Command="{Binding NewRoleCommand}" IsEnabled="{Binding !IsBusy}" ToolTip.Tip="A role to group permissions and members" />
       <ProgressBar Width="80" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
       <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
     </WrapPanel>
@@ -105,7 +105,7 @@
                    IsVisible="{Binding !HasSelection}"
                    Text="Pick a login, user or role to see its roles, members and permissions. Changes you make here wait in the list on the right until you apply them." />
         <ScrollViewer IsVisible="{Binding HasSelection}" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Spacing="14" Margin="4,0,8,8">
+          <StackPanel Spacing="14" Margin="4,0,8,8" IsEnabled="{Binding !IsBusy}">
             <StackPanel Spacing="2">
               <TextBlock Text="{Binding DetailTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
               <TextBlock Classes="hint" Text="{Binding DetailType}" TextWrapping="Wrap" />
@@ -225,7 +225,7 @@
           <TextBlock DockPanel.Dock="Top" Text="Pending changes" FontWeight="SemiBold" FontSize="14" />
           <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,2,0,6" IsVisible="{Binding !HasPending}"
                      Text="Nothing yet. Edits wait here, and Apply shows the script and runs it in one transaction." />
-          <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+          <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsEnabled="{Binding !IsBusy}">
             <Button Classes="accent" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,6,4"
                     ToolTip.Tip="Show the script, confirm, then run it in one transaction" />
             <Button Content="Copy script" Command="{Binding CopyScriptCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,6,4"
@@ -234,7 +234,7 @@
             <Button Content="Discard all" Command="{Binding DiscardAllCommand}" IsEnabled="{Binding HasPending}" Margin="0,0,6,4" />
           </WrapPanel>
           <Grid RowDefinitions="Auto,*">
-            <ItemsControl Grid.Row="0" ItemsSource="{Binding Pending}" MaxHeight="220">
+            <ItemsControl Grid.Row="0" ItemsSource="{Binding Pending}" MaxHeight="220" IsEnabled="{Binding !IsBusy}">
               <ItemsControl.Template>
                 <ControlTemplate>
                   <ScrollViewer HorizontalScrollBarVisibility="Disabled">

@@ -7,8 +7,9 @@ namespace DbExplorer.Application.Assistant;
 
 /// <summary>
 /// Describes the catalog to the AI assistant as compact text: table, view and routine names, column names and types,
-/// primary and foreign keys. Only metadata goes in, never row data or routine bodies. Objects named in the question
-/// or query come first, so they survive when a large catalog has to be cut to the size limit.
+/// primary and foreign keys. Only metadata goes in, never row data or routine bodies. The order is fixed, so the text
+/// (and the cached prompt it goes in) is the same for every question; only when a large catalog has to be cut to the
+/// size limit do objects named in the question or query come first, so they survive.
 /// </summary>
 public static partial class SchemaContextBuilder
 {
@@ -18,22 +19,28 @@ public static partial class SchemaContextBuilder
     public static string Build(MetadataSnapshot snapshot, string? database, string? focusText, int maxChars = DefaultMaxChars)
     {
         var scope = database is { Length: > 0 } && snapshot.ContainsDatabase(database) ? snapshot.ForDatabase(database) : snapshot;
-        var mentioned = Words(focusText);
+        var multipleDatabases = scope.Databases.Count > 1;
         var objects = scope.Objects
             .Where(o => o.Type is not (DbObjectType.Trigger or DbObjectType.Other))
-            .OrderBy(o => mentioned.Contains(o.Name) ? 0 : 1)
-            .ThenBy(o => o.IsTableLike ? 0 : 1)
+            .OrderBy(o => o.IsTableLike ? 0 : 1)
             .ThenBy(o => o.Database, StringComparer.OrdinalIgnoreCase)
             .ThenBy(o => o.Schema, StringComparer.OrdinalIgnoreCase)
             .ThenBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(o => (Object: o, Entry: Describe(scope, o, multipleDatabases)))
             .ToList();
-        var multipleDatabases = scope.Databases.Count > 1;
+
+        // The whole catalog fits: the same text for every question, so the cached system prompt is reused. Only a
+        // catalog that has to be cut puts the objects the question names first, so they are the ones kept.
+        if (objects.Sum(o => o.Entry.Length) > maxChars)
+        {
+            var mentioned = Words(focusText);
+            objects = objects.OrderBy(o => mentioned.Contains(o.Object.Name) ? 0 : 1).ToList();   // stable: keeps the order within each group
+        }
 
         var sb = new StringBuilder();
         var listed = 0;
-        foreach (var o in objects)
+        foreach (var (_, entry) in objects)
         {
-            var entry = Describe(scope, o, multipleDatabases);
             if (sb.Length + entry.Length > maxChars && listed > 0) break;
             sb.Append(entry);
             listed++;

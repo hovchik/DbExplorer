@@ -213,6 +213,9 @@ public sealed class DryRunService
     private static bool MySqlSafeOther(string sql)
     {
         var word = new string(sql.TrimStart().TakeWhile(char.IsLetter).ToArray());
+        // SET autocommit = 1 commits the open transaction on the spot.
+        if (word.Equals("SET", StringComparison.OrdinalIgnoreCase) && sql.Contains("autocommit", StringComparison.OrdinalIgnoreCase))
+            return false;
         return word.ToUpperInvariant() is "SET" or "SHOW" or "DESCRIBE" or "DESC" or "EXPLAIN" or "DO" or "USE" or "REPLACE" or "VALUES" or "TABLE";
     }
 

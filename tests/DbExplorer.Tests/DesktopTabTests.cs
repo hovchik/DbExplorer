@@ -114,7 +114,7 @@ public class DesktopTabTests
     }
 
     [Fact]
-    public async Task Security_on_MySQL_does_not_leave_the_spinner_of_a_previous_load_running()
+    public void Security_on_MySQL_does_not_leave_the_spinner_of_a_previous_load_running()
     {
         var hang = new TaskCompletionSource<QueryResultSet>();
         var postgres = Session(ScriptedProvider.Create(new()

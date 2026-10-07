@@ -103,12 +103,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         }
     }
 
-    /// <summary>Connects the tab to <paramref name="session"/>. It starts in <see cref="RestoredDatabase"/> the first time
-    /// (when the server has it), otherwise in the connection's database.</summary>
+    /// <summary>Connects the tab to <paramref name="session"/>. It starts in the database it last used on that connection
+    /// (see <see cref="Databases"/>), otherwise in the connection's database. Detached, it keeps showing its database.</summary>
     public void Attach(DatabaseSession? session)
     {
-        var preferredDatabase = session is null ? null : RestoredDatabase;
-        if (session is not null) RestoredDatabase = null;
+        var remembered = false;
+        var preferredDatabase = session is null ? null : Databases.Resolve(session.Profile.Id, out remembered);
         // An open manual transaction belongs to the old connection: roll it back rather than leave it hanging.
         if (_transaction is not null && !ReferenceEquals(session, _session)) _ = EndTransactionAsync(commit: false, reason: "connection changed");
         if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
@@ -125,12 +125,23 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         NotifyLabCommands();
 
         _attaching = true;
-        AvailableDatabases = session is null ? [] : MergeNames(session.Snapshot.Databases, [session.Profile.Database, preferredDatabase]);
-        CurrentDatabase = session is null ? null : NullIfEmpty(preferredDatabase) ?? NullIfEmpty(session.Profile.Database);
-        OnAvailableDatabasesChanged(AvailableDatabases);
+        DatabaseWarning = "";
+        if (session is null)
+        {
+            // Disconnected (or the app is closing): the tab still shows, and saves, the database it was in.
+            AvailableDatabases = MergeNames([CurrentDatabase]);
+        }
+        else
+        {
+            AvailableDatabases = MergeNames(session.Snapshot.Databases, [session.Profile.Database, preferredDatabase]);
+            CurrentDatabase = NullIfEmpty(preferredDatabase) ?? NullIfEmpty(session.Profile.Database);
+            OnAvailableDatabasesChanged(AvailableDatabases);
+            if (preferredDatabase is not null) Databases.Remember(session.Profile.Id, CurrentDatabase);
+        }
         _attaching = false;
+        OnPropertyChanged(nameof(CanChangeDatabase));
         RebuildCompletion();
-        if (session is not null) _ = LoadServerDatabasesAsync(session, preferredDatabase);
+        if (session is not null) _ = LoadServerDatabasesAsync(session, preferredDatabase, remembered);
     }
 
     private void OnSnapshotChanged(object? sender, EventArgs e)
@@ -154,11 +165,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     /// <summary>What the suggestions are based on ("Suggestions: 1,234 objects in Sales"), shown next to the picker.</summary>
     [ObservableProperty] private string _completionInfo = "";
 
-    /// <summary>Database the tab asked for before any connection (restored from the last run, or inherited from the
-    /// tab it was opened from); applied when a connection is attached.</summary>
-    public string? RestoredDatabase { get; set; }
+    /// <summary>The database picked on each connection, saved with the tab and applied when that connection is attached.</summary>
+    public TabDatabaseMemory Databases { get; set; } = new();
 
-    public bool CanChangeDatabase => !HasOpenTransaction && !RunOnMultipleDatabases;
+    /// <summary>Shown next to the picker when the database the tab remembers is not on the server any more.</summary>
+    [ObservableProperty] private string _databaseWarning = "";
+
+    public bool CanChangeDatabase => _session is not null && !HasOpenTransaction && !RunOnMultipleDatabases;
 
     /// <summary>The database runs target: the picked one, or the connection's default.</summary>
     private string? TargetDatabase => NullIfEmpty(CurrentDatabase);
@@ -173,6 +186,11 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             Avalonia.Threading.Dispatcher.UIThread.Post(() => CurrentDatabase = oldValue);
             return;
         }
+        if (_session is { } session)
+        {
+            Databases.Remember(session.Profile.Id, newValue);
+            DatabaseWarning = "";
+        }
         RebuildCompletion();
     }
 
@@ -184,17 +202,34 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             CurrentDatabase = listed;
     }
 
-    private async Task LoadServerDatabasesAsync(DatabaseSession session, string? preferredDatabase)
+    /// <param name="remembered">Whether <paramref name="preferredDatabase"/> was picked on this connection before.</param>
+    private async Task LoadServerDatabasesAsync(DatabaseSession session, string? preferredDatabase, bool remembered)
     {
         try
         {
             var names = await session.Factory.ListDatabasesAsync(session.Profile);
             if (!ReferenceEquals(session, _session)) return;
+            var missing = preferredDatabase is { Length: > 0 } && string.Equals(CurrentDatabase, preferredDatabase, StringComparison.OrdinalIgnoreCase) &&
+                          !names.Contains(preferredDatabase, StringComparer.OrdinalIgnoreCase);
+            if (missing && remembered)
+            {
+                // Picked on this connection before but gone now (dropped, renamed, no access): keep it and say so,
+                // rather than quietly running the tab somewhere else.
+                AvailableDatabases = MergeNames(names, session.Snapshot.Databases, [session.Profile.Database, CurrentDatabase]);
+                DatabaseWarning = $"Database \"{preferredDatabase}\" was not found on this server. Pick another database to run this tab.";
+                return;
+            }
             AvailableDatabases = MergeNames(names, session.Snapshot.Databases, [session.Profile.Database]);
-            // A restored tab may name a database this server does not have: start in the connection's database instead.
-            if (preferredDatabase is { Length: > 0 } && string.Equals(CurrentDatabase, preferredDatabase, StringComparison.OrdinalIgnoreCase) &&
-                !names.Contains(preferredDatabase, StringComparer.OrdinalIgnoreCase))
+            if (missing)
+            {
+                // A database carried over from another tab or an older tabs file, not from this connection:
+                // start in the connection's database instead.
+                _attaching = true;
                 CurrentDatabase = NullIfEmpty(session.Profile.Database);
+                _attaching = false;
+                Databases.Remember(session.Profile.Id, null);
+                RebuildCompletion();
+            }
         }
         catch
         {

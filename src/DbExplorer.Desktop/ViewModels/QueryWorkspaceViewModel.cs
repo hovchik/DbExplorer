@@ -46,7 +46,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         _autosave = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _autosave.Tick += async (_, _) =>
         {
-            var snapshot = string.Join("\u0001", Documents.Select(d => d.Title + "\u0002" + d.Sql));
+            var snapshot = string.Join("\u0001", Documents.Select(d => d.Title + "\u0002" + d.Sql + "\u0002" + d.CurrentDatabase));
             if (snapshot == _lastSaved) return;
             _lastSaved = snapshot;
             await SaveTabsAsync();
@@ -75,16 +75,20 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     [RelayCommand]
     private void NewQuery() => NewTab();
 
-    /// <param name="database">Database the tab starts in; by default the one of the tab it is opened from.</param>
+    /// <param name="database">Database the tab starts in; by default the ones of the tab it is opened from.</param>
     /// <param name="autoTitle">Whether the tab is renamed after the queries it runs.</param>
-    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null, bool autoTitle = false)
+    /// <param name="databases">The databases of a restored tab, in place of <paramref name="database"/>.</param>
+    private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null, bool autoTitle = false,
+        TabDatabaseMemory? databases = null)
     {
         var doc = _createDocument();
         doc.Title = title;
         doc.AutoTitle = autoTitle && filePath is null;
         doc.FilePath = filePath;
         doc.SetText(sql, markClean: !dirty);
-        doc.RestoredDatabase = database ?? SelectedDocument?.CurrentDatabase;
+        doc.Databases = databases
+                        ?? (database is not null ? new TabDatabaseMemory { Pending = database } : SelectedDocument?.Databases.Clone())
+                        ?? new TabDatabaseMemory();
         doc.Attach(_session);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
         doc.OpenAndRunRequested += (docTitle, text, db) =>
@@ -172,7 +176,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         doc ??= SelectedDocument;
         if (doc is null) return;
-        AddTab(doc.Title + " (copy)", doc.Sql, filePath: null, dirty: false, NullIfEmpty(doc.CurrentDatabase));
+        AddTab(doc.Title + " (copy)", doc.Sql, filePath: null, dirty: false, databases: doc.Databases.Clone());
     }
 
     /// <summary>Gives the tab a name of the user's choice; it is then no longer renamed after the queries it runs.</summary>
@@ -273,7 +277,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             var tabs = await _scripts.LoadTabsAsync();
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
-            foreach (var t in tabs) AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, t.Database, t.AutoTitle ?? IsUntitledName(t.Title));
+            foreach (var t in tabs)
+                AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t));
             if (placeholder is not null)
             {
                 placeholder.Attach(null);
@@ -299,10 +304,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         try
         {
-            await _scripts.SaveTabsAsync(Documents.Select(d => new QueryTabState
+            await _scripts.SaveTabsAsync(Documents.Select(d =>
             {
-                Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty,
-                Database = d.CurrentDatabase ?? d.RestoredDatabase, AutoTitle = d.AutoTitle
+                var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle };
+                d.Databases.SaveTo(state, d.CurrentDatabase);
+                return state;
             }));
         }
         catch

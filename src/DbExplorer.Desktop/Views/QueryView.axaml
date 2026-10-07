@@ -34,6 +34,8 @@
 		<controls:DatabasePicker IsEnabled="{Binding CanChangeDatabase}" MinWidth="180" MaxWidth="320"
 								 ItemsSource="{Binding AvailableDatabases}" SelectedItem="{Binding CurrentDatabase}"
 								 PlaceholderText="(connection default)" />
+		<TextBlock Text="{Binding DatabaseWarning}" Foreground="#FFD08A00" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+				   IsVisible="{Binding DatabaseWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 	  </StackPanel>
 	  <Button Content="▶ Run" Classes="accent" Click="OnRun"
 			  ToolTip.Tip="Run the selection, or the whole script when nothing is selected (F5 / Ctrl+E)" />

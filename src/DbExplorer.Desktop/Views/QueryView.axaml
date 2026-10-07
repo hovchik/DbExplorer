@@ -19,7 +19,7 @@
 	  <Setter Property="Padding" Value="10,2" />
 	</Style>
   </UserControl.Styles>
-  <Grid x:Name="LayoutGrid" Margin="4">
+  <Grid x:Name="LayoutGrid" Margin="4" ColumnDefinitions="*,Auto">
 	<Grid.RowDefinitions>
 	  <RowDefinition Height="Auto" />
 	  <RowDefinition Height="2*" MinHeight="90" />
@@ -27,7 +27,7 @@
 	  <RowDefinition Height="3*" MinHeight="90" />
 	  <RowDefinition Height="Auto" />
 	</Grid.RowDefinitions>
-	<WrapPanel Grid.Row="0" Classes="toolbar">
+	<WrapPanel Grid.Row="0" Grid.ColumnSpan="2" Classes="toolbar">
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
 				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to filter the list.">
 		<TextBlock Text="Database" VerticalAlignment="Center" />
@@ -81,6 +81,19 @@
 	  <Button Content="↶ Rollback" Classes="tool" Command="{Binding RollbackCommand}" IsVisible="{Binding HasOpenTransaction}"
 			  ToolTip.Tip="Undo everything done since the transaction started" />
 	  <TextBlock Text="{Binding TransactionInfo}" IsVisible="{Binding HasOpenTransaction}" Foreground="#E08A00" FontWeight="SemiBold" />
+	  <Button Content="✨ AI ▾" Classes="tool" IsVisible="{Binding IsAssistantAvailable}"
+			  ToolTip.Tip="AI assistant (Claude) that knows this database's tables and columns. Only names, types and the query text are sent, never row data; nothing it writes is run automatically.">
+		<Button.Flyout>
+		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Write SQL from a sentence…" Click="OnAssistantWrite" />
+			<MenuItem Header="Explain this query (selection, statement at the caret, or script)" Click="OnAssistantExplain" />
+			<MenuItem Header="Fix the last error" Command="{Binding FixWithAssistantCommand}" />
+			<Separator />
+			<MenuItem Header="Show / hide the assistant panel" Command="{Binding ToggleAssistantCommand}" />
+			<MenuItem Header="Settings (API key, what is sent)…" Command="{Binding OpenAssistantSettingsCommand}" />
+		  </MenuFlyout>
+		</Button.Flyout>
+	  </Button>
 	  <Button x:Name="SnippetsButton" Content="Snippets ▾" Classes="tool" Click="OnSnippets"
 			  ToolTip.Tip="Insert one of your saved snippets, or save the selection as a new one. Saved snippets are also offered by Ctrl+Space at the start of a statement." />
 	  <Button Content="Tools ▾" Classes="tool">
@@ -98,6 +111,8 @@
 			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />
 			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
 			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
+			<Separator IsVisible="{Binding IsAssistantSetupNeeded}" />
+			<MenuItem Header="Set up the AI assistant…" IsVisible="{Binding IsAssistantSetupNeeded}" Command="{Binding OpenAssistantSettingsCommand}" />
 			<Separator />
 			<MenuItem x:Name="WordWrapItem" Header="Word wrap" InputGesture="Alt+Z" ToggleType="CheckBox" Click="OnToggleWordWrap" />
 			<MenuItem Header="Zoom in (Ctrl+= or Ctrl+wheel)" Click="OnZoomIn" />
@@ -225,5 +240,48 @@
 		</ItemsControl>
 	  </ScrollViewer>
 	</Expander>
+
+	<!-- AI assistant, beside the editor and results: asks Claude with the catalog's names and types; its SQL is inserted only on request -->
+	<Border Grid.Row="1" Grid.RowSpan="4" Grid.Column="1" Width="400" Margin="6,0,0,0" Padding="8" IsVisible="{Binding IsAssistantOpen}"
+			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+	  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+		<Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+		  <TextBlock Text="✨ AI assistant" FontWeight="SemiBold" VerticalAlignment="Center" />
+		  <Button Grid.Column="1" Classes="layout" Content="✕" Command="{Binding ToggleAssistantCommand}" ToolTip.Tip="Hide the assistant" />
+		</Grid>
+		<TextBox Grid.Row="1" x:Name="AssistantRequestBox" Text="{Binding AssistantRequest}" AcceptsReturn="True" TextWrapping="Wrap"
+				 MinHeight="56" MaxHeight="140" KeyDown="OnAssistantRequestKeyDown"
+				 Watermark="Describe the query, e.g. top 10 customers by order total this year" />
+		<WrapPanel Grid.Row="2" Margin="0,6,0,0">
+		  <Button Content="Write SQL" Classes="accent" Margin="0,0,6,4" Command="{Binding AskAssistantCommand}"
+				  ToolTip.Tip="Write SQL for the request above (Ctrl+Enter)" />
+		  <Button Content="Explain" Classes="tool" Margin="0,0,6,4" Click="OnAssistantExplain"
+				  ToolTip.Tip="Explain the selection, the statement at the caret, or the whole script" />
+		  <Button Content="Fix error" Classes="tool" Margin="0,0,6,4" Command="{Binding FixWithAssistantCommand}"
+				  ToolTip.Tip="Explain why the last run failed and propose a corrected query" />
+		  <Button Content="Cancel" Margin="0,0,6,4" Command="{Binding CancelAssistantCommand}" IsVisible="{Binding IsAssistantBusy}" />
+		</WrapPanel>
+		<StackPanel Grid.Row="3" Spacing="6" Margin="0,0,0,6">
+		  <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsAssistantBusy}" />
+		  <TextBlock Classes="hint" Text="{Binding AssistantStatus}" TextWrapping="Wrap"
+					 IsVisible="{Binding AssistantStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+		  <ScrollViewer MaxHeight="220" IsVisible="{Binding AssistantAnswer, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+			<SelectableTextBlock Text="{Binding AssistantAnswer}" TextWrapping="Wrap" />
+		  </ScrollViewer>
+		</StackPanel>
+		<TextBox Grid.Row="4" Text="{Binding AssistantSql}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+				 VerticalContentAlignment="Top" IsVisible="{Binding HasAssistantSql}"
+				 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+				 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12"
+				 Background="{DynamicResource AppCodeBackgroundBrush}" />
+		<StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasAssistantSql}">
+		  <Button Content="Insert" Classes="accent" Click="OnAssistantInsert"
+				  ToolTip.Tip="Put the SQL in the editor: it replaces the selection, or goes in below the caret's line. It is not run." />
+		  <Button Content="Copy" Classes="tool" Command="{Binding CopyAssistantSqlCommand}" />
+		</StackPanel>
+		<TextBlock Grid.Row="6" Classes="hint" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+				   Text="Sends table, column and key names and types plus the query text to Anthropic. Never row data. Nothing is run automatically." />
+	  </Grid>
+	</Border>
   </Grid>
 </UserControl>

@@ -16,6 +16,7 @@ using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using AvaloniaEdit.Search;
 using DbExplorer.Application;
+using DbExplorer.Application.Assistant;
 using DbExplorer.Application.Query;
 using DbExplorer.Desktop.Editor;
 using DbExplorer.Desktop.ViewModels;
@@ -140,6 +141,7 @@ public partial class QueryView : UserControl
             Editor.Document.Changed += OnDocumentChanged;
         }
         HookSettings();
+        _vm?.OnAssistantSettingsChanged();
 
         _carets.Clear();
         _decorations.Error = null;
@@ -796,6 +798,14 @@ public partial class QueryView : UserControl
     /// <summary>Follows the app-wide editor settings while this view is on screen; the settings outlive the view.</summary>
     private void HookSettings()
     {
+        var assistant = this.IsAttachedToVisualTree() ? _vm?.AssistantSettings : null;
+        if (!ReferenceEquals(assistant, _assistantSettings))
+        {
+            if (_assistantSettings is not null) _assistantSettings.Changed -= OnAssistantSettingsChanged;
+            _assistantSettings = assistant;
+            if (_assistantSettings is not null) _assistantSettings.Changed += OnAssistantSettingsChanged;
+        }
+
         var wanted = this.IsAttachedToVisualTree() ? _vm?.Settings : null;
         if (ReferenceEquals(wanted, _settings)) { ApplyEditorSettings(); return; }
         if (_settings is not null)
@@ -861,6 +871,60 @@ public partial class QueryView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e) => Zoom(-1);
     private void OnZoomReset(object? sender, RoutedEventArgs e) => ResetZoom();
     private void OnToggleWordWrap(object? sender, RoutedEventArgs e) => ToggleWordWrap();
+
+    // ----- AI assistant -----
+
+    private AssistantSettings? _assistantSettings;
+
+    private void OnAssistantSettingsChanged() => _vm?.OnAssistantSettingsChanged();
+
+    private void OnAssistantWrite(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        _vm.IsAssistantOpen = true;
+        Dispatcher.UIThread.Post(() => AssistantRequestBox.Focus(), DispatcherPriority.Loaded);
+    }
+
+    private void OnAssistantExplain(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        var run = Target(currentStatement: true);
+        if (_vm.ExplainWithAssistantCommand.CanExecute(run)) _vm.ExplainWithAssistantCommand.Execute(run);
+    }
+
+    /// <summary>Ctrl+Enter in the request box asks; plain Enter adds a line.</summary>
+    private void OnAssistantRequestKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || e.Key != Key.Enter || !e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+        e.Handled = true;
+        if (_vm.AskAssistantCommand.CanExecute(null)) _vm.AskAssistantCommand.Execute(null);
+    }
+
+    /// <summary>Puts the proposed SQL in the editor as one undoable edit: over the selection, else on its own line at the caret.</summary>
+    private void OnAssistantInsert(object? sender, RoutedEventArgs e)
+    {
+        if (_vm?.AssistantSql is not { Length: > 0 } sql) return;
+        var document = Editor.Document;
+        if (Editor.SelectionLength > 0)
+        {
+            var start = Editor.SelectionStart;
+            document.Replace(start, Editor.SelectionLength, sql);
+            Editor.Select(start, sql.Length);
+        }
+        else
+        {
+            var caret = Math.Min(Editor.CaretOffset, document.TextLength);
+            var line = document.GetLineByOffset(caret);
+            var lineText = document.GetText(line.Offset, line.Length);
+            // On a non-empty line, go below it so the inserted query does not split the existing one.
+            var at = string.IsNullOrWhiteSpace(lineText) ? line.Offset : line.EndOffset;
+            var text = string.IsNullOrWhiteSpace(lineText) ? sql : Environment.NewLine + Environment.NewLine + sql;
+            if (string.IsNullOrWhiteSpace(lineText) && line.Length > 0) document.Replace(line.Offset, line.Length, sql);
+            else document.Insert(at, text);
+            Editor.Select(at + text.Length - sql.Length, sql.Length);
+        }
+        Editor.Focus();
+    }
 
     // ----- Experimental features (Lab menu) -----
 

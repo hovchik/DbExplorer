@@ -268,6 +268,20 @@ public abstract class MySqlProviderIntegrationTestsBase(string variable) : IAsyn
     }
 
     [SkippableFact]
+    public async Task A_caller_giving_up_does_not_fail_the_shared_server_lookup()
+    {
+        Skip.If(_settings is null, variable + " not set");
+        await using var provider = new MySqlProvider(_profile!);
+        using var cts = new CancellationTokenSource();
+        var first = provider.GetIndexesAsync(false, cts.Token, includeUsageStats: false);
+        var second = provider.GetIndexesAsync(false, includeUsageStats: false);
+        cts.Cancel();
+
+        try { await first; } catch (Exception) { /* cancelled: its own outcome does not matter here */ }
+        Assert.Contains(await second, i => i.Database == Database && i.Table == "customers");
+    }
+
+    [SkippableFact]
     public async Task Procedures_return_out_values_and_functions_their_result()
     {
         Skip.If(_settings is null, variable + " not set");

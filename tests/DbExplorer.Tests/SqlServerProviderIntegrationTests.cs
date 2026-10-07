@@ -89,4 +89,18 @@ public sealed class SqlServerProviderIntegrationTests : IAsyncLifetime
             Assert.Equal(2, again.Rows[0][0]);
         }
     }
+
+    [SkippableFact]
+    public async Task A_caller_giving_up_does_not_fail_the_shared_database_lookup()
+    {
+        Skip.If(Settings is null);
+        await using var provider = new SqlServerProvider(Profile(""));
+        using var cts = new CancellationTokenSource();
+        var first = provider.GetObjectsAsync(cts.Token);
+        var second = provider.GetColumnsAsync();
+        cts.Cancel();
+
+        try { await first; } catch (Exception) { /* cancelled: its own outcome does not matter here */ }
+        Assert.Contains(await second, c => c.Database == Database && c.Table == "Numbers");
+    }
 }

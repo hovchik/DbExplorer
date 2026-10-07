@@ -836,13 +836,16 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     }
 
     /// <summary>The accessible databases, read once for the parallel catalog reads of one load rather than once each:
-    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.</summary>
+    /// a read still in flight is shared, a finished one never is, so the next load (a refresh) sees new databases.
+    /// The shared read runs without any caller's token (one caller giving up must not fail the others); each caller
+    /// stops waiting on its own token.</summary>
     private Task<IReadOnlyList<string>> GetDatabasesForCatalogAsync(CancellationToken ct)
     {
         lock (_databasesLock)
         {
-            if (_databases is { IsCompleted: false } inFlight) return inFlight;
-            return _databases = GatedAsync(() => GetAccessibleDatabasesAsync(ct), ct);
+            if (_databases is not { IsCompleted: false })
+                _databases = GatedAsync(() => GetAccessibleDatabasesAsync(CancellationToken.None), CancellationToken.None);
+            return _databases.WaitAsync(ct);
         }
     }
 

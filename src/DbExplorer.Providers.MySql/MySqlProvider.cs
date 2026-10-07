@@ -41,12 +41,15 @@ public sealed class MySqlProvider : IDatabaseProvider
     /// <summary>What the server is: MariaDB reports "10.11.6-MariaDB-…" as its version.</summary>
     internal sealed record ServerInfo(bool MariaDb, Version Version);
 
+    /// <summary>Read once and kept; a failed read is tried again. The shared read runs without any caller's token (one
+    /// caller giving up must not fail the others); each caller stops waiting on its own token.</summary>
     internal Task<ServerInfo> GetServerAsync(CancellationToken ct)
     {
         lock (_serverLock)
         {
-            if (_server is { IsFaulted: false, IsCanceled: false } known) return known;
-            return _server = ReadServerAsync(ct);
+            if (_server is not { IsFaulted: false, IsCanceled: false })
+                _server = ReadServerAsync(CancellationToken.None);
+            return _server.WaitAsync(ct);
         }
     }
 

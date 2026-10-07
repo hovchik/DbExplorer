@@ -97,6 +97,9 @@
       <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
         <views:TableDesignerView DataContext="{Binding TableDesigner}" />
       </TabItem>
+      <TabItem Header="ER model" ToolTip.Tip="Draw tables and relationships, or read them from a database, and generate the DDL">
+        <views:ErModelView DataContext="{Binding ErModel}" />
+      </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />
       </TabItem>

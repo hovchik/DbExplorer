@@ -48,12 +48,14 @@ public static class ErModelScriptBuilder
     public static IReadOnlyDictionary<string, DbObject> Matches(ErModel model, MetadataSnapshot target, string providerKey)
     {
         var result = new Dictionary<string, DbObject>();
+        DbObject? Find(string schema, string name) => target.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table &&
+            TableDesign.Same(o.Schema, schema) && TableDesign.Same(o.Name, name.Trim()));
         foreach (var t in model.Tables.Where(t => t.Baseline is not null))
         {
-            var schema = TableScriptBuilder.SchemaOf(t.Baseline!, providerKey);
-            var found = target.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table &&
-                                                           TableDesign.Same(o.Schema, schema) && TableDesign.Same(o.Name, t.Baseline!.Name.Trim()));
-            if (found is not null) result[t.Id] = found;
+            // By the name it was read with; failing that by its own name, for a rename that was already run elsewhere
+            // (the script opened in a query tab). A table drawn here is never matched: its name being taken is an error.
+            var found = Find(TableScriptBuilder.SchemaOf(t.Baseline!, providerKey), t.Baseline!.Name) ?? Find(t.Schema(providerKey), t.Name);
+            if (found is not null && !result.ContainsValue(found)) result[t.Id] = found;
         }
         return result;
     }
@@ -88,6 +90,7 @@ public static class ErModelScriptBuilder
             foreach (var f in findings.Where(f => f.Severity == DesignSeverity.Warning && f.Key.StartsWith("alter-", StringComparison.Ordinal)))
                 warnings.Add($"{label}: {f.Title}");
 
+            if (original is not null) design = FollowRenamedParents(design, original, model, matches, providerKey);
             var action = original is null ? ModelTableAction.Create
                 : TableAlterScriptBuilder.IsUnchanged(original, design, providerKey) ? ModelTableAction.Unchanged
                 : ModelTableAction.Alter;
@@ -198,6 +201,28 @@ public static class ErModelScriptBuilder
             Indexes = indexes,
             PrimaryKeyName = design.PrimaryKeyName.Trim().Length > 0 ? design.PrimaryKeyName : original.PrimaryKeyName
         };
+    }
+
+    /// <summary>
+    /// A key whose parent table (or its key column) is renamed by the same script still references it on the server:
+    /// both engines carry keys along with a rename. Such a key is written with the parent's server names, so the ALTER
+    /// script leaves it alone instead of dropping and adding it again.
+    /// </summary>
+    private static TableDesign FollowRenamedParents(
+        TableDesign design, TableDesign original, ErModel model, IReadOnlyDictionary<string, DbObject> matches, string providerKey)
+    {
+        var keys = design.ForeignKeys.Select(fk =>
+        {
+            var before = original.ForeignKeys.FirstOrDefault(o => fk.Name.Trim().Length > 0 && TableDesign.Same(o.Name, fk.Name.Trim()));
+            var schema = string.IsNullOrWhiteSpace(fk.ReferencedSchema) ? TableScriptBuilder.DefaultSchema(providerKey) : fk.ReferencedSchema;
+            if (before is null || model.FindByName(schema, fk.ReferencedTable) is not { Baseline: { } baseline } parent || !matches.ContainsKey(parent.Id))
+                return fk;
+            var column = parent.Design.Column(fk.ReferencedColumn) is { } c ? c.OriginalName ?? c.Name.Trim() : fk.ReferencedColumn.Trim();
+            var sameParent = TableDesign.Same(before.ReferencedSchema, TableScriptBuilder.SchemaOf(baseline, providerKey)) &&
+                             TableDesign.Same(before.ReferencedTable, baseline.Name.Trim()) && TableDesign.Same(before.ReferencedColumn, column);
+            return sameParent ? fk with { ReferencedSchema = before.ReferencedSchema, ReferencedTable = before.ReferencedTable, ReferencedColumn = before.ReferencedColumn } : fk;
+        }).ToList();
+        return design with { ForeignKeys = keys };
     }
 
     private static string AddKey(SqlDialect d, string table, TableDesign design, ForeignKeyDesign fk) =>

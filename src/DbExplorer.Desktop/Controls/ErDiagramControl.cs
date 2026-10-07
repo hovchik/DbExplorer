@@ -8,8 +8,9 @@ using DbExplorer.Application.Diagram;
 namespace DbExplorer.Desktop.Controls;
 
 /// <summary>Draws an <see cref="ErDiagram"/>: tables as boxes, foreign keys as curves from the
-/// referencing column to the referenced column. Click selects a table, double-click refocuses.</summary>
-public sealed class ErDiagramControl : Control
+/// referencing column to the referenced column. Click selects a table, double-click refocuses.
+/// <see cref="ErModelControl"/> adds editing on top.</summary>
+public class ErDiagramControl : Control
 {
     public static readonly StyledProperty<ErDiagram?> DiagramProperty =
         AvaloniaProperty.Register<ErDiagramControl, ErDiagram?>(nameof(Diagram));
@@ -39,6 +40,8 @@ public sealed class ErDiagramControl : Control
     /// <summary>Raised on double-click of a table.</summary>
     public event Action<ErTable>? TableActivated;
 
+    protected void RaiseTableActivated(ErTable table) => TableActivated?.Invoke(table);
+
     protected override Size MeasureOverride(Size availableSize) =>
         Diagram is { } d ? new Size(d.Width * Zoom, d.Height * Zoom) : default;
 
@@ -49,7 +52,7 @@ public sealed class ErDiagramControl : Control
         var p = e.GetPosition(this) / Zoom;
         var hit = Diagram.Tables.LastOrDefault(t => t.Contains(p.X, p.Y));
         SelectedTable = hit;
-        if (hit is not null && e.ClickCount == 2) TableActivated?.Invoke(hit);
+        if (hit is not null && e.ClickCount == 2) RaiseTableActivated(hit);
         e.Handled = true;
     }
 

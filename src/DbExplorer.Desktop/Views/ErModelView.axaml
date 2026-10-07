@@ -1,0 +1,242 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             x:Class="DbExplorer.Desktop.Views.ErModelView">
+  <UserControl.Styles>
+    <Style Selector="ItemsControl.rows CheckBox">
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ItemsControl.rows TextBox, ItemsControl.rows AutoCompleteBox, ItemsControl.rows ComboBox">
+      <Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+    <Style Selector="Grid.header TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <TextBlock Text="{Binding ModelTitle}" FontWeight="SemiBold" />
+      <Button Content="New" Command="{Binding NewModelCommand}" ToolTip.Tip="Start an empty model" />
+      <Button Content="Open…" Command="{Binding OpenModelCommand}" ToolTip.Tip="Open a .dbxmodel file" />
+      <Button Content="Save…" Command="{Binding SaveModelCommand}"
+              ToolTip.Tip="Save the model as a .dbxmodel file. It is also kept automatically between sessions." />
+      <Button Content="＋ Table" Command="{Binding AddTableCommand}" ToolTip.Tip="Add a table (or double-click empty canvas)" />
+      <Button Content="Remove" Command="{Binding RemoveTableCommand}"
+              ToolTip.Tip="Take the selected table off the model (Delete). Nothing is dropped in the database." />
+      <Button Content="Arrange" Command="{Binding ArrangeCommand}" ToolTip.Tip="Lay the tables out: referenced tables to the left" />
+      <Button Classes="icon" Content="↶" Command="{Binding UndoCommand}" ToolTip.Tip="Undo (Ctrl+Z)" />
+      <Button Classes="icon" Content="↷" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl+Y)" />
+      <Button Classes="icon" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out" />
+      <Button Content="{Binding Zoom, StringFormat='{}{0:P0}'}" Command="{Binding ResetZoomCommand}" ToolTip.Tip="Reset zoom" MinWidth="64" />
+      <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
+      <Button Content="Fit" Click="OnFit" ToolTip.Tip="Zoom so the whole model fits the window" />
+    </WrapPanel>
+
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar" IsVisible="{Binding IsConnected}">
+      <TextBlock Text="Read tables from" />
+      <controls:DatabasePicker Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding SourceDatabase}"
+                               ToolTip.Tip="Database to read tables from. Type to filter the list." />
+      <ComboBox Width="150" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SourceSchema}" />
+      <Button Content="Read tables" Command="{Binding ReadFromDatabaseCommand}"
+              ToolTip.Tip="Replace the model with these tables as they are now, to model changes to them" />
+      <Border Width="16" />
+      <TextBlock Text="Generate DDL for" />
+      <controls:DatabasePicker Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding TargetDatabase}"
+                               ToolTip.Tip="Database the script makes match the model. Type to filter the list." />
+      <Button Classes="accent" Content="Generate DDL" Command="{Binding GenerateCommand}"
+              ToolTip.Tip="Write the CREATE / ALTER script that makes this database match the model. Nothing runs yet." />
+    </WrapPanel>
+
+    <TextBlock DockPanel.Dock="Top" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="2,0,2,4" />
+
+    <Grid ColumnDefinitions="*,6,600" MinHeight="0">
+      <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto">
+        <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+          <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <controls:ErModelControl x:Name="Canvas" Diagram="{Binding Diagram}" Zoom="{Binding Zoom, Mode=TwoWay}"
+                                     SelectedTable="{Binding SelectedTable, Mode=TwoWay}"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" />
+          </ScrollViewer>
+        </Border>
+        <GridSplitter Grid.Row="1" Height="6" Background="Transparent" ResizeDirection="Rows" IsVisible="{Binding ShowScript}" />
+        <Border Grid.Row="2" IsVisible="{Binding ShowScript}" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" Padding="8">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+              <Button DockPanel.Dock="Right" Classes="icon" Content="✕" Command="{Binding CloseScriptCommand}" ToolTip.Tip="Close the script" />
+              <TextBlock Text="{Binding ScriptSummary}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+            <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+              <Button Classes="accent" Content="Run…" Command="{Binding RunCommand}" Margin="0,0,8,0"
+                      ToolTip.Tip="Show the script, confirm, then run it in one transaction" />
+              <Button Content="Open in Query tab" Command="{Binding OpenScriptInQueryCommand}" Margin="0,0,8,0"
+                      ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
+              <Button Content="Copy script" Command="{Binding CopyScriptCommand}" />
+            </WrapPanel>
+            <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     MinHeight="160" MaxHeight="360" />
+          </DockPanel>
+        </Border>
+      </Grid>
+
+      <GridSplitter Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns" />
+
+      <!-- Selected table -->
+      <Border Grid.Column="2" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+        <Panel>
+          <StackPanel Margin="12" Spacing="8" IsVisible="{Binding !HasSelection}">
+            <TextBlock Text="Editing the model" FontWeight="SemiBold" FontSize="14" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="Click a table to edit its columns, keys and indexes here." />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="Drag a table's title to move it. Double-click empty canvas to add a table there." />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="Drag a column onto a column of another table to make it a foreign key to that column, or onto the table's title to reference its primary key. Shift-drag a title onto another table to add a key column for it." />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="Blue titles are tables drawn here; the others were read from a database. Generate DDL writes CREATE TABLE for new tables and ALTER TABLE for changed ones, and never drops a table." />
+          </StackPanel>
+
+          <ScrollViewer IsVisible="{Binding HasSelection}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12" Margin="8">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="hint" Text="{Binding EditorTitle}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <AutoCompleteBox Width="120" Text="{Binding Schema, Mode=TwoWay}" Watermark="schema" FilterMode="StartsWith" MinimumPrefixLength="0"
+                                   ToolTip.Tip="Schema (a new one is created by the script)" />
+                  <TextBox Width="240" Text="{Binding TableName}" Watermark="Table name" />
+                </StackPanel>
+              </StackPanel>
+
+              <!-- Columns -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="section" Text="Columns" />
+                <Grid Classes="header" ColumnDefinitions="140,120,56,36,36,40,90,Auto">
+                  <TextBlock Grid.Column="0" Text="Name" />
+                  <TextBlock Grid.Column="1" Text="Type" />
+                  <TextBlock Grid.Column="2" Text="Size" ToolTip.Tip="Length (100, max) or precision,scale (18,2)" />
+                  <TextBlock Grid.Column="3" Text="Null" HorizontalAlignment="Center" ToolTip.Tip="Allows NULL" />
+                  <TextBlock Grid.Column="4" Text="Key" HorizontalAlignment="Center" ToolTip.Tip="Part of the primary key" />
+                  <TextBlock Grid.Column="5" Text="Ident" HorizontalAlignment="Center" ToolTip.Tip="Values generated by the server" />
+                  <TextBlock Grid.Column="6" Text="Default" ToolTip.Tip="SQL expression, e.g. 0, N'new', now()" />
+                </Grid>
+                <ItemsControl Classes="rows" ItemsSource="{Binding Columns}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ColumnRow">
+                      <Grid ColumnDefinitions="140,120,56,36,36,40,90,Auto" Margin="0,0,0,4">
+                        <TextBox Grid.Column="0" Text="{Binding Name}" Watermark="Column name" ToolTip.Tip="{Binding Origin}" />
+                        <AutoCompleteBox Grid.Column="1" Text="{Binding Type, Mode=TwoWay}" Watermark="Type"
+                                         ItemsSource="{Binding $parent[UserControl].DataContext.TypeNames}"
+                                         FilterMode="StartsWith" MinimumPrefixLength="0" />
+                        <TextBox Grid.Column="2" Text="{Binding Size}" Watermark="size" />
+                        <CheckBox Grid.Column="3" IsChecked="{Binding IsNullable}" IsEnabled="{Binding !IsPrimaryKey}" />
+                        <CheckBox Grid.Column="4" IsChecked="{Binding IsPrimaryKey}" />
+                        <CheckBox Grid.Column="5" IsChecked="{Binding IsIdentity}" />
+                        <TextBox Grid.Column="6" Text="{Binding Default}" Watermark="default" />
+                        <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="2">
+                          <Button Classes="icon" Content="↑" ToolTip.Tip="Move up" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" />
+                          <Button Classes="icon" Content="↓" ToolTip.Tip="Move down" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].DataContext.MoveColumnDownCommand}" />
+                          <Button Classes="icon" Content="✕" ToolTip.Tip="Remove column" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" />
+                        </StackPanel>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="compact" Content="＋ Add column" Command="{Binding AddColumnCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+
+              <!-- Foreign keys -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="section" Text="Foreign keys" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding !HasForeignKeys}"
+                           Text="Drag a column onto another table on the canvas, or add one here." />
+                <Grid Classes="header" ColumnDefinitions="130,170,130,100,Auto" IsVisible="{Binding HasForeignKeys}">
+                  <TextBlock Grid.Column="0" Text="Column" />
+                  <TextBlock Grid.Column="1" Text="References table" />
+                  <TextBlock Grid.Column="2" Text="Column" />
+                  <TextBlock Grid.Column="3" Text="Name" />
+                </Grid>
+                <ItemsControl Classes="rows" ItemsSource="{Binding ForeignKeys}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ForeignKeyRow">
+                      <Grid ColumnDefinitions="130,170,130,100,Auto" Margin="0,0,0,4">
+                        <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ColumnChoices}" SelectedItem="{Binding Column}"
+                                  PlaceholderText="Column" />
+                        <AutoCompleteBox Grid.Column="1" ItemsSource="{Binding TableChoices}" Text="{Binding ReferencedTable, Mode=TwoWay}"
+                                         FilterMode="Contains" MinimumPrefixLength="0" Watermark="schema.table" />
+                        <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ReferencedColumnChoices}"
+                                  SelectedItem="{Binding ReferencedColumn}" PlaceholderText="Key column" />
+                        <TextBox Grid.Column="3" Text="{Binding Name}" Watermark="automatic" />
+                        <Button Grid.Column="4" Classes="icon" Content="✕" ToolTip.Tip="Remove foreign key" CommandParameter="{Binding}"
+                                Command="{Binding $parent[UserControl].DataContext.RemoveForeignKeyCommand}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="compact" Content="＋ Add foreign key" Command="{Binding AddForeignKeyCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+
+              <!-- Indexes -->
+              <StackPanel Spacing="4">
+                <TextBlock Classes="section" Text="Indexes" />
+                <Grid Classes="header" ColumnDefinitions="300,56,150,Auto" IsVisible="{Binding HasIndexes}">
+                  <TextBlock Grid.Column="0" Text="Columns (comma-separated, in order)" />
+                  <TextBlock Grid.Column="1" Text="Unique" HorizontalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Text="Name" />
+                </Grid>
+                <ItemsControl Classes="rows" ItemsSource="{Binding Indexes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:IndexRow">
+                      <Grid ColumnDefinitions="300,56,150,Auto" Margin="0,0,0,4">
+                        <TextBox Grid.Column="0" Text="{Binding Columns}" Watermark="CustomerId, CreatedAt" />
+                        <CheckBox Grid.Column="1" IsChecked="{Binding IsUnique}" />
+                        <TextBox Grid.Column="2" Text="{Binding Name}" Watermark="automatic" />
+                        <Button Grid.Column="3" Classes="icon" Content="✕" ToolTip.Tip="Remove index" CommandParameter="{Binding}"
+                                Command="{Binding $parent[UserControl].DataContext.RemoveIndexCommand}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="compact" Content="＋ Add index" Command="{Binding AddIndexCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+
+              <!-- Suggestions -->
+              <StackPanel Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Classes="section" Text="Suggestions" VerticalAlignment="Center" />
+                  <Button Classes="compact" Content="Apply all" Command="{Binding ApplyAllSuggestionsCommand}" IsVisible="{Binding HasFixable}"
+                          ToolTip.Tip="Apply every suggestion that has a fix, one after the other" />
+                </StackPanel>
+                <TextBlock Classes="hint" Text="{Binding SuggestionSummary}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Suggestions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DesignSuggestionItem">
+                      <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" MaxWidth="560" HorizontalAlignment="Left">
+                        <StackPanel Spacing="4">
+                          <TextBlock TextWrapping="Wrap" FontWeight="SemiBold">
+                            <Run Text="{Binding SeverityText}" Foreground="{Binding SeverityColor}" />
+                            <Run Text=" · " />
+                            <Run Text="{Binding Title}" />
+                          </TextBlock>
+                          <TextBlock Classes="hint" Text="{Binding Detail}" TextWrapping="Wrap" />
+                          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                            <Button Classes="compact" Content="{Binding FixLabel}" IsVisible="{Binding CanFix}" CommandParameter="{Binding}"
+                                    Command="{Binding $parent[UserControl].DataContext.ApplySuggestionCommand}" />
+                            <Button Classes="compact" Content="Dismiss" IsVisible="{Binding CanDismiss}" CommandParameter="{Binding}"
+                                    Command="{Binding $parent[UserControl].DataContext.DismissSuggestionCommand}" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Panel>
+      </Border>
+    </Grid>
+  </DockPanel>
+</UserControl>

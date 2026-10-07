@@ -187,18 +187,35 @@ public class ErModelTests
     }
 
     [Fact]
-    public void Renaming_a_referenced_table_drops_keys_before_the_rename_and_adds_them_after()
+    public void Re_pointing_a_key_at_a_renamed_table_drops_it_before_the_rename_and_adds_it_after()
     {
-        var model = ShopModel();
+        var model = ShopModel().Add(Drawn("dbo", "Accounts", Key("CustomerId")));
         var customers = T(model, "dbo", "Customers");
         model = model.Update(customers.Id, customers.Design with { Name = "Clients" });
+        var orders = T(model, "sales", "Orders");
+        model = model.Update(orders.Id, orders.Design with { ForeignKeys = orders.Design.ForeignKeys.Select(f => f with { ReferencedTable = "Accounts" }).ToList() });
 
         var script = ErModelScriptBuilder.Build(model, Shop(), Ss).Script;
 
         var drop = script.IndexOf("ALTER TABLE [sales].[Orders] DROP CONSTRAINT [FK_Orders_Customers];", StringComparison.Ordinal);
         var rename = script.IndexOf("EXEC sp_rename N'[dbo].[Customers]', N'Clients';", StringComparison.Ordinal);
-        var add = script.IndexOf("REFERENCES [dbo].[Clients] ([CustomerId])", StringComparison.Ordinal);
+        var add = script.IndexOf("REFERENCES [dbo].[Accounts] ([CustomerId])", StringComparison.Ordinal);
         Assert.True(drop >= 0 && rename > drop && add > rename, script);
+    }
+
+    [Fact]
+    public void Keys_to_a_renamed_table_or_key_column_are_left_alone_since_the_server_carries_them()
+    {
+        var model = ShopModel();
+        var customers = T(model, "dbo", "Customers");
+        model = model.Update(customers.Id, customers.Design with { Name = "Clients" });
+        model = model.RenameColumn(customers.Id, "CustomerId", "ClientId");
+
+        var script = ErModelScriptBuilder.Build(model, Shop(), Ss);
+
+        Assert.Equal(1, script.Altered);
+        Assert.DoesNotContain("FK_Orders_Customers", script.Script);
+        Assert.Contains("N'ClientId', N'COLUMN'", script.Script);
     }
 
     [Fact]

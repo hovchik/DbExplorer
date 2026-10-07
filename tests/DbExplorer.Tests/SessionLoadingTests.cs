@@ -162,7 +162,7 @@ public sealed class SessionLoadingTests : IDisposable
             };
         }
 
-        private object Hang(MethodInfo method, CancellationToken ct)
+        private object? Hang(MethodInfo method, CancellationToken ct)
         {
             Hanging.TrySetResult();
             // Task<IReadOnlyList<T>> that only ends when cancelled, typed to what the method returns.

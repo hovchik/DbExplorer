@@ -80,10 +80,13 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private string _sshKeyPath;
     [ObservableProperty] private string _sshPassphrase;
 
+    /// <summary>The other radio button of the pair. Only a check is applied: a radio button its group unchecks
+    /// writes false too, and flipping the state on that fed the other button's check back into the group,
+    /// leaving the two buttons toggling each other endlessly the moment the SSH tab opened.</summary>
     public bool SshUsePassword
     {
         get => !SshUseKey;
-        set => SshUseKey = !value;
+        set { if (value) SshUseKey = false; }
     }
 
     /// <summary>Shown on the General tab while a tunnel is on: Host and Port are then as the SSH server sees them.</summary>

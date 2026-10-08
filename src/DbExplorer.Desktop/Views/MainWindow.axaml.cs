@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
 using DbExplorer.Application.Query;
@@ -28,6 +30,27 @@ public partial class MainWindow : Window
                 _vm.ShowTeamRequested += OnShowTeam;
             }
         };
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != WindowStateProperty) return;
+
+        var state = change.GetNewValue<WindowState>();
+        if (App.Watchdog is { } watchdog) watchdog.Context = state.ToString().ToLowerInvariant();
+        if (change.GetOldValue<WindowState>() == WindowState.Minimized && state != WindowState.Minimized)
+        {
+            // Back from the taskbar: ask for a fresh layout and frame instead of relying on the one from before the
+            // minimize, which the compositor may have dropped while the window was hidden (the "only the frame" symptom).
+            Dispatcher.UIThread.Post(() =>
+            {
+                InvalidateMeasure();
+                InvalidateArrange();
+                InvalidateVisual();
+                if (Content is Visual content) content.InvalidateVisual();
+            }, DispatcherPriority.Render);
+        }
     }
 
     private TeamWindow? _team;

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Logging;
 using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop;
@@ -30,6 +31,9 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions { RenderingMode = RenderingOptions.Win32Modes() })
             .WithInterFont()
-            .LogToTrace();
+            .LogToTrace()
+            // After LogToTrace, so the trace output is kept and render or platform failures also reach errors.log.
+            .AfterSetup(_ => Logger.Sink = new ErrorLogSink(Logger.Sink));
 }

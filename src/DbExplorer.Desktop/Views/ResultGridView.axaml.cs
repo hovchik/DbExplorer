@@ -948,8 +948,9 @@ public partial class ResultGridView : UserControl
 
     private void OnCellPointerPressed(object? sender, DataGridCellPointerPressedEventArgs e)
     {
-        _pressedRow = e.Row.DataContext as ResultRow;
-        _pressedColumn = e.Column.Tag as int?;
+        // The blank area right of the last column is the grid's filler cell: it has a row but no column.
+        _pressedRow = e.Row?.DataContext as ResultRow;
+        _pressedColumn = e.Column?.Tag as int?;
         var press = e.PointerPressedEventArgs;
         _pressedLink = press.KeyModifiers == KeyModifiers.None && press.GetCurrentPoint(Grid).Properties.IsLeftButtonPressed && !_isEditing
             ? LinkAt(e.Cell, press)
@@ -980,6 +981,7 @@ public partial class ResultGridView : UserControl
     private void OnGridDoubleTapped(object? sender, TappedEventArgs e)
     {
         if (_isEditing || (e.Source as Visual)?.FindAncestorOfType<DataGridCell>(includeSelf: true) is null) return;
+        if (_pressedColumn is null) return; // the filler area right of the last column is not a cell to open
         if (TargetCell() is ({ } row, var column) && CanEditCell(row, column)) BeginCellEdit((row, column));
         else ViewCell(TargetCell());
     }

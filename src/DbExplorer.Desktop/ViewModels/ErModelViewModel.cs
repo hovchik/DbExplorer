@@ -109,9 +109,17 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
 
     public void Attach(DatabaseSession? session)
     {
-        if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged -= OnSnapshotChanged;
+            _session.DatabasesChanged -= OnDatabasesChanged;
+        }
         _session = session;
-        if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged += OnSnapshotChanged;
+            _session.DatabasesChanged += OnDatabasesChanged;
+        }
         _databaseSnapshot = null;
         _context = null;
         OnPropertyChanged(nameof(IsConnected));
@@ -138,7 +146,7 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     {
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (!ReferenceEquals(session, _session)) return;
             var (source, target) = (SourceDatabase, TargetDatabase);
             Databases = Merge(names, session.Snapshot.Databases, [session.Profile.Database]);
@@ -152,6 +160,11 @@ public partial class ErModelViewModel : ViewModelBase, ISessionAware, IForeignKe
     }
 
     private void OnSnapshotChanged(object? sender, EventArgs e) => _ = LoadDatabaseSnapshotAsync();
+
+    private void OnDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (_session is { } session) _ = LoadDatabasesAsync(session);
+    }
 
     partial void OnSourceDatabaseChanged(string? value) => _ = LoadSchemasAsync();
 

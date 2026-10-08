@@ -85,9 +85,17 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     public void Attach(DatabaseSession? session)
     {
-        if (_session is not null) _session.SnapshotChanged -= OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged -= OnSnapshotChanged;
+            _session.DatabasesChanged -= OnDatabasesChanged;
+        }
         _session = session;
-        if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
+        if (_session is not null)
+        {
+            _session.SnapshotChanged += OnSnapshotChanged;
+            _session.DatabasesChanged += OnDatabasesChanged;
+        }
         LastCreated = null;
         _context = DesignContext.Empty(ProviderKey);
         TypeNames = ColumnTypes.For(ProviderKey);
@@ -119,7 +127,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     {
         try
         {
-            var names = await session.Factory.ListDatabasesAsync(session.Profile);
+            var names = await session.GetServerDatabasesAsync();
             if (!ReferenceEquals(session, _session)) return;
             var selected = SelectedDatabase;
             Databases = Merge(names, session.Snapshot.Databases, [session.Profile.Database]);
@@ -132,6 +140,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     }
 
     private void OnSnapshotChanged(object? sender, EventArgs e) => _ = LoadContextAsync();
+
+    private void OnDatabasesChanged(object? sender, EventArgs e)
+    {
+        if (_session is { } session) _ = LoadServerDatabasesAsync(session);
+    }
 
     partial void OnSelectedDatabaseChanged(string? value)
     {

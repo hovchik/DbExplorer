@@ -41,6 +41,37 @@ public sealed class DatabaseSession(
         SnapshotChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Raised (on the caller's thread) when the server's database list may have changed: after Refresh metadata, or a
+    /// statement that creates, drops or renames a database. Database pickers read <see cref="GetServerDatabasesAsync"/> again.
+    /// </summary>
+    public event EventHandler? DatabasesChanged;
+
+    private readonly object _databasesLock = new();
+    private Task<IReadOnlyList<string>>? _serverDatabases;
+
+    /// <summary>
+    /// Every database on the server the login can open, read once and shared by all the session's pickers until
+    /// <see cref="InvalidateDatabases"/>. The catalog snapshot only knows databases that hold objects (or only the
+    /// connection's own database), so a new, empty database is listed here and nowhere else. A failed read is not kept.
+    /// </summary>
+    public Task<IReadOnlyList<string>> GetServerDatabasesAsync()
+    {
+        lock (_databasesLock)
+        {
+            if (_serverDatabases is null || _serverDatabases.IsFaulted || _serverDatabases.IsCanceled)
+                _serverDatabases = Task.Run(() => Factory.ListDatabasesAsync(Profile, Lifetime));
+            return _serverDatabases;
+        }
+    }
+
+    /// <summary>Forgets the server's database list and tells the pickers to read it again.</summary>
+    public void InvalidateDatabases()
+    {
+        lock (_databasesLock) _serverDatabases = null;
+        DatabasesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>False for a view made by <see cref="WithSnapshot"/>: it borrows the provider and must not dispose it.</summary>
     public bool OwnsProvider { get; private init; } = true;
 

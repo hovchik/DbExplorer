@@ -35,6 +35,7 @@ public sealed class AppSettingsService
         EditorFontSize = ClampFontSize(stored.EditorFontSize ?? DefaultEditorFontSize);
         EditorWordWrap = stored.EditorWordWrap;
         SqlInspections = !stored.SqlInspectionsOff;
+        SoftwareRendering = stored.SoftwareRendering;
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
             .OfType<ExperimentalFeature>().ToHashSet();
@@ -53,6 +54,10 @@ public sealed class AppSettingsService
     /// <summary>Whether the SQL editors underline unknown tables and columns, ambiguous names and GROUP BY mistakes while
     /// typing (checked against the cached catalog, never on the server).</summary>
     public bool SqlInspections { get; private set; }
+
+    /// <summary>Whether the window is drawn by the CPU instead of the graphics card (read at start-up, so a change
+    /// applies after a restart). A way out when the GPU path stops repainting, for example after a long minimize.</summary>
+    public bool SoftwareRendering { get; private set; }
 
     public event Action<AppThemeMode>? ThemeChanged;
 
@@ -106,6 +111,13 @@ public sealed class AppSettingsService
         Save();
     }
 
+    public void SetSoftwareRendering(bool on)
+    {
+        if (SoftwareRendering == on) return;
+        SoftwareRendering = on;
+        Save();
+    }
+
     public static double ClampFontSize(double size) =>
         double.IsFinite(size) ? Math.Clamp(Math.Round(size), MinEditorFontSize, MaxEditorFontSize) : DefaultEditorFontSize;
 
@@ -129,6 +141,7 @@ public sealed class AppSettingsService
             var stored = new StoredSettings
             {
                 Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
+                SoftwareRendering = SoftwareRendering,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
             };
             AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
@@ -147,6 +160,8 @@ public sealed class AppSettingsService
 
         /// <summary>Stored as "off" so the warnings start on.</summary>
         public bool SqlInspectionsOff { get; set; }
+
+        public bool SoftwareRendering { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

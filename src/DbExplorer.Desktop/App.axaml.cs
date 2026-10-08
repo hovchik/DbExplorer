@@ -4,6 +4,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using DbExplorer.Application;
 using DbExplorer.Application.Connections.Ssh;
+using DbExplorer.Application.Diagnostics;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
@@ -19,6 +20,9 @@ namespace DbExplorer.Desktop;
 public partial class App : Avalonia.Application
 {
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    /// <summary>Watches the UI thread while the desktop app runs (null in tests and the render harness).</summary>
+    internal static ResponsivenessWatchdog? Watchdog { get; private set; }
 
     /// <summary>The app's services: application layer, the engines and the view models. The render harness
     /// (tools/DbExplorer.UiRender) reuses this and swaps in a temporary <see cref="AppPaths"/> root.</summary>
@@ -94,6 +98,13 @@ public partial class App : Avalonia.Application
             e.Handled = true;
             vm.StatusText = $"Unexpected error: {e.Exception.GetBaseException().Message} (details in {ErrorLog.FilePath})";
         };
+
+        // Records in errors.log when the UI thread stops answering, and for how long: a hung UI thread and a window
+        // that only stopped repainting look the same to the user, and the log tells them apart.
+        Watchdog = new ResponsivenessWatchdog(
+            action => Dispatcher.UIThread.Post(action, DispatcherPriority.Send),
+            line => ErrorLog.Note("ui watchdog", line));
+        desktop.Exit += (_, _) => Watchdog?.Dispose();
 
         var shutdownStarted = false;
         desktop.ShutdownRequested += async (_, e) =>

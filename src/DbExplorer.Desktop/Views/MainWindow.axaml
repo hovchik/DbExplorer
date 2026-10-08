@@ -355,6 +355,10 @@
                                            IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=Dark}" />
                     </MenuItem.Icon>
                   </MenuItem>
+                  <Separator />
+                  <MenuItem Header="Software rendering (after restart)" ToggleType="CheckBox"
+                            IsChecked="{Binding SoftwareRendering}"
+                            ToolTip.Tip="Draw the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up." />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>

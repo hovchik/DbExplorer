@@ -133,6 +133,21 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SetTheme(AppThemeMode mode) => SelectedTheme = mode;
 
+    /// <summary>Draw with the CPU instead of the graphics card from the next start (theme menu).</summary>
+    public bool SoftwareRendering
+    {
+        get => _settings.SoftwareRendering;
+        set
+        {
+            if (value == _settings.SoftwareRendering) return;
+            _settings.SetSoftwareRendering(value);
+            OnPropertyChanged();
+            StatusText = value
+                ? "Software rendering is on from the next start. Restart DbExplorer to use it."
+                : "Graphics card rendering is back on from the next start. Restart DbExplorer to use it.";
+        }
+    }
+
     public ObjectsViewModel Objects { get; }
     public MetadataSearchViewModel Search { get; }
     public DataSearchViewModel DataSearch { get; }

@@ -13,7 +13,13 @@ public static class ErrorLog
 
     public static string FilePath { get; } = Path.Combine(DbExplorer.Application.AppPaths.DefaultRoot, "logs", "errors.log");
 
-    public static void Write(string source, Exception? exception)
+    public static void Write(string source, Exception? exception) =>
+        Append(source, exception?.ToString() ?? "(no exception object)");
+
+    /// <summary>A line that is worth having next to the errors (a UI hang, a rendering warning), without an exception.</summary>
+    public static void Note(string source, string message) => Append(source, message);
+
+    private static void Append(string source, string text)
     {
         try
         {
@@ -26,7 +32,7 @@ public static class ErrorLog
                 var entry = new StringBuilder()
                     .Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")).Append(" [").Append(source).Append("] ")
                     .Append(typeof(ErrorLog).Assembly.GetName().Version).AppendLine()
-                    .AppendLine(exception?.ToString() ?? "(no exception object)")
+                    .AppendLine(text)
                     .AppendLine();
                 File.AppendAllText(FilePath, entry.ToString());
             }

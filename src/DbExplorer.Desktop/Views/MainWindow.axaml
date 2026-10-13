@@ -204,6 +204,12 @@
     <Style Selector="Border.appbar Button.disconnect:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppDangerHoverBrush}" />
     </Style>
+
+    <!-- Main tab headers when the window is too narrow for them on one row (set by the code-behind) -->
+    <Style Selector="TabControl#MainTabs.compact > TabItem">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Padding" Value="6,0" />
+    </Style>
   </Window.Styles>
   <DockPanel>
     <!-- App bar: brand, then the connection group (status, picker, its actions, Team), then utilities and the
@@ -395,7 +401,7 @@
       <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <TabControl Margin="4,2,4,2" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
+    <TabControl x:Name="MainTabs" Margin="4,2,4,2" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
       <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
         <views:QueryWorkspaceView DataContext="{Binding Query}" />
       </TabItem>

@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };
         DataContextChanged += (_, _) =>
         {
             if (_vm is not null)
@@ -30,6 +31,38 @@ public partial class MainWindow : Window
                 _vm.ShowTeamRequested += OnShowTeam;
             }
         };
+    }
+
+    // ---- Main tab headers: one row; smaller headers when the full-size ones would wrap ----
+
+    private double _compactBelow;
+
+    private void FitMainTabHeaders()
+    {
+        var width = MainTabs.Bounds.Width;
+        if (MainTabs.Classes.Contains("compact"))
+        {
+            if (width <= _compactBelow) return;
+            MainTabs.Classes.Remove("compact"); // wider now: try full size again, and shrink back if it still wraps
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!MainTabHeadersWrap()) return;
+            _compactBelow = MainTabs.Bounds.Width;
+            MainTabs.Classes.Add("compact");
+        }, DispatcherPriority.Loaded);
+    }
+
+    private bool MainTabHeadersWrap()
+    {
+        double? top = null;
+        for (var i = 0; i < MainTabs.ItemCount; i++)
+        {
+            if (MainTabs.ContainerFromIndex(i) is not { IsVisible: true } tab) continue;
+            top ??= tab.Bounds.Y;
+            if (tab.Bounds.Y > top + 1) return true;
+        }
+        return false;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DbExplorer.Application.Query;
 using DbExplorer.Desktop.ViewModels;
@@ -22,6 +24,9 @@ public partial class QueryWorkspaceView : UserControl
         DocTabs.AddHandler(PointerMovedEvent, OnTabPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         DocTabs.AddHandler(PointerReleasedEvent, OnTabPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         DocTabs.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct);
+        DocTabs.TemplateApplied += OnDocTabsTemplateApplied;
+        DocTabs.SelectionChanged += (_, _) => RevealSelectedTab();
+        StripActions.SizeChanged += (_, _) => FitStripToActions();
     }
 
     private QueryWorkspaceViewModel? Vm => DataContext as QueryWorkspaceViewModel;
@@ -115,7 +120,7 @@ public partial class QueryWorkspaceView : UserControl
     }
 
     /// <summary>
-    /// Finds the gap between tabs nearest to <paramref name="at"/> (the strip can wrap onto several rows)
+    /// Finds the gap between tabs nearest to <paramref name="at"/> (one row now; rows are kept for safety)
     /// and draws the marker there.
     /// </summary>
     private void ShowDropMarker(Point at)
@@ -141,11 +146,81 @@ public partial class QueryWorkspaceView : UserControl
 
         var edge = before >= 0 ? headers[before].Left : headers[row[^1]].Right;
         var rect = headers[before >= 0 ? before : row[^1]];
+        // A gap scrolled out of sight is drawn at the strip's visible edge, never over the buttons beside it.
+        if (_tabScroll?.TranslatePoint(default, DocTabs) is { } strip)
+            edge = Math.Clamp(edge, strip.X + 1, strip.X + _tabScroll.Viewport.Width - 1);
         var offset = DocTabs.TranslatePoint(default, this) ?? default;
         Canvas.SetLeft(DropMarker, offset.X + edge - 1);
         Canvas.SetTop(DropMarker, offset.Y + rect.Top + 4);
         DropMarker.Height = Math.Max(0, rect.Height - 8);
         DropMarker.IsVisible = true;
+    }
+
+    // ---- Tab strip overflow: one row that scrolls, never under the buttons on its right ----
+
+    private const double WheelStep = 60;
+    private ScrollViewer? _tabScroll;
+
+    private void OnDocTabsTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+    {
+        if (_tabScroll is not null) _tabScroll.ScrollChanged -= OnTabScrollChanged;
+        _tabScroll = e.NameScope.Find<ScrollViewer>("PART_TabScroll");
+        if (_tabScroll is null) return;
+        _tabScroll.ScrollChanged += OnTabScrollChanged;
+        _tabScroll.AddHandler(PointerWheelChangedEvent, OnTabStripWheel, RoutingStrategies.Tunnel);
+        FitStripToActions();
+    }
+
+    /// <summary>The buttons are laid over the strip's right end; the strip stops where they start.</summary>
+    private void FitStripToActions()
+    {
+        if (_tabScroll is null) return;
+        var reserved = StripActions.Bounds.Width + StripActions.Margin.Right + 8;
+        if (Math.Abs(_tabScroll.Margin.Right - reserved) > 0.5) _tabScroll.Margin = new Thickness(0, 0, reserved, 0);
+    }
+
+    private void OnTabScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (_tabScroll is not { } sv) return;
+        var overflow = sv.Extent.Width - sv.Viewport.Width;
+        StripScroll.IsVisible = overflow > 0.5;
+        ScrollLeft.IsEnabled = sv.Offset.X > 0.5;
+        ScrollRight.IsEnabled = sv.Offset.X < overflow - 0.5;
+        // A new or resized tab can change the extent after selection; keep the active tab in sight.
+        if (e.ExtentDelta.X != 0 || e.ViewportDelta.X != 0) RevealSelectedTab();
+    }
+
+    /// <summary>A vertical wheel over the tabs scrolls them sideways.</summary>
+    private void OnTabStripWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_tabScroll is not { } sv || sv.Extent.Width <= sv.Viewport.Width) return;
+        var delta = Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y) ? e.Delta.X : e.Delta.Y;
+        ScrollTabsBy(-delta * WheelStep);
+        e.Handled = true;
+    }
+
+    private void OnScrollLeft(object? sender, RoutedEventArgs e) => ScrollTabsBy(-(_tabScroll?.Viewport.Width ?? 0) * 0.6);
+    private void OnScrollRight(object? sender, RoutedEventArgs e) => ScrollTabsBy((_tabScroll?.Viewport.Width ?? 0) * 0.6);
+
+    private void ScrollTabsBy(double dx)
+    {
+        if (_tabScroll is not { } sv) return;
+        var max = Math.Max(0, sv.Extent.Width - sv.Viewport.Width);
+        sv.Offset = new Vector(Math.Clamp(sv.Offset.X + dx, 0, max), 0);
+    }
+
+    /// <summary>Scrolls the strip so the active tab is fully visible (after it is created, picked or reordered).</summary>
+    private void RevealSelectedTab() => Dispatcher.UIThread.Post(() =>
+    {
+        if (_tabScroll is not { } sv || DocTabs.SelectedIndex < 0 || DocTabs.ContainerFromIndex(DocTabs.SelectedIndex) is not Control tab) return;
+        if (tab.TranslatePoint(default, sv) is not { } at) return;
+        if (at.X < 0) ScrollTabsBy(at.X);
+        else if (at.X + tab.Bounds.Width > sv.Viewport.Width) ScrollTabsBy(at.X + tab.Bounds.Width - sv.Viewport.Width);
+    }, DispatcherPriority.Background);
+
+    private void OnAllTabsPicked(object? sender, SelectionChangedEventArgs e)
+    {
+        if (AllTabsButton.Flyout is { IsOpen: true } flyout) flyout.Hide();
     }
 
     private async void OnOpen(object? sender, RoutedEventArgs e) => await OpenAsync();

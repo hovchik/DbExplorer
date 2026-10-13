@@ -5,6 +5,31 @@
 			 x:Class="DbExplorer.Desktop.Views.QueryWorkspaceView"
 			 x:DataType="vm:QueryWorkspaceViewModel">
   <UserControl.Styles>
+	<!-- Document tabs on one row that scrolls sideways when they don't fit; the code-behind keeps its right
+	     edge clear of the file/history buttons laid over the strip, so no tab ever runs under them. -->
+	<Style Selector="TabControl.docs">
+	  <Setter Property="ItemsPanel">
+		<ItemsPanelTemplate>
+		  <StackPanel Orientation="Horizontal" />
+		</ItemsPanelTemplate>
+	  </Setter>
+	  <Setter Property="Template">
+		<ControlTemplate>
+		  <DockPanel>
+			<ScrollViewer Name="PART_TabScroll" DockPanel.Dock="Top"
+						  HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+			  <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+			</ScrollViewer>
+			<ContentPresenter Name="PART_SelectedContentHost"
+							  Margin="{TemplateBinding Padding}"
+							  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+							  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+							  Content="{TemplateBinding SelectedContent}"
+							  ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+		  </DockPanel>
+		</ControlTemplate>
+	  </Setter>
+	</Style>
 	<!-- Document tabs: flat, compact, with the active tab lifted onto the editor background and an accent underline -->
 	<Style Selector="TabControl.docs TabItem">
 	  <Setter Property="FontSize" Value="13" />
@@ -81,6 +106,24 @@
 	<Style Selector="Button.close:pointerover Path">
 	  <Setter Property="Stroke" Value="{DynamicResource AppForegroundBrush}" />
 	</Style>
+	<!-- Scroll arrows and the list of all tabs, shown only while the tabs don't fit -->
+	<Style Selector="Button.strip">
+	  <Setter Property="MinHeight" Value="26" />
+	  <Setter Property="MinWidth" Value="0" />
+	  <Setter Property="Width" Value="24" />
+	  <Setter Property="Padding" Value="0" />
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0" />
+	  <Setter Property="HorizontalContentAlignment" Value="Center" />
+	  <Setter Property="VerticalContentAlignment" Value="Center" />
+	</Style>
+	<Style Selector="Button.strip Path">
+	  <Setter Property="Stroke" Value="{DynamicResource AppForegroundBrush}" />
+	</Style>
+	<Style Selector="Button.strip:disabled Path">
+	  <Setter Property="Stroke" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="Opacity" Value="0.5" />
+	</Style>
 	<Style Selector="Button.bar">
 	  <Setter Property="MinHeight" Value="26" />
 	  <Setter Property="Padding" Value="8,2" />
@@ -135,7 +178,30 @@
 	</Canvas>
 
 	<!-- File and history actions share the tab strip's empty right-hand side -->
-	<StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">
+	<StackPanel x:Name="StripActions" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">
+	  <StackPanel x:Name="StripScroll" Orientation="Horizontal" IsVisible="False">
+		<Button x:Name="ScrollLeft" Classes="strip" Click="OnScrollLeft" ToolTip.Tip="Scroll tabs left (or use the mouse wheel over the tabs)">
+		  <Path Data="M5,0 L0,5 L5,10" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Width="6" Height="10" Stretch="None" />
+		</Button>
+		<Button x:Name="ScrollRight" Classes="strip" Click="OnScrollRight" ToolTip.Tip="Scroll tabs right (or use the mouse wheel over the tabs)">
+		  <Path Data="M0,0 L5,5 L0,10" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Width="6" Height="10" Stretch="None" />
+		</Button>
+		<Button x:Name="AllTabsButton" Classes="strip" ToolTip.Tip="All tabs">
+		  <Path Data="M0,0 L5,5 L10,0" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="6" Stretch="None" />
+		  <Button.Flyout>
+			<Flyout Placement="BottomEdgeAlignedRight">
+			  <ListBox x:Name="AllTabsList" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}"
+					   MaxHeight="420" MinWidth="240" MaxWidth="480" SelectionChanged="OnAllTabsPicked">
+				<ListBox.ItemTemplate>
+				  <DataTemplate x:DataType="vm:QueryViewModel">
+					<TextBlock Text="{Binding Header}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+				  </DataTemplate>
+				</ListBox.ItemTemplate>
+			  </ListBox>
+			</Flyout>
+		  </Button.Flyout>
+		</Button>
+	  </StackPanel>
 	  <Button Classes="bar" Content="＋ New" Command="{Binding NewQueryCommand}" ToolTip.Tip="New query tab (Ctrl+N)" />
 	  <Button Classes="bar" Content="Open…" Click="OnOpen" ToolTip.Tip="Open a .sql file (Ctrl+O)" />
 	  <Button Classes="bar" Content="Save" Click="OnSave" ToolTip.Tip="Save the tab to its file (Ctrl+S)" />

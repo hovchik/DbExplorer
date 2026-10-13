@@ -135,6 +135,7 @@ namespace DbExplorer.UiRender
             await Step("tabs", RenderTabsAsync);
             await Step("small", RenderSmallAsync);
             await Step("toolbar", RenderToolbarStatesAsync);
+            await Step("querytabs", RenderManyQueryTabsAsync);
             await Step("dialogs", RenderDialogsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -362,6 +363,39 @@ namespace DbExplorer.UiRender
             await Shot(_window, "small-toolbar-busy");
             _vm.IsBusy = false;
             if (_vm.Team is { } t) t.ChangedCount = 0;
+            _window.Width = 1400;
+            _window.Height = 900;
+            await Settle(6);
+        }
+
+        /// <summary>More Query tabs than fit, some with long names, at both sizes: the strip must scroll, never run under ＋ New.</summary>
+        private async Task RenderManyQueryTabsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var titles = new[]
+            {
+                "FoCurrency", "→ TransactionStatus", "Transactions", "DECLARE", "FinancialOrganizationEndpoint",
+                "Transactions", "CREATE AuthorizationCodes", "SELECT customers JOIN orders JOIN order_items", "Report"
+            };
+            var added = new List<QueryViewModel>();
+            foreach (var title in titles)
+            {
+                var doc = _vm.Query.NewTab();
+                doc.Title = title;
+                added.Add(doc);
+            }
+            _vm.Query.SelectedDocument = added[^3];
+            foreach (var (width, height, prefix) in new[] { (1400, 900, ""), (1024, 700, "small-") })
+            {
+                _window.Width = width;
+                _window.Height = height;
+                await Settle(8);
+                await Shot(_window, prefix + "query-many-tabs");
+            }
+            _vm.Query.SelectedDocument = added[0];
+            await Settle(8);
+            await Shot(_window, "small-query-many-tabs-first");
+            foreach (var doc in added) _vm.Query.Documents.Remove(doc);
             _window.Width = 1400;
             _window.Height = 900;
             await Settle(6);

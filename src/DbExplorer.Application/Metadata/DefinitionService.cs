@@ -12,6 +12,14 @@ public sealed class DefinitionService
         if (obj.Type is DbObjectType.Table or DbObjectType.ForeignTable)
             return ScriptTable(session.Provider, obj, session.Snapshot.ColumnsOf(obj.Database, obj.Schema, obj.Name));
 
+        var texts = await GetDefinitionsAsync(session, obj, ct);
+        return texts.Count > 0 ? string.Join("\n\n", texts) : null;
+    }
+
+    /// <summary>The CREATE text of a view, routine, trigger, sequence or synonym, one per overload; empty when the
+    /// server does not show it (encrypted, or no permission).</summary>
+    public async Task<IReadOnlyList<string>> GetDefinitionsAsync(DatabaseSession session, DbObject obj, CancellationToken ct = default)
+    {
         // Served from the snapshot when possible: no server round-trip.
         var cached = session.Snapshot.Modules
             .Where(m => string.Equals(m.Database, obj.Database, StringComparison.OrdinalIgnoreCase)
@@ -21,9 +29,10 @@ public sealed class DefinitionService
             .Select(m => m.Definition!)
             .ToList();
 
-        if (cached.Count > 0) return string.Join("\n\n", cached);
+        if (cached.Count > 0) return cached;
 
-        return await session.Provider.GetDefinitionAsync(obj, ct);
+        var text = await session.Provider.GetDefinitionAsync(obj, ct);
+        return string.IsNullOrWhiteSpace(text) ? [] : [text];
     }
 
     public static string ScriptTable(IDatabaseProvider provider, DbObject table, IEnumerable<DbColumn> columns)

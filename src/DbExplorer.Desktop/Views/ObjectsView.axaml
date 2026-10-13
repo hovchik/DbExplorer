@@ -17,6 +17,8 @@
         <controls:DatabasePicker Width="160" ItemsSource="{Binding DatabaseFilters}" SelectedItem="{Binding SelectedDatabaseFilter}" ToolTip.Tip="Database. Type to filter the list." />
         <TextBlock Classes="hint" Text="{Binding Summary}" />
       </WrapPanel>
+      <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4,0,4,4" TextWrapping="Wrap"
+                 Text="{Binding Status}" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <DataGrid x:Name="ObjectsGrid" ItemsSource="{Binding Objects}"
                 SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
                 IsReadOnly="True" AutoGenerateColumns="False"
@@ -29,7 +31,14 @@
             <MenuItem Header="Debug…" Command="{Binding DebugSelectedCommand}" />
             <MenuItem Header="Get Data…" Command="{Binding GetDataCommand}" />
             <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" />
-            <MenuItem Header="Change in Table designer…" Command="{Binding DesignTableCommand}" />
+            <Separator />
+            <MenuItem Header="Modify…" Command="{Binding ModifyCommand}"
+                      ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />
+            <MenuItem Header="Delete rows…" Command="{Binding DeleteRowsCommand}"
+                      ToolTip.Tip="Opens a DELETE with its WHERE to fill in, in a Query tab. Nothing is deleted until you run it." />
+            <Separator />
+            <MenuItem Header="Drop table…" Command="{Binding DropTableCommand}"
+                      ToolTip.Tip="Asks first, then drops the table and all its rows." />
           </ContextMenu>
         </DataGrid.ContextMenu>
         <DataGrid.Columns>

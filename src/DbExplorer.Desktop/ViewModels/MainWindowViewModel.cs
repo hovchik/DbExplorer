@@ -101,6 +101,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
         };
+        objects.OpenSqlRequested += (sql, database, title) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, title, database);
+        };
         objects.DesignTableRequested += table =>
         {
             SelectedTab = AppTab.TableDesigner;

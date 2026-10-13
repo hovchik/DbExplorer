@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Logging;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using DbExplorer.Application;
 using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Providers;
@@ -223,6 +224,21 @@ namespace DbExplorer.UiRender
             _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Name == "order_total");
             await WaitFor(() => _vm.Objects.Definition.Length > 0, "objects definition");
             await Shot(_window, "objects-function");
+
+            // The right-click menu on a table, then Modify on the function: a Query tab with CREATE OR REPLACE
+            _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Type == DbObjectType.Table && o.Name == "orders");
+            await Settle();
+            var objectsGrid = _window.GetVisualDescendants().OfType<DataGrid>().First(g => g.Name == "ObjectsGrid");
+            objectsGrid.ContextMenu!.Open(objectsGrid);
+            await Settle(4);
+            if (TopLevel.GetTopLevel(objectsGrid.ContextMenu) is { } menuRoot && menuRoot != _window) await Shot(menuRoot, "objects-menu");
+            else await Shot(_window, "objects-menu");
+            objectsGrid.ContextMenu.Close();
+            _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Name == "order_total");
+            await _vm.Objects.ModifyCommand.ExecuteAsync(null);
+            await Settle(4);
+            await Shot(_window, "objects-modify");
+            _vm.SelectedTab = AppTab.Objects;
 
             // Comparer: both sides on the current connection, one table compared
             _vm.SelectedTab = AppTab.Comparer;
@@ -548,7 +564,7 @@ namespace DbExplorer.UiRender
         }
 
         /// <summary>Captures <paramref name="window"/> in the light and the dark theme.</summary>
-        private async Task Shot(Window window, string name)
+        private async Task Shot(TopLevel window, string name)
         {
             foreach (var (variant, suffix) in new[] { (ThemeVariant.Light, "light"), (ThemeVariant.Dark, "dark") })
             {

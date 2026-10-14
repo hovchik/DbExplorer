@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using DbExplorer.Application.QueryBuilder;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.ViewModels;
@@ -261,26 +262,24 @@ public sealed class QueryCanvasControl : Control
         var surface = Brush("AppPopupBackgroundBrush", Brushes.White);
         var subtle = Brush("AppSubtleBackgroundBrush", Brushes.LightGray);
         var accentColor = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color col ? col : Colors.SteelBlue;
-        var accent = new SolidColorBrush(accentColor);
-        var accentSoft = new SolidColorBrush(accentColor, 0.16);
-        var edge = new SolidColorBrush(((ISolidColorBrush)hint).Color, 0.75);
+        var accent = new ImmutableSolidColorBrush(accentColor);
+        var accentSoft = new ImmutableSolidColorBrush(accentColor, 0.16);
+        var edge = new ImmutableSolidColorBrush(((ISolidColorBrush)hint).Color, 0.75);
 
         // Joins under the tables, labels on top of everything (drawn after the boxes).
         var geometries = vm.Joins.Select(j => (Join: j, Geometry: Geometry(vm, j))).Where(x => x.Geometry is not null).ToList();
         foreach (var (join, g) in geometries)
         {
             var selected = vm.SelectedJoin == join;
-            DrawCurve(context, g!.Value, new Pen(selected ? accent : edge, selected ? 2.4 : 1.4)
-            {
-                DashStyle = join.FromForeignKey ? null : DashStyle.Dash
-            });
+            DrawCurve(context, g!.Value, RenderPens.Create(selected ? accent : edge, selected ? 2.4 : 1.4,
+                join.FromForeignKey ? null : DashStyle.Dash));
         }
 
         foreach (var t in DrawOrder(vm))
         {
             var selected = vm.SelectedTable == t;
             var rect = new Rect(t.X, t.Y, QueryTableItem.Width, t.Height);
-            context.DrawRectangle(surface, new Pen(selected ? accent : border, selected ? 2 : 1), rect, 6, 6);
+            context.DrawRectangle(surface, RenderPens.Create(selected ? accent : border, selected ? 2 : 1), rect, 6, 6);
 
             var typeBrush = Brush(ObjectTypeColors.ResourceKey(t.Object.Type) ?? "AppObjectTableBrush", accent);
             using (context.PushClip(new RoundedRect(rect, 6)))
@@ -303,10 +302,10 @@ public sealed class QueryCanvasControl : Control
                     context.DrawRectangle(accentSoft, null, new Rect(t.X + 1, y, QueryTableItem.Width - 2, QueryTableItem.RowHeight));
 
                 var box = new Rect(t.X + 10, y + 5, 12, 12);
-                context.DrawRectangle(ticked ? accent : null, new Pen(ticked ? accent : hint, 1), box, 2, 2);
+                context.DrawRectangle(ticked ? accent : null, RenderPens.Create(ticked ? accent : hint, 1), box, 2, 2);
                 if (ticked)
                 {
-                    var tick = new Pen(Brushes.White, 1.6);
+                    var tick = RenderPens.Create(Brushes.White, 1.6);
                     context.DrawLine(tick, new Point(box.X + 2.5, box.Y + 6), new Point(box.X + 5, box.Y + 8.8));
                     context.DrawLine(tick, new Point(box.X + 5, box.Y + 8.8), new Point(box.X + 9.5, box.Y + 3.2));
                 }
@@ -329,7 +328,7 @@ public sealed class QueryCanvasControl : Control
         {
             var selected = vm.SelectedJoin == join;
             var label = g!.Value.Label;
-            context.DrawRectangle(selected ? accent : surface, new Pen(selected ? accent : edge, 1), label, 9, 9);
+            context.DrawRectangle(selected ? accent : surface, RenderPens.Create(selected ? accent : edge, 1), label, 9, 9);
             DrawText(context, KindLabel(join.Kind), new Point(label.X + 4, label.Y + 2.5), selected ? Brushes.White : fg, 10, FontWeight.Bold, label.Width - 6, TextAlignment.Center);
             context.DrawEllipse(selected ? accent : edge, null, g.Value.Start, 3, 3);
             context.DrawEllipse(selected ? accent : edge, null, g.Value.End, 3, 3);
@@ -339,7 +338,7 @@ public sealed class QueryCanvasControl : Control
         if (_pressedColumn is { } from && _dragPoint is { } to)
         {
             var start = new Point(to.X >= from.Table.X + QueryTableItem.Width / 2 ? from.Table.X + QueryTableItem.Width : from.Table.X, from.Table.RowCenter(from.Column));
-            context.DrawLine(new Pen(accent, 2) { DashStyle = DashStyle.Dash }, start, to);
+            context.DrawLine(RenderPens.Create(accent, 2, DashStyle.Dash), start, to);
             context.DrawEllipse(accent, null, to, 4, 4);
         }
     }
@@ -347,7 +346,7 @@ public sealed class QueryCanvasControl : Control
     private IBrush Brush(string key, IBrush fallback) =>
         this.TryFindResource(key, ActualThemeVariant, out var value) && value is IBrush b ? b : fallback;
 
-    private static void DrawCurve(DrawingContext context, JoinGeometry g, Pen pen)
+    private static void DrawCurve(DrawingContext context, JoinGeometry g, IPen pen)
     {
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())

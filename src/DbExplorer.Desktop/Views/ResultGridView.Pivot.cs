@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using DbExplorer.Application.Query;
+using DbExplorer.Desktop.Controls;
 using DbExplorer.Desktop.Converters;
 
 namespace DbExplorer.Desktop.Views;
@@ -143,7 +144,7 @@ public partial class ResultGridView
         if (ResultSet is not { } rs || !_state.PivotOn || _state.Pivot is not { } spec)
         {
             _pivot = null;
-            PivotGrid.ItemsSource = null;
+            GridRows.Load(PivotGrid, null);
             return;
         }
         var version = ++_pivotVersion;
@@ -197,7 +198,7 @@ public partial class ResultGridView
                 MaxWidth = 600
             });
         }
-        PivotGrid.ItemsSource = lines;
+        GridRows.Load(PivotGrid, lines);
         PivotGrid.FrozenColumnCount = pivot.RowFieldCount;
 
         var groups = pivot.RowFieldCount == 0 ? 0 : pivot.Rows.Count - 1;

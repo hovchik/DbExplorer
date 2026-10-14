@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using DbExplorer.Application.Diagram;
 
 namespace DbExplorer.Desktop.Controls;
@@ -157,24 +158,24 @@ public sealed class ErModelControl : ErDiagramControl
         if (_drag != DragKind.Link || !_moved || _dragTable is not { } from || Diagram is null) return;
 
         var accentColor = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color col ? col : Colors.SteelBlue;
-        var accent = new SolidColorBrush(accentColor);
+        var accent = new ImmutableSolidColorBrush(accentColor);
         using var _ = context.PushTransform(Matrix.CreateScale(Zoom, Zoom));
 
         // The row the drag started from, the row or title it would link to, and a dashed line between them.
         var startY = RowCenter(from, _dragColumn);
         var start = new Point(_pointer.X < from.X + from.Width / 2 ? from.X : from.X + from.Width, startY);
-        context.DrawRectangle(new SolidColorBrush(accentColor, 0.15), null,
+        context.DrawRectangle(new ImmutableSolidColorBrush(accentColor, 0.15), null,
             _dragColumn is null ? new Rect(from.X, from.Y, from.Width, ErDiagramBuilder.HeaderHeight)
                 : new Rect(from.X, startY - ErDiagramBuilder.RowHeight / 2, from.Width, ErDiagramBuilder.RowHeight));
         if (Diagram.Tables.LastOrDefault(t => t.Contains(_pointer.X, _pointer.Y)) is { } target)
         {
             var column = ColumnAt(target, _pointer.Y);
             var y = RowCenter(target, column);
-            context.DrawRectangle(new SolidColorBrush(accentColor, 0.25), new Pen(accent, 1.5),
+            context.DrawRectangle(new ImmutableSolidColorBrush(accentColor, 0.25), RenderPens.Create(accent, 1.5),
                 column is null ? new Rect(target.X, target.Y, target.Width, ErDiagramBuilder.HeaderHeight)
                     : new Rect(target.X, y - ErDiagramBuilder.RowHeight / 2, target.Width, ErDiagramBuilder.RowHeight), 3, 3);
         }
-        context.DrawLine(new Pen(accent, 2) { DashStyle = DashStyle.Dash }, start, _pointer);
+        context.DrawLine(RenderPens.Create(accent, 2, DashStyle.Dash), start, _pointer);
         context.DrawEllipse(accent, null, _pointer, 4, 4);
     }
 }

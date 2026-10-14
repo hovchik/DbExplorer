@@ -16,6 +16,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
+using DbExplorer.Desktop.Controls;
 using DbExplorer.Desktop.Converters;
 using DbExplorer.Desktop.ViewModels;
 using Path = Avalonia.Controls.Shapes.Path;
@@ -205,9 +206,6 @@ public partial class ResultGridView : UserControl
         try
         {
             _quickFilterTimer.Stop();
-            Grid.FrozenColumnCount = 0;
-            Grid.Columns.Clear();
-            _columns.Clear();
             _pressedRow = null;
             _pressedColumn = null;
             _editMessage = null;
@@ -215,9 +213,12 @@ public partial class ResultGridView : UserControl
 
             if (resultSet is null)
             {
+                Grid.FrozenColumnCount = 0;
+                Grid.Columns.Clear();
+                _columns.Clear();
                 _state = new ViewState();
                 _viewRows = [];
-                Grid.ItemsSource = null;
+                GridRows.Load(Grid, null);
                 FilterBox.Text = "";
                 RowCountText.Text = "";
                 AggregateText.Text = "";
@@ -231,29 +232,44 @@ public partial class ResultGridView : UserControl
             }
 
             _state = States.GetValue(resultSet, _ => new ViewState());
-            for (var i = 0; i < resultSet.Columns.Count; i++)
+            var numeric = Enumerable.Range(0, resultSet.Columns.Count).Select(index =>
+                ResultViewQuery.IsNumericColumn(resultSet.Rows.Take(NumericSampleRows).Select(r => index < r.Values.Count ? r.Values[index] : null))).ToList();
+            // A refresh of the same query keeps its columns, so the grid reuses its cells (and keeps the widths): Avalonia's
+            // DataGrid leaks part of every cell it builds, and auto refresh would otherwise build them all again each tick.
+            var sameColumns = _columns.Count == resultSet.Columns.Count &&
+                              _columns.All(c => c.Name == resultSet.Columns[c.Index] && c.IsNumeric == numeric[c.Index]);
+            if (sameColumns)
             {
-                var index = i;
-                var sample = resultSet.Rows.Take(NumericSampleRows).Select(r => index < r.Values.Count ? r.Values[index] : null);
-                var state = new ColumnState(index, resultSet.Columns[index], ResultViewQuery.IsNumericColumn(sample));
-                var column = new DataGridTemplateColumn
+                foreach (var c in _columns) c.Column.IsVisible = !_state.HiddenColumns.Contains(c.Index);
+            }
+            else
+            {
+                Grid.FrozenColumnCount = 0;
+                Grid.Columns.Clear();
+                _columns.Clear();
+                for (var i = 0; i < resultSet.Columns.Count; i++)
                 {
-                    Header = BuildHeader(state),
-                    CellTemplate = new FuncDataTemplate<ResultRow>((_, _) => BuildCell(index, state.IsNumeric), supportsRecycling: true),
-                    CellEditingTemplate = new FuncDataTemplate<ResultRow>((row, _) => BuildEditor(row, index, state.IsNumeric), supportsRecycling: false),
-                    IsReadOnly = false, // read-only cells still open a read-only editor, to select part of the text
-                    SortMemberPath = $"Values[{index}]",
-                    CanUserSort = true,
-                    Width = DataGridLength.Auto,
-                    MinWidth = 56,
-                    MaxWidth = 600,
-                    IsVisible = !_state.HiddenColumns.Contains(index),
-                    Tag = index
-                };
-                column.HeaderPointerPressed += (_, e) => _headerModifiers = e.KeyModifiers;
-                state.Column = column;
-                _columns.Add(state);
-                Grid.Columns.Add(column);
+                    var index = i;
+                    var state = new ColumnState(index, resultSet.Columns[index], numeric[index]);
+                    var column = new DataGridTemplateColumn
+                    {
+                        Header = BuildHeader(state),
+                        CellTemplate = new FuncDataTemplate<ResultRow>((_, _) => BuildCell(index, state.IsNumeric), supportsRecycling: true),
+                        CellEditingTemplate = new FuncDataTemplate<ResultRow>((row, _) => BuildEditor(row, index, state.IsNumeric), supportsRecycling: false),
+                        IsReadOnly = false, // read-only cells still open a read-only editor, to select part of the text
+                        SortMemberPath = $"Values[{index}]",
+                        CanUserSort = true,
+                        Width = DataGridLength.Auto,
+                        MinWidth = 56,
+                        MaxWidth = 600,
+                        IsVisible = !_state.HiddenColumns.Contains(index),
+                        Tag = index
+                    };
+                    column.HeaderPointerPressed += (_, e) => _headerModifiers = e.KeyModifiers;
+                    state.Column = column;
+                    _columns.Add(state);
+                    Grid.Columns.Add(column);
+                }
             }
             Grid.FrozenColumnCount = Math.Min(_state.FrozenColumnCount, _columns.Count);
             FilterBox.Text = _state.QuickFilter;
@@ -743,7 +759,7 @@ public partial class ResultGridView : UserControl
         }
         rows.AddRange(added);
         _viewRows = rows;
-        Grid.ItemsSource = _viewRows;
+        GridRows.Load(Grid, _viewRows);
         AggregateText.Text = "";
         UpdateHeaders();
         UpdateChips();

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using DbExplorer.Application.Query.Plans;
 
 namespace DbExplorer.Desktop.Controls;
@@ -124,8 +125,8 @@ public sealed class PlanDiagramControl : Control
         var cool = Brush("AppPlanCoolBrush", Brushes.SteelBlue);
         var warning = Brush("AppPlanWarningBrush", Brushes.Goldenrod);
         var accentColor = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color col ? col : Colors.SteelBlue;
-        var accent = new SolidColorBrush(accentColor);
-        var edgeBrush = new SolidColorBrush(((ISolidColorBrush)hint).Color, 0.45);
+        var accent = new ImmutableSolidColorBrush(accentColor);
+        var edgeBrush = new ImmutableSolidColorBrush(((ISolidColorBrush)hint).Color, 0.45);
 
         using var _ = context.PushTransform(Matrix.CreateScale(Zoom, Zoom));
         context.FillRectangle(Brush("AppCodeBackgroundBrush", Brushes.WhiteSmoke), new Rect(0, 0, layout.Width, layout.Height));
@@ -154,7 +155,7 @@ public sealed class PlanDiagramControl : Control
                     g.CubicBezierTo(new Point(mid, start.Y), new Point(mid, end.Y), end);
                     g.EndFigure(false);
                 }
-                context.DrawGeometry(null, new Pen(brush, thickness, lineCap: PenLineCap.Flat), geometry);
+                context.DrawGeometry(null, RenderPens.Create(brush, thickness), geometry);
 
                 // Arrowhead into the parent.
                 var head = new StreamGeometry();
@@ -180,9 +181,9 @@ public sealed class PlanDiagramControl : Control
             var rect = new Rect(box.X, box.Y, PlanLayout.NodeWidth, PlanLayout.NodeHeight);
             var heat = n.Share >= 0.30 ? hot : n.Share >= 0.10 ? warm : cool;
             var isSelected = n == SelectedNode;
-            var pen = isSelected ? new Pen(accent, 2.2)
-                : n.IsHotspot ? new Pen(heat, 1.6)
-                : new Pen(n == _hovered ? hint : border, 1);
+            var pen = isSelected ? RenderPens.Create(accent, 2.2)
+                : n.IsHotspot ? RenderPens.Create(heat, 1.6)
+                : RenderPens.Create(n == _hovered ? hint : border, 1);
             context.DrawRectangle(n == _hovered && !isSelected ? subtle : surface, null, rect, 6, 6);
             context.DrawRectangle(null, pen, rect, 6, 6);
 

@@ -81,7 +81,7 @@ public sealed class StrokeIcon : Control
         if (scale <= 0) return;
         var dx = (Bounds.Width - 24 * scale) / 2;
         var dy = (Bounds.Height - 24 * scale) / 2;
-        var pen = new Pen(brush, StrokeWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        var pen = RenderPens.Create(brush, StrokeWidth, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
         using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(dx, dy)))
             context.DrawGeometry(null, pen, geometry);
     }

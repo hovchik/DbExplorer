@@ -36,7 +36,7 @@ public class MainTabOrderTests
         Assert.Equal(Enum.GetValues<AppTab>(), tabs);
     }
 
-    private static string RepoRoot()
+    internal static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
             if (Directory.Exists(Path.Combine(dir.FullName, "src", "DbExplorer.Desktop"))) return dir.FullName;

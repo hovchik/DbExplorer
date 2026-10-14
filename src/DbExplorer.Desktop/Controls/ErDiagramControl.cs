@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using DbExplorer.Application.Diagram;
 
 namespace DbExplorer.Desktop.Controls;
@@ -73,10 +74,10 @@ public class ErDiagramControl : Control
         var surface = Brush("AppPopupBackgroundBrush", Brushes.White);
         var subtle = Brush("AppSubtleBackgroundBrush", Brushes.LightGray);
         var accentColor = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color col ? col : Colors.SteelBlue;
-        var accent = new SolidColorBrush(accentColor);
-        var accentSoft = new SolidColorBrush(accentColor, 0.18);
-        var edgeColor = new SolidColorBrush(((ISolidColorBrush)hint).Color, 0.6);
-        var suggestedColor = new SolidColorBrush(Color.FromRgb(0xE8, 0x7A, 0x00));
+        var accent = new ImmutableSolidColorBrush(accentColor);
+        var accentSoft = new ImmutableSolidColorBrush(accentColor, 0.18);
+        var edgeColor = new ImmutableSolidColorBrush(((ISolidColorBrush)hint).Color, 0.6);
+        var suggestedColor = new ImmutableSolidColorBrush(Color.FromRgb(0xE8, 0x7A, 0x00));
 
         using var _ = context.PushTransform(Matrix.CreateScale(Zoom, Zoom));
         context.FillRectangle(Brush("AppCodeBackgroundBrush", Brushes.WhiteSmoke), new Rect(0, 0, d.Width, d.Height));
@@ -92,7 +93,7 @@ public class ErDiagramControl : Control
         {
             var selected = SelectedTable?.Title == t.Title;
             var rect = new Rect(t.X, t.Y, t.Width, t.Height);
-            context.DrawRectangle(surface, new Pen(selected ? accent : border, selected ? 2 : 1), rect, 6, 6);
+            context.DrawRectangle(surface, RenderPens.Create(selected ? accent : border, selected ? 2 : 1), rect, 6, 6);
 
             var header = new Rect(t.X, t.Y, t.Width, ErDiagramBuilder.HeaderHeight);
             using (context.PushClip(new RoundedRect(rect, 6)))
@@ -129,7 +130,7 @@ public class ErDiagramControl : Control
         var y2 = RowY(parent, refColumns);
         // Relationships the user accepted from inference are not constraints: dashed, so they never pass for one.
         // Suggested ones (not in the database yet) are dashed and orange: see Render.
-        var pen = new Pen(brush, thickness) { DashStyle = edge.ForeignKey.IsVirtual || edge.IsSuggested ? DashStyle.Dash : null };
+        var pen = RenderPens.Create(brush, thickness, edge.ForeignKey.IsVirtual || edge.IsSuggested ? DashStyle.Dash : null);
 
         Point start, end;
         double c1, c2;

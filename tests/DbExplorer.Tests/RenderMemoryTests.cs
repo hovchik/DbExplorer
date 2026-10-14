@@ -5,13 +5,16 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
 using DbExplorer.Desktop.Controls;
+using DbExplorer.Desktop.ViewModels;
+using DbExplorer.Desktop.Views;
 
 namespace DbExplorer.Tests;
 
 /// <summary>
-/// Redrawing must not grow memory. A mutable <see cref="Pen"/> made in Render with a long-lived brush stays registered
+/// Redrawing and refreshing must not grow memory while the app sits with auto refresh on. A mutable <see cref="Pen"/> made in Render with a long-lived brush stays registered
 /// with that brush in the compositor, so every redraw of the toolbar icons (on each refresh, hover or busy change) kept
-/// about 140 bytes for good.
+/// about 140 bytes for good. And Avalonia's DataGrid leaks part of every row when its ItemsSource is replaced, so grids
+/// refill one list instead (<see cref="GridRows"/>).
 /// </summary>
 [Collection(nameof(RenderMemoryCollection))]
 public class RenderMemoryTests
@@ -23,7 +26,8 @@ public class RenderMemoryTests
         var icon = new StrokeIcon { Data = Icons.Refresh, Foreground = new SolidColorBrush(Colors.Black) };
         var window = new Window { Width = 100, Height = 100, Content = icon };
         window.Show();
-        for (var i = 0; i < 200; i++) Frame(icon);
+        // A long warm-up: what earlier tests left in the compositor settles over the first frames.
+        for (var i = 0; i < 5000; i++) Frame(icon);
 
         var before = RetainedBytes();
         const int frames = 10_000;
@@ -33,6 +37,50 @@ public class RenderMemoryTests
 
         // The leak kept ~140 bytes a frame (1.4 MB here); a few KB of noise is allowed.
         Assert.True(grown < 200_000, $"Memory grew by {grown:N0} bytes over {frames:N0} redraws.");
+    }
+
+    [AvaloniaFact]
+    public void Refreshing_a_result_grid_does_not_grow_memory()
+    {
+        // What Query auto refresh does: a new result set into the same grid on every tick.
+        static ResultSetView Result() =>
+            new("t", ["id", "name"], Enumerable.Range(0, 20).Select(r => new ResultRow([r, "name " + r])).ToList());
+        var view = new ResultGridView { ResultSet = Result() };
+        var window = new Window { Width = 800, Height = 600, Content = view };
+        window.Show();
+        for (var i = 0; i < 20; i++) Refresh();
+
+        var before = RetainedBytes();
+        const int refreshes = 300;
+        for (var i = 0; i < refreshes; i++) Refresh();
+        var grown = RetainedBytes() - before;
+        window.Close();
+
+        // Replacing the grid's ItemsSource kept ~11 KB a refresh (3.3 MB here).
+        Assert.True(grown < 500_000, $"Memory grew by {grown:N0} bytes over {refreshes:N0} refreshes.");
+
+        void Refresh()
+        {
+            view.ResultSet = Result();
+            for (var k = 0; k < 3; k++) Frame(view);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Grid_rows_reuse_the_grid_items_list()
+    {
+        var grid = new DataGrid();
+        GridRows.SetSource(grid, new[] { "a", "b" });
+        var list = grid.ItemsSource;
+        Assert.IsType<ReloadableList<string>>(list);
+
+        GridRows.SetSource(grid, new List<string> { "c", "d", "e" });
+        Assert.Same(list, grid.ItemsSource);
+        Assert.Equal(["c", "d", "e"], grid.ItemsSource!.Cast<string>());
+
+        GridRows.SetSource(grid, null);
+        Assert.Same(list, grid.ItemsSource);
+        Assert.Empty(grid.ItemsSource!.Cast<string>());
     }
 
     [Fact]

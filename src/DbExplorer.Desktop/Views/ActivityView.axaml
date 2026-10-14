@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="using:DbExplorer.Desktop.Converters"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
              x:Class="DbExplorer.Desktop.Views.ActivityView">
   <TabControl Margin="2" Padding="0,2,0,0">
     <TabItem Header="Running now">
@@ -11,7 +12,7 @@
           <TextBlock Classes="hint" Text="{Binding RequestsStatus}" TextWrapping="Wrap" />
         </WrapPanel>
 
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Requests}"
+        <DataGrid Grid.Row="1" controls:GridRows.Source="{Binding Requests}"
                   SelectedItem="{Binding SelectedRequest, Mode=TwoWay}"
                   IsReadOnly="True" AutoGenerateColumns="False"
                   CanUserResizeColumns="True" CanUserSortColumns="True"
@@ -62,7 +63,7 @@
           <TextBlock Classes="hint" Text="{Binding TopQueriesStatus}" TextWrapping="Wrap" />
         </WrapPanel>
 
-        <DataGrid Grid.Row="1" ItemsSource="{Binding TopQueries}"
+        <DataGrid Grid.Row="1" controls:GridRows.Source="{Binding TopQueries}"
                   SelectedItem="{Binding SelectedQuery, Mode=TwoWay}"
                   IsReadOnly="True" AutoGenerateColumns="False"
                   CanUserResizeColumns="True" CanUserSortColumns="True"

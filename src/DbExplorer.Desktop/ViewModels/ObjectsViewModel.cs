@@ -1,3 +1,4 @@
+using DbExplorer.Application.Connections;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application.Metadata;
@@ -10,7 +11,7 @@ using DbExplorer.Desktop.Services;
 namespace DbExplorer.Desktop.ViewModels;
 
 public partial class ObjectsViewModel(
-    DefinitionService definitions, QueryExecutionService queryService, IDialogService dialogs)
+    DefinitionService definitions, QueryExecutionService queryService, SessionService sessions, IDialogService dialogs)
     : ViewModelBase, ISessionAware
 {
     private const string AllTypes = "All types";
@@ -41,6 +42,14 @@ public partial class ObjectsViewModel(
 
     [ObservableProperty] private bool _showOriginal;
     [ObservableProperty] private string _summary = "";
+
+    /// <summary>The outcome of the last Modify / Drop from the right-click menu; empty when there is nothing to say.</summary>
+    [ObservableProperty] private string _status = "";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DropTableCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ModifyCommand))]
+    private bool _isBusy;
 
     [ObservableProperty] private decimal _profileSampleRows = 10_000;
     [ObservableProperty] private IReadOnlyList<ColumnProfile> _columnProfiles = [];
@@ -83,7 +92,9 @@ public partial class ObjectsViewModel(
         GetDataCommand.NotifyCanExecuteChanged();
         ProfileCommand.NotifyCanExecuteChanged();
         ShowInDiagramCommand.NotifyCanExecuteChanged();
-        DesignTableCommand.NotifyCanExecuteChanged();
+        ModifyCommand.NotifyCanExecuteChanged();
+        DeleteRowsCommand.NotifyCanExecuteChanged();
+        DropTableCommand.NotifyCanExecuteChanged();
         ColumnProfiles = [];
         TopValues = [];
     }
@@ -168,13 +179,127 @@ public partial class ObjectsViewModel(
     /// <summary>Raised when the user asks to change the selected table in the Table designer.</summary>
     public event Action<DbObject>? DesignTableRequested;
 
-    [RelayCommand(CanExecute = nameof(CanDesignTable))]
-    private void DesignTable()
+    /// <summary>Raised with a script to open in a new Query tab: the SQL, the database to run it in, and the tab title.</summary>
+    public event Action<string, string?, string>? OpenSqlRequested;
+
+    private const int DropTimeoutSeconds = 60;
+
+    private bool CanModify => !IsBusy && SelectedObject is { } obj &&
+                              (obj.Type == DbObjectType.Table || ObjectScripts.CanModify(obj.Type));
+
+    /// <summary>Tables open in the Table designer; every other object opens in a Query tab as a script that replaces
+    /// it (CREATE OR ALTER, CREATE OR REPLACE, ALTER SEQUENCE…). Nothing runs until the user runs that tab.</summary>
+    [RelayCommand(CanExecute = nameof(CanModify))]
+    private async Task ModifyAsync()
     {
-        if (SelectedObject is { Type: DbObjectType.Table } table) DesignTableRequested?.Invoke(table);
+        if (_session is not { } session || SelectedObject is not { } obj) return;
+        if (obj.Type == DbObjectType.Table)
+        {
+            DesignTableRequested?.Invoke(obj);
+            return;
+        }
+
+        Status = "";
+        IsBusy = true;
+        try
+        {
+            var texts = await definitions.GetDefinitionsAsync(session, obj);
+            if (texts.Count == 0)
+            {
+                Status = $"The definition of {obj.FullName} is not available (encrypted object or insufficient permissions), so there is nothing to modify.";
+                return;
+            }
+            OpenSqlRequested?.Invoke(ObjectScripts.ModifyScript(session.Provider.ProviderKey, obj, texts),
+                NullIfEmpty(obj.Database), "Modify " + obj.Name);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not read the definition of {obj.FullName}: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
-    private bool CanDesignTable => SelectedObject?.Type == DbObjectType.Table;
+    private bool IsTable => SelectedObject?.Type == DbObjectType.Table;
+
+    /// <summary>Opens a DELETE for the table in a Query tab, its WHERE still to fill in; nothing is deleted from here.</summary>
+    [RelayCommand(CanExecute = nameof(IsTable))]
+    private void DeleteRows()
+    {
+        if (_session is not { } session || SelectedObject is not { Type: DbObjectType.Table } table) return;
+        var columns = session.Snapshot.ColumnsOf(table.Database, table.Schema, table.Name);
+        OpenSqlRequested?.Invoke(ObjectScripts.DeleteTemplate(session.Provider.ProviderKey, table, columns),
+            NullIfEmpty(table.Database), "Delete " + table.Name);
+    }
+
+    private bool CanDropTable => IsTable && !IsBusy;
+
+    /// <summary>Shows the DROP TABLE, asks (typing PRODUCTION on a production connection), runs it, then re-reads the
+    /// catalog so the table leaves every list. Read-only connections refuse it before asking.</summary>
+    [RelayCommand(CanExecute = nameof(CanDropTable))]
+    private async Task DropTableAsync()
+    {
+        if (_session is not { } session || SelectedObject is not { Type: DbObjectType.Table } table) return;
+        var sql = ObjectScripts.DropTable(session.Provider.ProviderKey, table);
+        if (session.Profile.ReadOnly)
+        {
+            Status = ReadOnlyGuard.Refusal(session.Profile, "DROP TABLE");
+            return;
+        }
+
+        var database = NullIfEmpty(table.Database);
+        var where = database ?? "the connection's database";
+        var referencing = session.Snapshot.ReferencesTo(table.Database, table.Schema, table.Name)
+            .Where(f => !(Same(f.Schema, table.Schema) && Same(f.Table, table.Name)))
+            .Select(f => $"{f.Schema}.{f.Table}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var rows = table.RowCount is { } n ? $" and its {n:N0} row(s) (estimated)" : " and all its rows";
+        var message = $"Drop {table.FullName} in {where}? This deletes the table{rows}, its indexes and triggers. It cannot be undone." +
+                      (referencing.Count > 0
+                          ? $"\n\n{string.Join(", ", referencing.Take(5))}{(referencing.Count > 5 ? $" and {referencing.Count - 5} more" : "")} " +
+                            "reference it with a foreign key, so the server will refuse until those keys are dropped."
+                          : "");
+        var production = session.Profile.IsProduction;
+        var ok = await dialogs.ConfirmAsync(message, "Drop table", production ? "PRODUCTION" : null,
+            production ? $"PRODUCTION · {session.Profile.DisplayName}" : null, sql);
+        if (!ok) return;
+
+        IsBusy = true;
+        Status = $"Dropping {table.FullName}…";
+        try
+        {
+            await queryService.ExecuteScriptAsync(session, sql, database, DropTimeoutSeconds);
+        }
+        catch (Exception ex)
+        {
+            IsBusy = false;
+            Status = $"The server did not drop {table.FullName}: {ex.Message}";
+            return;
+        }
+
+        Status = $"Dropped {table.FullName}. Reading the catalog so it leaves every list…";
+        try
+        {
+            await sessions.RefreshDatabaseSnapshotAsync(session, database);
+            Status = $"Dropped {table.FullName} in {where}.";
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("objects drop refresh", ex);
+            Status = $"Dropped {table.FullName} in {where}. Refresh metadata to update the lists: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Clears the filters and selects <paramref name="target"/> (matched by database/schema/name).</summary>
     public void Reveal(DbObject target)

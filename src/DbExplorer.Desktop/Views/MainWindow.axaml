@@ -402,14 +402,23 @@
     </Border>
 
     <TabControl x:Name="MainTabs" Margin="4,2,4,2" Padding="0" SelectedIndex="{Binding SelectedTab, Converter={StaticResource EnumToIndex}}">
-      <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
-        <views:QueryWorkspaceView DataContext="{Binding Query}" />
-      </TabItem>
       <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
         <views:ObjectsView DataContext="{Binding Objects}" />
       </TabItem>
+      <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
+        <views:QueryWorkspaceView DataContext="{Binding Query}" />
+      </TabItem>
+      <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
+        <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
+      </TabItem>
+      <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
+        <views:TableDesignerView DataContext="{Binding TableDesigner}" />
+      </TabItem>
       <TabItem Header="Comparer">
         <views:ComparerView DataContext="{Binding Comparer}" />
+      </TabItem>
+      <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
+        <views:DiagramView DataContext="{Binding Diagram}" />
       </TabItem>
       <TabItem Header="Search names &amp; code" IsEnabled="{Binding IsConnected}">
         <views:MetadataSearchView DataContext="{Binding Search}" />
@@ -417,17 +426,8 @@
       <TabItem Header="Search data" IsEnabled="{Binding IsConnected}">
         <views:DataSearchView DataContext="{Binding DataSearch}" />
       </TabItem>
-      <TabItem Header="Diagram" IsEnabled="{Binding IsConnected}">
-        <views:DiagramView DataContext="{Binding Diagram}" />
-      </TabItem>
-      <TabItem Header="Table designer" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Design a new table, with suggestions, and create it">
-        <views:TableDesignerView DataContext="{Binding TableDesigner}" />
-      </TabItem>
       <TabItem Header="ER model" ToolTip.Tip="Draw tables and relationships, or read them from a database, and generate the DDL">
         <views:ErModelView DataContext="{Binding ErModel}" />
-      </TabItem>
-      <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
-        <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
       </TabItem>
       <TabItem Header="Indexes" IsEnabled="{Binding IsConnected}">
         <views:IndexesView DataContext="{Binding Indexes}" />

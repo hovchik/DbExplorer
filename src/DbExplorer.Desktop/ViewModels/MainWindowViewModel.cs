@@ -636,15 +636,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
 public enum AppTab
 {
-    Query,
     Objects,
+    Query,
+    QueryBuilder,
+    TableDesigner,
     Comparer,
+    Diagram,
     SearchNamesAndCode,
     SearchData,
-    Diagram,
-    TableDesigner,
     ErModel,
-    QueryBuilder,
     Indexes,
     Locks,
     Activity,

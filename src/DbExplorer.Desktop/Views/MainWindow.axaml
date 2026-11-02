@@ -402,6 +402,9 @@
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />
+                  <MenuItem Header="Reopen last connection at start" ToggleType="CheckBox"
+                            IsChecked="{Binding ReconnectOnStart}"
+                            ToolTip.Tip="Open the connection that was open when DB Explorer closed. Production connections and ones without a saved password are only selected." />
                   <MenuItem Header="Software rendering (after restart)" ToggleType="CheckBox"
                             IsChecked="{Binding SoftwareRendering}"
                             ToolTip.Tip="Draw the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up." />

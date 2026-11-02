@@ -51,6 +51,10 @@ public interface IDialogService
     /// <summary>The keyboard shortcut sheet (F1); one at a time, brought to the front if already open.</summary>
     void ShowShortcutSheet();
 
+    /// <summary>The Preferences window (Ctrl+,); one at a time, brought to the front if already open. The view model is
+    /// created only when a new window opens.</summary>
+    void ShowPreferences(Func<PreferencesViewModel> create);
+
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
     Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
 
@@ -327,6 +331,21 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         _shortcutSheet = new ShortcutSheetWindow { DataContext = new ShortcutSheetViewModel() };
         _shortcutSheet.Closed += (_, _) => _shortcutSheet = null;
         _shortcutSheet.Show(Owner);
+    }
+
+    private PreferencesWindow? _preferences;
+
+    public void ShowPreferences(Func<PreferencesViewModel> create)
+    {
+        if (Owner is null) return;
+        if (_preferences is not null)
+        {
+            _preferences.Activate();
+            return;
+        }
+        _preferences = new PreferencesWindow { DataContext = create() };
+        _preferences.Closed += (_, _) => _preferences = null;
+        _preferences.Show(Owner);
     }
 
     public Task ShowGetDataAsync(

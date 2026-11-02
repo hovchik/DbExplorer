@@ -49,6 +49,7 @@ public static class Icons
     public const string Alert = "M12 3.5L21.5 20h-19z M12 10v4.5 M12 17.5h.01";
     public const string Sidebar = "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16";
     public const string Collapse = "M7 9l5-5 5 5 M7 15l5 5 5-5";
+    public const string Settings = "M4 6h9 M17 6h3 M15 4v4 M4 12h3 M11 12h9 M9 10v4 M4 18h11 M19 18h1 M17 16v4";
 }
 
 /// <summary>

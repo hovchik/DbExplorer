@@ -145,6 +145,7 @@ namespace DbExplorer.UiRender
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
+            await Step("offline", RenderOfflineAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -654,6 +655,30 @@ namespace DbExplorer.UiRender
             await _vm.Activity.LoadTopQueriesCommand.ExecuteAsync(null);
             await Settle(4);
             await Shot(_window, $"activity-{suffix}");
+        }
+
+        /// <summary>Disconnected while on Objects: the window moves to the Query tab, which still edits (with names from
+        /// the saved catalog) but cannot run; reconnecting goes back to Objects.</summary>
+        private async Task RenderOfflineAsync()
+        {
+            _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+            await _vm.DisconnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
+            await WaitFor(() => _vm.Query.SelectedDocument?.CompletionInfo.StartsWith("Offline", StringComparison.Ordinal) == true, "offline catalog");
+            Console.WriteLine($"Offline: tab {_vm.SelectedTab}, hint '{_vm.Query.SelectedDocument?.CompletionInfo}'");
+            _vm.Query.OpenInNewTab("-- written offline\nSELECT c.name, o.total\nFROM customers c\nJOIN orders o ON o.customer_id = c.id;", "Offline draft");
+            await Settle(4);
+            await Shot(_window, "query-offline");
+            _window.Width = 1024; _window.Height = 700;
+            await Settle(4);
+            await Shot(_window, "small-query-offline");
+            _window.Width = 1400; _window.Height = 900;
+
+            // The draft was added while offline, so connecting stays on the Query tab to run it.
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "reconnect", 60_000);
+            Console.WriteLine($"Reconnected: tab {_vm.SelectedTab}");
         }
 
         /// <summary>A tab with a few kept versions (runs, a save, a closed tab), then its local history window.</summary>

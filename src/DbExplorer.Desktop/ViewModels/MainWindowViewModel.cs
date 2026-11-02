@@ -66,6 +66,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ErModel = erModel;
         QueryBuilder = queryBuilder;
         Query = query;
+        Query.ConnectCommand = ConnectCommand;
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
@@ -332,12 +333,42 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = "Could not load saved connections: " + ex.Message;
+            ShowQueryWhileOffline();
             return;
         }
 
         if (note is not null) StatusText = note;
         if (action == StartupConnectionAction.Connect && ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+        // Nothing connected (not asked to, or the connect failed): open on the Query tab rather than a disabled one.
+        ShowQueryWhileOffline();
     }
+
+    // ----- Offline: the Query tab stands in for the tabs that need a connection -----
+
+    /// <summary>The tab left for the Query tab when the connection went away, and the scripts at that moment.</summary>
+    private AppTab? _tabBeforeOffline;
+    private string _scriptsWhenOffline = "";
+
+    private string QueryFingerprint() => OfflineTabs.Fingerprint(Query.Documents.Select(d => d.Sql));
+
+    private void ShowQueryWhileOffline()
+    {
+        if (IsConnected || OfflineTabs.TabWhenOffline(SelectedTab) is not { } tab) return;
+        _tabBeforeOffline = SelectedTab;
+        _scriptsWhenOffline = QueryFingerprint();
+        SelectedTab = tab;
+    }
+
+    private void ReturnFromOffline()
+    {
+        if (OfflineTabs.TabOnConnect(_tabBeforeOffline, SelectedTab, QueryFingerprint() != _scriptsWhenOffline) is { } tab) SelectedTab = tab;
+        _tabBeforeOffline = null;
+    }
+
+    /// <summary>The main tab saved for the next start: the one left for the Query tab while offline, unless the
+    /// Query tab was used meanwhile.</summary>
+    private AppTab TabToRemember() =>
+        OfflineTabs.TabOnConnect(_tabBeforeOffline, SelectedTab, QueryFingerprint() != _scriptsWhenOffline) ?? SelectedTab;
 
     // ----- Workspace: window, main tab, active query tab and connection, restored at the next start -----
 
@@ -363,7 +394,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public WorkspaceState CaptureWorkspace() => new()
     {
         Window = WindowPlacement ?? SavedWorkspace.Window,
-        MainTab = SelectedTab.ToString(),
+        MainTab = TabToRemember().ToString(),
         QueryTabIndex = Query.SelectedDocument is { } doc && Query.Documents.IndexOf(doc) is >= 0 and var i ? i : null,
         ConnectionId = Session?.Profile.Id ?? SelectedProfile?.Id,
         WasConnected = Session is not null
@@ -409,9 +440,20 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(WindowTitle));
         foreach (var tab in _tabs) tab.Attach(value);
         RefreshCommands();
+        if (value is null)
+        {
+            _ = Query.SetOfflineProfileAsync(SelectedProfile);
+            ShowQueryWhileOffline();
+        }
+        else ReturnFromOffline();
     }
 
-    partial void OnSelectedProfileChanged(ConnectionProfile? value) => RefreshCommands();
+    partial void OnSelectedProfileChanged(ConnectionProfile? value)
+    {
+        RefreshCommands();
+        // While offline the Query tab suggests the picked connection's keywords and saved names.
+        if (!IsConnected) _ = Query.SetOfflineProfileAsync(value);
+    }
 
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
 
@@ -874,7 +916,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var tab in Enum.GetValues<AppTab>())
         {
-            if (!IsConnected && tab is not (AppTab.Comparer or AppTab.ErModel)) continue;
+            if (!IsConnected && OfflineTabs.NeedsConnection(tab)) continue;
             var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
             items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code").Replace("Er model", "ER model"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
         }

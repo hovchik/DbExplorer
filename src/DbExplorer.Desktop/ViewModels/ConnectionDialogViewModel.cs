@@ -47,7 +47,117 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         // A new connection's TLS boxes follow the host (encrypt and verify unless the server is on this computer)
         // until the user ticks one of them; an existing connection keeps what it was saved with.
         _tlsFollowsHost = isNew;
+        _isNew = isNew;
         if (isNew) (_encrypt, _trustServerCertificate) = ConnectionSecurity.DefaultsFor(_host);
+    }
+
+    private readonly bool _isNew;
+
+    // ---- Connection string: paste to fill in, copy to share ----------------------------------------------------
+
+    /// <summary>What the user pasted into the "connection string" box. Cleared once it fills the fields, so a
+    /// password in it doesn't stay on screen.</summary>
+    [ObservableProperty] private string _connectionStringText = "";
+
+    /// <summary>What the last fill did, or why it failed (<see cref="ConnectionStringFailed"/>).</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasConnectionStringMessage))] private string? _connectionStringMessage;
+    [ObservableProperty] private bool _connectionStringFailed;
+    public bool HasConnectionStringMessage => !string.IsNullOrEmpty(ConnectionStringMessage);
+
+    /// <summary>"The clipboard has a PostgreSQL connection string for …", offered when a new connection opens.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasClipboardOffer))] private string? _clipboardOffer;
+    public bool HasClipboardOffer => ClipboardOffer is not null;
+    private string? _clipboardText;
+
+    /// <summary>Text for the clipboard (a connection string to copy); the view puts it there.</summary>
+    public event Action<string>? CopyRequested;
+
+    private bool _fillingFromConnectionString;
+
+    [RelayCommand]
+    private void FillFromConnectionString() => Fill(ConnectionStringText, clearBox: true);
+
+    /// <summary>For a new connection: offers a connection string found on the clipboard, without using it yet.</summary>
+    public void OfferClipboard(string? text)
+    {
+        if (!_isNew || !ConnectionStrings.LooksLikeConnectionString(text)) return;
+        if (!ConnectionStrings.TryParse(text, SelectedProvider.Key, out var parsed, out _) || !parsed.EngineDetected && parsed.Host is null) return;
+        var target = parsed.Host is null ? parsed.Database : parsed.Database is null ? parsed.Host : $"{parsed.Host}/{parsed.Database}";
+        _clipboardText = text;
+        ClipboardOffer = $"The clipboard has a {ConnectionStrings.EngineName(parsed.ProviderKey)} connection string" +
+                         (target is null ? "." : $" for {target}.");
+    }
+
+    [RelayCommand]
+    private void UseClipboard()
+    {
+        if (_clipboardText is { } text) Fill(text, clearBox: false);
+        DismissClipboard();
+    }
+
+    [RelayCommand]
+    private void DismissClipboard()
+    {
+        _clipboardText = null;
+        ClipboardOffer = null;
+    }
+
+    /// <summary>
+    /// Fills the fields from a connection string or URL. The string describes the server, so server, port, database
+    /// and user are replaced even where it leaves them out; a password typed earlier is kept only for the same user.
+    /// TLS boxes change only when the string says something about TLS (sslmode, Encrypt, …).
+    /// </summary>
+    public bool Fill(string? text, bool clearBox)
+    {
+        if (!ConnectionStrings.TryParse(text, SelectedProvider.Key, out var parsed, out var error))
+        {
+            ConnectionStringFailed = true;
+            ConnectionStringMessage = error;
+            return false;
+        }
+
+        _fillingFromConnectionString = true;
+        try
+        {
+            if (Providers.FirstOrDefault(p => p.Key == parsed.ProviderKey) is { } provider) SelectedProvider = provider;
+            var sameUser = parsed.UserName is null || string.Equals(parsed.UserName, UserName, StringComparison.Ordinal);
+            // A string with no server (Database=x;User ID=y) keeps the host, unless the host box holds the string itself.
+            if (parsed.Host is not null) Host = parsed.Host;
+            else if (ConnectionStrings.LooksLikeConnectionString(Host)) Host = "localhost";
+            Port = parsed.Port?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+            Database = parsed.Database ?? "";
+            IntegratedSecurity = (parsed.IntegratedSecurity ?? false) && CanUseIntegratedSecurity;
+            UserName = parsed.UserName ?? (IntegratedSecurity ? "" : UserName);
+            Password = parsed.Password ?? (sameUser ? Password : "");
+            if (parsed.ReadOnlyIntent is { } intent) ReadOnlyIntent = intent;
+            if (parsed.Encrypt is not null || parsed.TrustServerCertificate is not null)
+            {
+                _applyingTlsDefaults = true;
+                try
+                {
+                    if (parsed.Encrypt is { } encrypt) Encrypt = encrypt;
+                    if (parsed.TrustServerCertificate is { } trust) TrustServerCertificate = trust;
+                }
+                finally { _applyingTlsDefaults = false; }
+                _tlsFollowsHost = false; // the string chose; a later host edit must not undo it
+            }
+        }
+        finally { _fillingFromConnectionString = false; }
+
+        ConnectionStringFailed = false;
+        ConnectionStringMessage = "✓ " + ConnectionStrings.Describe(parsed);
+        if (clearBox) ConnectionStringText = "";
+        return true;
+    }
+
+    /// <summary>Copies these settings as a connection string or URL; "…+password" includes the password.</summary>
+    [RelayCommand]
+    private void CopyConnectionString(string? kind)
+    {
+        var style = kind?.StartsWith("url", StringComparison.OrdinalIgnoreCase) == true ? ConnectionStringStyle.Url : ConnectionStringStyle.KeyValue;
+        var withPassword = kind?.EndsWith("+password", StringComparison.OrdinalIgnoreCase) == true;
+        CopyRequested?.Invoke(ConnectionStrings.Format(ToProfile(), style, withPassword));
+        Message = withPassword ? "Copied, including the password." : "Copied (without the password).";
     }
 
     private bool _tlsFollowsHost;
@@ -63,6 +173,11 @@ public partial class ConnectionDialogViewModel : ViewModelBase
 
     partial void OnHostChanged(string value)
     {
+        // A connection string pasted straight into Host fills in every field instead.
+        if (!_fillingFromConnectionString && ConnectionStrings.LooksLikeConnectionString(value))
+        {
+            if (Fill(value, clearBox: false)) return;
+        }
         if (_tlsFollowsHost)
         {
             _applyingTlsDefaults = true;

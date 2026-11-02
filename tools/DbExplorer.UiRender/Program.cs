@@ -540,6 +540,20 @@ namespace DbExplorer.UiRender
             remoteVm.TrustServerCertificate = true;
             await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-production-warning");
 
+            // Connection string: the clipboard offer on a new connection, a filled-in string, and a string that can't be read.
+            var pasteVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true);
+            pasteVm.OfferClipboard("postgresql://app:secret@db.example.com:6543/shop?sslmode=require&application_name=web");
+            await ShowAndShoot(new ConnectionDialog { DataContext = pasteVm, Title = "New connection" }, "connection-string-offer");
+            var filledVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true);
+            filledVm.Fill("jdbc:sqlserver://sql01.corp\\SALES:1450;databaseName=Orders;user=report;password=pw;encrypt=true;loginTimeout=30;applicationIntent=ReadOnly", clearBox: true);
+            await ShowAndShoot(new ConnectionDialog { DataContext = filledVm, Title = "New connection" }, "connection-string-filled");
+            var badVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true)
+            {
+                ConnectionStringText = "Server=db01;Port=fifty"
+            };
+            badVm.FillFromConnectionStringCommand.Execute(null);
+            await ShowAndShoot(new ConnectionDialog { DataContext = badVm, Title = "New connection" }, "connection-string-error");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";

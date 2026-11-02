@@ -101,6 +101,11 @@
           <MenuItem Header="Duplicate connection…" Command="{Binding DuplicateConnectionCommand}" IsVisible="{Binding SelectedIsConnection}"
                     ToolTip.Tip="A copy of this connection under a new name, opened for editing" />
           <MenuItem Header="Delete connection…" Command="{Binding DeleteConnectionCommand}" IsVisible="{Binding SelectedIsOtherConnection}" />
+          <MenuItem Header="Copy connection string" IsVisible="{Binding SelectedIsConnection}"
+                    ToolTip.Tip="These settings for other tools, without the password">
+            <MenuItem Header="As key=value pairs" Command="{Binding CopyConnectionStringCommand}" CommandParameter="keyvalue" />
+            <MenuItem Header="As URL" Command="{Binding CopyConnectionStringCommand}" CommandParameter="url" />
+          </MenuItem>
 
           <!-- Objects -->
           <MenuItem Header="Open" InputGesture="Enter" FontWeight="SemiBold" Command="{Binding OpenCommand}" IsVisible="{Binding SelectedHasCatalogActions}"

@@ -26,9 +26,37 @@ public partial class ConnectionDialog : Window
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_vm is not null) _vm.CloseRequested -= OnCloseRequested;
+        if (_vm is not null)
+        {
+            _vm.CloseRequested -= OnCloseRequested;
+            _vm.CopyRequested -= OnCopyRequested;
+        }
         _vm = DataContext as ConnectionDialogViewModel;
-        if (_vm is not null) _vm.CloseRequested += OnCloseRequested;
+        if (_vm is not null)
+        {
+            _vm.CloseRequested += OnCloseRequested;
+            _vm.CopyRequested += OnCopyRequested;
+        }
+    }
+
+    /// <summary>A new connection offers a connection string the user just copied (only offered, never used unasked).</summary>
+    protected override async void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        try
+        {
+            if (_vm is not null && Clipboard is { } clipboard && await clipboard.GetTextAsync() is { } text)
+                _vm.OfferClipboard(text);
+        }
+        catch (Exception)
+        {
+            // The clipboard can be locked by another app; the offer is only a convenience.
+        }
+    }
+
+    private async void OnCopyRequested(string text)
+    {
+        if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
     }
 
     private void OnCloseRequested(bool ok) => Close(ok);

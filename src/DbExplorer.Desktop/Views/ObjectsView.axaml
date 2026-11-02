@@ -31,6 +31,8 @@
             <MenuItem Header="Debug…" Command="{Binding DebugSelectedCommand}" />
             <MenuItem Header="Get Data…" Command="{Binding GetDataCommand}" />
             <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" />
+            <MenuItem Header="Find usages" Command="{Binding FindUsagesCommand}"
+                      ToolTip.Tip="Views, routines and triggers that use it, and its foreign keys: what a change could break" />
             <Separator />
             <MenuItem Header="Modify…" Command="{Binding ModifyCommand}"
                       ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />

@@ -159,6 +159,7 @@ public partial class QueryView : UserControl
         RestartCostLens();
         ShowInspections([]);
         RestartInspections();
+        Dispatcher.UIThread.Post(ApplyPendingCaret, DispatcherPriority.Loaded);
     }
 
     private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
@@ -435,6 +436,10 @@ public partial class QueryView : UserControl
         // Alt+Shift+arrows stay with the editor's box selection.
         else if (alt && !shift && e.Key is Key.Up or Key.Down) { MoveLines(e.Key == Key.Up ? -1 : 1); e.Handled = true; }
         else if (e.Key == Key.F12) { e.Handled = true; await GoToDefinitionAsync(Editor.CaretOffset); }
+        // F2 also edits a grid cell: only the editor's own keys here.
+        else if (Editor.TextArea.IsKeyboardFocusWithin && ((shift && !ctrl && !alt && e.Key == Key.F6) || (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F2)))
+        { e.Handled = true; StartRename(); }
+        else if (Editor.TextArea.IsKeyboardFocusWithin && alt && !ctrl && !shift && e.Key == Key.F7) { e.Handled = true; await FindUsagesAsync(); }
         else if (e.Key == Key.Back && !ctrl && DeleteEmptyPair()) e.Handled = true;
     }
 

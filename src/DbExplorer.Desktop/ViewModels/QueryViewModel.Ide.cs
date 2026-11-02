@@ -295,4 +295,50 @@ public partial class QueryViewModel
     }
 
     public (string Signature, int Argument)? SignatureAt(string text, int caret) => _completion?.SignatureAt(text, caret);
+
+    // ----- Rename and find usages -----
+
+    private SqlSymbolFinder? _symbols;
+
+    /// <summary>Asks the workspace to open text in a new tab with the caret at an offset (a view's source at a usage).</summary>
+    public event Action<string, string, int>? OpenAtRequested;
+
+    /// <summary>Where the editor puts the caret once this tab is shown (set when the tab is opened at a usage).</summary>
+    public int? PendingCaretOffset { get; set; }
+
+    /// <summary>Rename and find usages over the current catalog; without a connection, script names (aliases, CTEs,
+    /// variables…) still work.</summary>
+    public SqlSymbolFinder SymbolFinder => _symbols ?? new SqlSymbolFinder(null, SqlSymbolFinder.QuoteFor(ProviderKey), ProviderKey);
+
+    private const int MaxModuleUsages = 2000;
+
+    /// <summary>The Find usages list of <paramref name="symbol"/>: its places in the script, and for a table or column
+    /// also the views, routines and triggers that use it and its foreign keys.</summary>
+    public async Task<UsagesViewModel> BuildUsagesAsync(SqlSymbol symbol, string text, Action<SqlOccurrence> goTo)
+    {
+        var rows = new List<UsageRow>(UsagesViewModel.ScriptRows(text, symbol.Occurrences, goTo));
+        var parts = new List<string> { UsagesViewModel.Count(symbol.Occurrences.Count, "place in this script", "places in this script") };
+        if (symbol.Object is { } obj)
+        {
+            var finder = SymbolFinder;
+            if (!finder.HasCatalog)
+            {
+                rows.Add(new UsageRow(UsageRowKind.Note, "Connect to also see the views, routines and triggers that use it."));
+            }
+            else
+            {
+                var (modules, keys) = await Task.Run(() => (finder.FindInModules(obj, symbol.Column, MaxModuleUsages), finder.ForeignKeysOf(obj, symbol.Column)));
+                rows.AddRange(UsagesViewModel.ModuleRows(modules, OpenModuleUsage, modules.Count >= MaxModuleUsages));
+                rows.AddRange(UsagesViewModel.KeyRows(keys));
+                parts.Add(UsagesViewModel.Count(modules.Select(m => m.Module).Distinct().Count(), "view or routine", "views and routines"));
+                if (keys.Count > 0) parts.Add(UsagesViewModel.Count(keys.Count, "foreign key", "foreign keys"));
+            }
+        }
+        return new UsagesViewModel($"Usages of {symbol.Title}", string.Join(" · ", parts), rows);
+    }
+
+    private void OpenModuleUsage(ModuleUsage usage) =>
+        OpenAtRequested?.Invoke($"{usage.Module.Schema}.{usage.Module.Name}", usage.Module.Definition ?? "", usage.Start);
+
+    public void ShowUsages(UsagesViewModel usages) => dialogs.ShowUsages(usages);
 }

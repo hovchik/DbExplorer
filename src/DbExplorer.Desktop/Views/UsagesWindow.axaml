@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
+        x:Class="DbExplorer.Desktop.Views.UsagesWindow"
+        x:DataType="vm:UsagesViewModel"
+        Title="{Binding Title}"
+        Width="860" Height="560" MinWidth="520" MinHeight="300"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ListBox.usages ListBoxItem">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+      <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+      <TextBlock Classes="hint" Text="{Binding Subtitle}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+      <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0"
+                 Text="Double-click or Enter opens the place: script lines in the editor, views and routines in a new Query tab." />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Content="Copy list" Click="OnCopy" ToolTip.Tip="Copy every place as text, to paste into a ticket or review" />
+        <Button Content="Go to" Click="OnGoTo" Classes="accent" />
+        <Button Content="Close" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+    </Grid>
+
+    <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4">
+      <ListBox x:Name="RowList" Classes="usages" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
+               Background="Transparent" DoubleTapped="OnRowDoubleTapped" KeyDown="OnRowKeyDown">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:UsageRow">
+            <Panel>
+              <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Margin="0,6,0,2" IsVisible="{Binding IsHeader}" />
+              <TextBlock Classes="hint" Text="{Binding Text}" FontStyle="Italic" TextWrapping="Wrap" Margin="12,0,0,0" IsVisible="{Binding IsNote}" />
+              <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding IsEntry}" Margin="12,0,0,0">
+                <controls:ObjectTypeBadge Type="{Binding Badge}" IsVisible="{Binding HasBadge}" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1" Classes="hint" Text="{Binding Location}" VerticalAlignment="Center" Margin="0,0,12,0" MinWidth="70" />
+                <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </Grid>
+            </Panel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+  </DockPanel>
+</Window>

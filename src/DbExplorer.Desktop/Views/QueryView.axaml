@@ -118,6 +118,10 @@
 			<MenuItem Header="Find" InputGesture="Ctrl+F" Click="OnFind" />
 			<MenuItem Header="Replace" InputGesture="Ctrl+H" Click="OnReplace" />
 			<MenuItem Header="Go to definition" InputGesture="F12" Click="OnGoToDefinition" />
+			<MenuItem Header="Rename alias, CTE, column or variable…" InputGesture="Shift+F6" Click="OnRename"
+					  ToolTip.Tip="Renames the name at the caret everywhere it means the same thing (also F2)" />
+			<MenuItem Header="Find usages" InputGesture="Alt+F7" Click="OnFindUsages"
+					  ToolTip.Tip="Where the name at the caret is used: in this script, and for tables and columns also in views, routines and triggers" />
 			<MenuItem Header="Go to line…" InputGesture="Ctrl+G" Click="OnGoToLine" />
 			<Separator IsVisible="{Binding IsAssistantSetupNeeded}" />
 			<MenuItem Header="Set up the AI assistant…" IsVisible="{Binding IsAssistantSetupNeeded}" Command="{Binding OpenAssistantSettingsCommand}" />
@@ -189,6 +193,17 @@
 		</StackPanel>
 	  </Border>
 	</Popup>
+	<Popup Grid.Row="1" x:Name="RenamePopup" IsLightDismissEnabled="True" Placement="AnchorAndGravity">
+	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
+			  BorderThickness="1" CornerRadius="6" Padding="10,8" Width="380">
+		<StackPanel Spacing="6">
+		  <TextBlock x:Name="RenameTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+		  <TextBox x:Name="RenameBox" KeyDown="OnRenameKeyDown" TextChanged="OnRenameTextChanged"
+				   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+		  <TextBlock x:Name="RenameMessage" Classes="hint" FontSize="12" TextWrapping="Wrap" />
+		</StackPanel>
+	  </Border>
+	</Popup>
 	<!-- Editor and its hint bar share one row so the splitter below sits directly between editor and results -->
 	<DockPanel Grid.Row="1">
 	<!-- Offline: scripts can still be written, opened and saved; this bar says so and connects in one click -->
@@ -227,7 +242,7 @@
 		</TextBlock.IsVisible>
 	  </TextBlock>
 	  <TextBlock Grid.Column="1" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-				 Text="Ctrl+Space suggest · Alt+Enter fix · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
+				 Text="Ctrl+Space suggest · Alt+Enter fix · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Shift+F6 rename · Alt+F7 usages · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
 	  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12">
 		<TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding CostLensText}" Foreground="{Binding CostLensBrush}" VerticalAlignment="Center"
 				   ToolTip.Tip="{Binding CostLensDetail}" MaxWidth="460" TextTrimming="CharacterEllipsis"

@@ -319,6 +319,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         if (_session is not { } session)
         {
             _completionSnapshot = null;
+            _symbols = null;
             // No warnings offline: a saved catalog can be out of date, and without one every name would be "unknown".
             SetInspector(null);
             if (_offline is not { } offline)
@@ -367,7 +368,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     private async Task SetCompletionAsync(MetadataSnapshot snapshot, DatabaseSession session, Func<string?> scope, int version)
     {
         var values = ValueCacheFor(session);
-        var (engine, inspector, objects, scopeText) = await Task.Run(() =>
+        var (engine, inspector, symbols, objects, scopeText) = await Task.Run(() =>
         {
             var built = new SqlCompletionEngine(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey)
             {
@@ -375,11 +376,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                 UserSnippets = () => [.. Snippets.Items, .. Snippets.TeamItems()]
             };
             var checks = new SqlInspector(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
-            return (built, checks, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
+            var symbols = new SqlSymbolFinder(snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
+            return (built, checks, symbols, snapshot.Objects.Count(o => o.Type is not DbObjectType.Trigger), scope());
         });
         if (version != _completionVersion) return;
         _completionSnapshot = snapshot;
         _completion = engine;
+        _symbols = symbols;
         SetInspector(inspector);
         CompletionInfo = $"Suggestions: {objects:N0} objects" + (scopeText is null ? "" : $" in {scopeText}");
     }

@@ -141,10 +141,13 @@ public static class NavigatorTree
             .Select(g => (g.Key, g.Count()))
             .ToList();
 
-    public static IReadOnlyList<DbObject> ObjectsIn(IEnumerable<DbObject> schemaObjects, NavigatorFolder folder) =>
-        schemaObjects.Where(o => FolderOf(o.Type) == folder)
-            .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    /// <summary>The objects of one folder, alphabetically, or in the order given when <paramref name="keepOrder"/>
+    /// is set (filter results, which arrive best match first).</summary>
+    public static IReadOnlyList<DbObject> ObjectsIn(IEnumerable<DbObject> schemaObjects, NavigatorFolder folder, bool keepOrder = false)
+    {
+        var inFolder = schemaObjects.Where(o => FolderOf(o.Type) == folder);
+        return (keepOrder ? inFolder : inFolder.OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)).ToList();
+    }
 
     /// <summary>The detail folders of a table-like object that have something in them, with their counts.</summary>
     public static IReadOnlyList<(NavigatorDetail Detail, int Count)> Details(MetadataSnapshot snapshot, DbObject obj)
@@ -216,7 +219,9 @@ public static class NavigatorTree
             .ToList();
     }
 
-    private static int MatchRank(DbObject obj, string text)
+    /// <summary>How well an object matches a filter: 0 exact name, 1 name prefix, 2 name contains, 3 schema.name
+    /// contains, -1 no match. Lower is better.</summary>
+    public static int MatchRank(DbObject obj, string text)
     {
         if (string.Equals(obj.Name, text, StringComparison.OrdinalIgnoreCase)) return 0;
         if (obj.Name.StartsWith(text, StringComparison.OrdinalIgnoreCase)) return 1;

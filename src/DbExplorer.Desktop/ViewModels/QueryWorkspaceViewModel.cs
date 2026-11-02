@@ -106,8 +106,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     }
 
     /// <summary>Opens <paramref name="sql"/> in a new tab (history, "script as", …).</summary>
-    public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false) =>
-        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null);
+    /// <param name="connectionDefault">With no <paramref name="database"/>: start in the connection's default database
+    /// instead of the selected tab's.</param>
+    public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false, bool connectionDefault = false) =>
+        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null,
+            connectionDefault && string.IsNullOrEmpty(database) ? new TabDatabaseMemory() : null);
 
     private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 

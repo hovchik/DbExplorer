@@ -14,8 +14,11 @@ public partial class NavigatorView : UserControl
     public NavigatorView()
     {
         InitializeComponent();
-        // Tunnel, so an object row opens instead of the tree also expanding or collapsing it.
-        Tree.AddHandler(DoubleTappedEvent, OnTreeDoubleTapped, RoutingStrategies.Tunnel);
+        // DoubleTapped only bubbles, and the row's own handler (which opens or closes it) runs first and marks it
+        // handled. So the row and its open state are noted on the second press (pointer events tunnel), and the
+        // double-tap handler sees handled events too, puts the open state back and shows the object instead.
+        Tree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel);
+        Tree.AddHandler(DoubleTappedEvent, OnTreeDoubleTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         DataContextChanged += (_, _) =>
         {
             if (_vm is not null) _vm.CopyRequested -= OnCopyRequested;
@@ -32,10 +35,24 @@ public partial class NavigatorView : UserControl
         if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
     }
 
+    private (NavigatorNode Node, bool WasExpanded)? _doubleClicked;
+
+    private static NavigatorNode? NodeAt(object? source) =>
+        (source as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext as NavigatorNode;
+
+    private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _doubleClicked = e.ClickCount == 2 && NodeAt(e.Source) is { } node ? (node, node.IsExpanded) : null;
+    }
+
     private void OnTreeDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (_vm is null || (e.Source as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext is not NavigatorNode node) return;
-        if (_vm.Activate(node)) e.Handled = true;
+        if (_vm is null || NodeAt(e.Source) is not { } node) return;
+        if (!NavigatorViewModel.OpensOnDoubleClick(node)) return; // databases, schemas, folders: just open or close
+        if (_doubleClicked is { } pressed && ReferenceEquals(pressed.Node, node)) node.IsExpanded = pressed.WasExpanded;
+        _doubleClicked = null;
+        _vm.Activate(node);
+        e.Handled = true;
     }
 
     private void OnTreeKeyDown(object? sender, KeyEventArgs e)

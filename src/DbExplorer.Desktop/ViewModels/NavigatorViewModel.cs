@@ -129,8 +129,12 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     /// refresh or a new connection does not throw away where the user was.</summary>
     public void Rebuild()
     {
+        // A rebuild can start while the previous one is still re-opening nodes (a catalog refresh raises
+        // SnapshotChanged and then DatabasesChanged): carry over what that one still had to open and select, and stop it.
         var expanded = Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.IsExpanded).Select(n => n.Key).ToHashSet();
-        var selected = SelectedNode?.Key;
+        if (_pendingExpanded is not null) expanded.UnionWith(_pendingExpanded);
+        var selected = SelectedNode?.Key ?? _pendingSelected;
+        var generation = ++_restoreGeneration;
 
         Roots.Clear();
         FilterSummary = "";
@@ -145,22 +149,40 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
             // Open the connection's own database too, the way DBeaver lands on it after connecting.
             expanded.Add(DatabaseKey(key, _session.Profile.Database));
         }
-        _ = RestoreAsync(expanded, selected);
+        _pendingExpanded = expanded;
+        _pendingSelected = selected;
+        _ = RestoreAsync(expanded, selected, generation);
     }
 
-    private async Task RestoreAsync(HashSet<string> expanded, string? selected)
+    private HashSet<string>? _pendingExpanded;
+    private string? _pendingSelected;
+    private int _restoreGeneration;
+
+    /// <summary>Whether a rebuild is still re-opening nodes (tests wait for it).</summary>
+    public bool IsRestoring => _pendingExpanded is not null;
+
+    private async Task RestoreAsync(HashSet<string> expanded, string? selected, int generation)
     {
-        foreach (var root in Roots.ToList()) await RestoreAsync(root, expanded);
+        foreach (var root in Roots.ToList())
+            if (!await RestoreAsync(root, expanded, generation)) return;
+        if (generation != _restoreGeneration) return;
         if (selected is not null)
-            SelectedNode = Roots.SelectMany(r => r.SelfAndDescendants()).FirstOrDefault(n => n.Key == selected);
+            SelectedNode = Roots.SelectMany(r => r.SelfAndDescendants()).FirstOrDefault(n => n.Key == selected) ?? SelectedNode;
+        _pendingExpanded = null;
+        _pendingSelected = null;
     }
 
-    private static async Task RestoreAsync(NavigatorNode node, HashSet<string> expanded)
+    /// <returns>False once a newer rebuild took over, so this one stops.</returns>
+    private async Task<bool> RestoreAsync(NavigatorNode node, HashSet<string> expanded, int generation)
     {
-        if (!expanded.Contains(node.Key) && !node.IsExpanded) return;
+        if (generation != _restoreGeneration) return false;
+        if (!expanded.Contains(node.Key) && !node.IsExpanded) return true;
         await node.LoadAsync();
+        if (generation != _restoreGeneration) return false;
         node.IsExpanded = true;
-        foreach (var child in node.Children.ToList()) await RestoreAsync(child, expanded);
+        foreach (var child in node.Children.ToList())
+            if (!await RestoreAsync(child, expanded, generation)) return false;
+        return true;
     }
 
     private void BuildConnections()
@@ -277,11 +299,11 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     }
 
     private IReadOnlyList<NavigatorNode> SchemaChildren(string parentKey, string database, MetadataSnapshot snapshot,
-        IReadOnlyList<DbObject> objects, bool inSession, string providerKey)
+        IReadOnlyList<DbObject> objects, bool inSession, string providerKey, bool keepOrder = false)
     {
         var schemas = NavigatorTree.Schemas(objects);
         if (NavigatorTree.SkipSchemaLevel(providerKey, database, schemas))
-            return FolderNodes(parentKey, database, snapshot, objects, inSession);
+            return FolderNodes(parentKey, database, snapshot, objects, inSession, keepOrder);
 
         return schemas.Select(schema =>
         {
@@ -293,13 +315,13 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
                 Database = database,
                 Detail = schema.ObjectCount.ToString("N0"),
                 ToolTip = $"Schema {schema.Name}: {schema.ObjectCount:N0} objects",
-                Loader = _ => Task.FromResult(FolderNodes(key, database, snapshot, schemaObjects, inSession))
+                Loader = _ => Task.FromResult(FolderNodes(key, database, snapshot, schemaObjects, inSession, keepOrder))
             };
         }).ToList();
     }
 
     private IReadOnlyList<NavigatorNode> FolderNodes(string parentKey, string database, MetadataSnapshot snapshot,
-        IReadOnlyList<DbObject> objects, bool inSession) =>
+        IReadOnlyList<DbObject> objects, bool inSession, bool keepOrder = false) =>
         NavigatorTree.Folders(objects).Select(f =>
         {
             var key = $"{parentKey}/folder:{f.Folder}";
@@ -309,7 +331,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
                 ColorKey = ObjectTypeColors.ResourceKey(NavigatorTree.FolderType(f.Folder)),
                 Database = database,
                 Detail = f.Count.ToString("N0"),
-                Loader = _ => Task.FromResult<IReadOnlyList<NavigatorNode>>(NavigatorTree.ObjectsIn(objects, f.Folder)
+                Loader = _ => Task.FromResult<IReadOnlyList<NavigatorNode>>(NavigatorTree.ObjectsIn(objects, f.Folder, keepOrder)
                     .Select(o => ObjectNode(key, database, snapshot, o, inSession)).ToList())
             };
         }).ToList();
@@ -394,26 +416,41 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
             if (!catalogs.Any(c => string.Equals(c.Database, name, StringComparison.OrdinalIgnoreCase)))
                 catalogs.Add((name, snapshot, false));
 
-        var total = 0;
-        var shown = 0;
-        var databases = new List<NavigatorNode>();
-        foreach (var (database, snapshot, inSession) in catalogs)
+        // Rank every catalog's matches together before the limit, so an exact match in one database is never pushed
+        // out by a pile of partial matches in another; then group what is kept back under its database.
+        var candidates = catalogs.SelectMany((c, index) =>
         {
-            var own = inSession && string.Equals(database, session.Profile.Database ?? "", StringComparison.OrdinalIgnoreCase);
-            var all = NavigatorTree.ObjectsOf(snapshot, database, own || !inSession).ToList();
-            var matches = NavigatorTree.Matches(all, filter, int.MaxValue);
-            total += matches.Count;
-            var take = matches.Take(Math.Max(0, MaxMatches - shown)).ToList();
-            shown += take.Count;
+            var own = c.InSession && string.Equals(c.Database, session.Profile.Database ?? "", StringComparison.OrdinalIgnoreCase);
+            return NavigatorTree.ObjectsOf(c.Snapshot, c.Database, own || !c.InSession)
+                .Select(o => (Catalog: index, Object: o, Rank: NavigatorTree.MatchRank(o, filter)))
+                .Where(m => m.Rank >= 0);
+        }).ToList();
+        var total = candidates.Count;
+        var kept = candidates
+            .OrderBy(m => m.Rank)
+            .ThenBy(m => m.Object.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.Object.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.Catalog)
+            .Take(MaxMatches)
+            .ToList();
+        var shown = kept.Count;
+
+        var databases = new List<NavigatorNode>();
+        for (var index = 0; index < catalogs.Count; index++)
+        {
+            var (database, snapshot, inSession) = catalogs[index];
+            var take = kept.Where(m => m.Catalog == index).Select(m => m.Object).ToList();
             if (take.Count == 0) continue;
+            var own = inSession && string.Equals(database, session.Profile.Database ?? "", StringComparison.OrdinalIgnoreCase);
+            var count = candidates.Count(m => m.Catalog == index);
 
             var dbKey = DatabaseKey(connection.Key, database);
             var dbNode = new NavigatorNode(NavigatorNodeKind.Database, database.Length > 0 ? database : "(database)", dbKey)
             {
                 Icon = Icons.Database, ColorKey = "SystemAccentColor", Database = database, IsEmphasized = own,
-                Detail = matches.Count.ToString("N0")
+                Detail = count.ToString("N0")
             };
-            dbNode.SetChildren(SchemaChildren(dbKey, database, snapshot, take, inSession, session.Profile.ProviderKey));
+            dbNode.SetChildren(SchemaChildren(dbKey, database, snapshot, take, inSession, session.Profile.ProviderKey, keepOrder: true));
             databases.Add(dbNode);
         }
         connection.SetChildren(databases.Count > 0 ? databases : [NavigatorNode.Message("No object matches")]);
@@ -463,6 +500,12 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     // ----- Actions -----
 
+    /// <summary>Rows a double-click shows instead of opening or closing: objects and their columns, indexes and keys,
+    /// and saved connections other than the connected one.</summary>
+    public static bool OpensOnDoubleClick(NavigatorNode node) =>
+        node.Kind is NavigatorNodeKind.Object or NavigatorNodeKind.Detail ||
+        (node.Kind == NavigatorNodeKind.Connection && !node.IsEmphasized);
+
     /// <summary>Double-click / Enter: connect a saved connection, open an object (or a column's table).</summary>
     /// <returns>True when the row did something, so the tree does not also open or close it.</returns>
     public bool Activate(NavigatorNode? node)
@@ -483,8 +526,17 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         }
     }
 
+    /// <summary>The menu's Open: the object of any object, column, index or detail-folder row.</summary>
     [RelayCommand]
-    private void Open() => Activate(SelectedNode);
+    private void Open()
+    {
+        if (SelectedNode is { Kind: NavigatorNodeKind.DetailFolder, Object: { } obj } folder)
+        {
+            if (folder.InSessionCatalog) ObjectActionRequested?.Invoke(NavigatorObjectAction.Open, obj);
+            return;
+        }
+        Activate(SelectedNode);
+    }
 
     [RelayCommand] private void GetData() => RunObjectAction(NavigatorObjectAction.GetData);
     [RelayCommand] private void Execute() => RunObjectAction(NavigatorObjectAction.Execute);
@@ -569,17 +621,26 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         {
             try
             {
-                _otherCatalogs[database] = await sessions.RefreshDatabaseSnapshotAsync(session, database);
+                var fresh = await sessions.RefreshDatabaseSnapshotAsync(session, database);
+                if (!ReferenceEquals(session, _session)) return; // disconnected or switched meanwhile: not this tree's
+                _otherCatalogs[database] = fresh;
             }
             catch (Exception ex)
             {
                 ErrorLog.Write("navigator refresh", ex);
             }
+            if (!ReferenceEquals(session, _session)) return;
             Rebuild();
             return;
         }
         ConnectionActionRequested?.Invoke(NavigatorConnectionAction.RefreshMetadata, session.Profile);
     }
+
+    /// <summary>The ✕ in the navigator's header; Ctrl+B or the app bar's sidebar button brings it back.</summary>
+    public event Action? HideRequested;
+
+    [RelayCommand]
+    private void Hide() => HideRequested?.Invoke();
 
     [RelayCommand]
     private void CollapseAll()
@@ -634,16 +695,28 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     private string? DatabaseOf(NavigatorNode node)
     {
         for (var n = node; n is not null; n = n.Parent)
+        {
             if (n.Kind == NavigatorNodeKind.Database || n.Database is not null)
                 return string.IsNullOrEmpty(n.Database) ? null : n.Database;
+            if (n.Kind == NavigatorNodeKind.Connection)
+                return string.IsNullOrEmpty(n.Profile?.Database) ? null : n.Profile!.Database;
+        }
         return null;
     }
 
     /// <summary>The Database value the catalog stores the object's columns under (empty for a single-database read).</summary>
-    private static string LookupDatabase(MetadataSnapshot snapshot, DbObject obj) =>
-        snapshot.Objects.FirstOrDefault(o => string.Equals(o.Schema, obj.Schema, StringComparison.OrdinalIgnoreCase)
-                                             && string.Equals(o.Name, obj.Name, StringComparison.OrdinalIgnoreCase)
-                                             && o.Type == obj.Type)?.Database ?? obj.Database;
+    /// <remarks>The full database/schema/name/type identity wins, so in a server-wide catalog with Audit.dbo.Orders and
+    /// Shop.dbo.Orders the script for Shop never borrows Audit's columns. A row without a database name (a catalog
+    /// read for one database) is the fallback.</remarks>
+    internal static string LookupDatabase(MetadataSnapshot snapshot, DbObject obj)
+    {
+        bool SameObject(DbObject o) => string.Equals(o.Schema, obj.Schema, StringComparison.OrdinalIgnoreCase)
+                                       && string.Equals(o.Name, obj.Name, StringComparison.OrdinalIgnoreCase)
+                                       && o.Type == obj.Type;
+        if (snapshot.Objects.Any(o => SameObject(o) && string.Equals(o.Database, obj.Database, StringComparison.OrdinalIgnoreCase)))
+            return obj.Database;
+        return snapshot.Objects.Any(o => SameObject(o) && o.Database.Length == 0) ? "" : obj.Database;
+    }
 
     private static string ConnectionKey(ConnectionProfile profile) => "conn:" + profile.Id;
     private static string DatabaseKey(string connectionKey, string? database) => $"{connectionKey}/db:{database}";

@@ -97,7 +97,7 @@ public partial class App : Avalonia.Application
         {
             ErrorLog.Write("ui", e.Exception);
             e.Handled = true;
-            vm.StatusText = $"Unexpected error: {e.Exception.GetBaseException().Message} (details in {ErrorLog.FilePath})";
+            vm.ShowError($"Unexpected error: {e.Exception.GetBaseException().Message} (details in {ErrorLog.FilePath})");
         };
 
         // Records in errors.log when the UI thread stops answering, and for how long: a hung UI thread and a window

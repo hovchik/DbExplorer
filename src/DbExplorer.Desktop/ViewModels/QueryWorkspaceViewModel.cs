@@ -2,8 +2,10 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Metadata;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Core.Connections;
 using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
@@ -50,12 +52,17 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     private readonly ScriptStore _scripts;
     private readonly IDialogService _dialogs;
     private readonly LocalHistoryStore _localHistory;
+    private readonly MetadataCache _catalogCache;
     private DatabaseSession? _session;
+    private OfflineCatalog? _offline;
+    private int _offlineVersion;
+    private System.Windows.Input.ICommand? _connectCommand;
     private int _untitled;
 
     public QueryWorkspaceViewModel(Func<QueryViewModel> createDocument, ScriptStore scripts, IDialogService dialogs,
-        LocalHistoryStore localHistory)
+        LocalHistoryStore localHistory, MetadataCache catalogCache)
     {
+        _catalogCache = catalogCache;
         _createDocument = createDocument;
         _scripts = scripts;
         _dialogs = dialogs;
@@ -101,6 +108,52 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         _session = session;
         foreach (var d in Documents) d.Attach(session);
+        UpdateConnectLabels();
+    }
+
+    // ----- Offline: the tabs open, edit and save scripts with nothing connected; only running needs a server -----
+
+    /// <summary>The window's Connect command, for the button on the bar shown above the editor while offline.</summary>
+    public System.Windows.Input.ICommand? ConnectCommand
+    {
+        get => _connectCommand;
+        set
+        {
+            _connectCommand = value;
+            foreach (var d in Documents) d.ConnectCommand = value;
+        }
+    }
+
+    /// <summary>"Connect to Shop" on that bar; empty while connected or when no connection is picked.</summary>
+    public string ConnectLabel => _session is null && _offline is { } o ? $"Connect to {o.ConnectionName}" : "";
+
+    /// <summary>While nothing is connected: the editor suggests the keywords of <paramref name="profile"/>'s engine and,
+    /// when it was opened before, the names of its saved catalog (read from the local cache, never from the server).</summary>
+    private void UpdateConnectLabels()
+    {
+        OnPropertyChanged(nameof(ConnectLabel));
+        foreach (var d in Documents) d.ConnectLabel = ConnectLabel;
+    }
+
+    public async Task SetOfflineProfileAsync(ConnectionProfile? profile)
+    {
+        var version = ++_offlineVersion;
+        MetadataSnapshot? snapshot = null;
+        if (profile is not null)
+        {
+            try
+            {
+                snapshot = await _catalogCache.TryLoadAsync(MetadataCache.CacheKey(profile));
+            }
+            catch
+            {
+                // A missing or damaged cache only means fewer suggestions.
+            }
+        }
+        if (version != _offlineVersion) return;
+        _offline = profile is null ? null : new OfflineCatalog(profile.ProviderKey, profile.DisplayName, snapshot);
+        foreach (var d in Documents) d.SetOfflineCatalog(_offline);
+        UpdateConnectLabels();
     }
 
     public QueryViewModel NewTab() => AddTab($"Query {++_untitled}", "", filePath: null, dirty: false, autoTitle: true);
@@ -123,6 +176,9 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         doc.Databases = databases
                         ?? (database is not null ? new TabDatabaseMemory { Pending = database } : SelectedDocument?.Databases.Clone())
                         ?? new TabDatabaseMemory();
+        doc.SetOfflineCatalog(_offline);
+        doc.ConnectCommand = ConnectCommand;
+        doc.ConnectLabel = ConnectLabel;
         doc.Attach(_session);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
         doc.OpenAtRequested += (docTitle, text, offset) => OpenInNewTab(text, docTitle, caretOffset: offset);

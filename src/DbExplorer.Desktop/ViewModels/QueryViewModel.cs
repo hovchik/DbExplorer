@@ -93,7 +93,28 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Header));
 
     /// <summary>Provider of the connected session ("SqlServer"/"Postgres"), for dialect-aware editor features.</summary>
-    public string? ProviderKey => _session?.Provider.ProviderKey;
+    public string? ProviderKey => _session?.Provider.ProviderKey ?? _offline?.ProviderKey;
+
+    /// <summary>False while nothing is connected: the tab still opens, edits and saves scripts, but cannot run them.</summary>
+    public bool IsConnected => _session is not null;
+
+    private OfflineCatalog? _offline;
+
+    /// <summary>The window's Connect command and "Connect to Shop", for the bar shown above the editor while offline.</summary>
+    public System.Windows.Input.ICommand? ConnectCommand { get; set; }
+    [ObservableProperty] private string _connectLabel = "";
+
+    /// <summary>What the editor suggests while nothing is connected (see <see cref="OfflineCatalog"/>); ignored while connected.</summary>
+    public void SetOfflineCatalog(OfflineCatalog? catalog)
+    {
+        if (ReferenceEquals(catalog, _offline)) return;
+        _offline = catalog;
+        if (_session is null) RebuildCompletion();
+    }
+
+    /// <summary>Run, Explain or the Lab was asked for while nothing is connected: say why nothing happens.</summary>
+    public void ExplainNotConnected(string what) =>
+        Status = $"Not connected: {what} needs a connection. Connect (toolbar, navigator or the bar above the editor), then run it again.";
 
     [ObservableProperty] private string _sql = "";
     [ObservableProperty] private bool _isRunning;
@@ -156,6 +177,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         SetDatabases([]);
         ExecuteCommand.NotifyCanExecuteChanged();
         NotifyLabCommands();
+        OnPropertyChanged(nameof(IsConnected));
 
         _attaching = true;
         DatabaseWarning = "";
@@ -296,11 +318,24 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         var version = ++_completionVersion;
         if (_session is not { } session)
         {
-            _completion = null;
             _completionSnapshot = null;
             _symbols = null;
+            // No warnings offline: a saved catalog can be out of date, and without one every name would be "unknown".
             SetInspector(null);
-            CompletionInfo = "";
+            if (_offline is not { } offline)
+            {
+                _completion = null;
+                CompletionInfo = "";
+                return;
+            }
+            var shown = offline.SnapshotFor(TargetDatabase);
+            var offlineEngine = await Task.Run(() => new SqlCompletionEngine(shown, offline.Quote, offline.ProviderKey)
+            {
+                UserSnippets = () => [.. Snippets.Items, .. Snippets.TeamItems()]
+            });
+            if (version != _completionVersion) return;
+            _completion = offlineEngine;
+            CompletionInfo = offline.Describe(shown);
             return;
         }
 

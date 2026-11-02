@@ -497,7 +497,8 @@ public partial class QueryView : UserControl
     /// <summary>The why-not debugger works on the statement at the caret; dry run and lock impact on the selection or whole script.</summary>
     private void RunLab(System.Windows.Input.ICommand? command, bool currentStatement)
     {
-        if (command is null) return;
+        if (command is null || _vm is null) return;
+        if (!_vm.IsConnected) { _vm.ExplainNotConnected("the Lab"); return; }
         var run = Target(currentStatement);
         if (command.CanExecute(run)) command.Execute(run);
     }
@@ -545,6 +546,7 @@ public partial class QueryView : UserControl
     private void Run(bool currentStatement)
     {
         if (_vm is null) return;
+        if (!_vm.IsConnected) { _vm.ExplainNotConnected("running a script"); return; }
         var run = Target(currentStatement);
         if (_vm.ExecuteCommand.CanExecute(run)) _vm.ExecuteCommand.Execute(run);
     }
@@ -552,6 +554,7 @@ public partial class QueryView : UserControl
     private void Explain(bool analyze)
     {
         if (_vm is null) return;
+        if (!_vm.IsConnected) { _vm.ExplainNotConnected("an execution plan"); return; }
         var run = Target(currentStatement: true);
         var command = analyze ? _vm.ExplainAnalyzeCommand : _vm.ExplainCommand;
         if (command.CanExecute(run)) command.Execute(run);

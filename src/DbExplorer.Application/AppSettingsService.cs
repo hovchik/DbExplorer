@@ -36,6 +36,8 @@ public sealed class AppSettingsService
         EditorWordWrap = stored.EditorWordWrap;
         SqlInspections = !stored.SqlInspectionsOff;
         SoftwareRendering = stored.SoftwareRendering;
+        ShowNavigator = !stored.NavigatorHidden;
+        NavigatorWidth = ClampNavigatorWidth(stored.NavigatorWidth ?? DefaultNavigatorWidth);
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
             .OfType<ExperimentalFeature>().ToHashSet();
@@ -58,6 +60,35 @@ public sealed class AppSettingsService
     /// <summary>Whether the window is drawn by the CPU instead of the graphics card (read at start-up, so a change
     /// applies after a restart). A way out when the GPU path stops repainting, for example after a long minimize.</summary>
     public bool SoftwareRendering { get; private set; }
+
+    public const double DefaultNavigatorWidth = 260;
+    public const double MinNavigatorWidth = 180;
+    public const double MaxNavigatorWidth = 700;
+
+    /// <summary>Whether the database navigator (the tree of connections, databases and objects on the left of the
+    /// main window) is shown; toggled with its toolbar button or Ctrl+B.</summary>
+    public bool ShowNavigator { get; private set; }
+
+    /// <summary>The navigator's width in pixels, as the user last dragged it.</summary>
+    public double NavigatorWidth { get; private set; }
+
+    public void SetShowNavigator(bool show)
+    {
+        if (ShowNavigator == show) return;
+        ShowNavigator = show;
+        Save();
+    }
+
+    public void SetNavigatorWidth(double width)
+    {
+        var clamped = ClampNavigatorWidth(width);
+        if (Math.Abs(clamped - NavigatorWidth) < 1) return;
+        NavigatorWidth = clamped;
+        Save();
+    }
+
+    public static double ClampNavigatorWidth(double width) =>
+        double.IsFinite(width) ? Math.Clamp(Math.Round(width), MinNavigatorWidth, MaxNavigatorWidth) : DefaultNavigatorWidth;
 
     public event Action<AppThemeMode>? ThemeChanged;
 
@@ -142,6 +173,8 @@ public sealed class AppSettingsService
             {
                 Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
                 SoftwareRendering = SoftwareRendering,
+                NavigatorHidden = !ShowNavigator,
+                NavigatorWidth = Math.Abs(NavigatorWidth - DefaultNavigatorWidth) < 1 ? null : NavigatorWidth,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
             };
             AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
@@ -162,6 +195,11 @@ public sealed class AppSettingsService
         public bool SqlInspectionsOff { get; set; }
 
         public bool SoftwareRendering { get; set; }
+
+        /// <summary>Stored as "hidden" so the navigator starts shown.</summary>
+        public bool NavigatorHidden { get; set; }
+
+        public double? NavigatorWidth { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

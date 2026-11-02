@@ -133,6 +133,7 @@ namespace DbExplorer.UiRender
             await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "connect", 60_000);
             Console.WriteLine("Connected: " + _vm.StatusText);
 
+            await Step("navigator", RenderNavigatorAsync);
             await Step("tabs", RenderTabsAsync);
             await Step("small", RenderSmallAsync);
             await Step("toolbar", RenderToolbarStatesAsync);
@@ -185,6 +186,49 @@ namespace DbExplorer.UiRender
 
         private DbObject Table(string name) =>
             _vm.Session!.Snapshot.Objects.First(o => o.Type == DbObjectType.Table && o.Name == name);
+
+        /// <summary>The database navigator: the orders table open to its columns, its right-click menu, and a filter.</summary>
+        private async Task RenderNavigatorAsync()
+        {
+            var nav = _vm.Navigator;
+            _vm.ShowNavigator = true;
+            _vm.SelectedTab = AppTab.Objects;
+            await nav.RevealAsync(Table("orders"));
+            var orders = nav.SelectedNode!;
+            await orders.LoadAsync();
+            orders.IsExpanded = true;
+            foreach (var folder in orders.Children.Where(c => c.Title is "Columns" or "Foreign keys"))
+            {
+                await folder.LoadAsync();
+                folder.IsExpanded = true;
+            }
+            nav.Activate(orders);
+            await WaitFor(() => _vm.Objects.Columns.Count > 0, "objects columns");
+            await Settle(4);
+            await Shot(_window, "navigator");
+
+            var tree = _window.GetVisualDescendants().OfType<TreeView>().First(t => t.Name == "Tree");
+            tree.ContextMenu!.Open(tree);
+            await Settle(4);
+            await Shot(_window, "navigator-menu");
+            tree.ContextMenu.Close();
+
+            nav.FilterText = "order";
+            await Settle(6);
+            await Shot(_window, "navigator-filter");
+            nav.FilterText = "";
+            await Settle();
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            _vm.SelectedTab = AppTab.Query;
+            await Settle(6);
+            await Shot(_window, "small-navigator-query");
+            _window.Width = 1400;
+            _window.Height = 900;
+            _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+        }
 
         private async Task RenderTabsAsync()
         {

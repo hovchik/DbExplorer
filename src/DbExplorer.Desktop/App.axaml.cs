@@ -38,6 +38,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<DialogService>();
         services.AddSingleton<IDialogService>(sp => sp.GetRequiredService<DialogService>());
         services.AddSingleton<ObjectsViewModel>();
+        services.AddSingleton<NavigatorViewModel>();
         services.AddSingleton<MetadataSearchViewModel>();
         services.AddSingleton<DataSearchViewModel>();
         services.AddSingleton<IndexesViewModel>();

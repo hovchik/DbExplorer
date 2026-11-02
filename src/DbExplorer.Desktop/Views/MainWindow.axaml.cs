@@ -16,26 +16,76 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        MainTabs.TemplateApplied += OnMainTabsTemplateApplied;
         MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };
+        MainTabs.SelectionChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Source, MainTabs)) Dispatcher.UIThread.Post(RevealSelectedMainTab, DispatcherPriority.Loaded);
+        };
+        NavigatorSplitter.DragCompleted += (_, _) =>
+        {
+            if (_vm is not null && _vm.ShowNavigator) _vm.NavigatorWidth = WorkArea.ColumnDefinitions[0].ActualWidth;
+        };
         DataContextChanged += (_, _) =>
         {
             if (_vm is not null)
             {
                 _vm.Query.RunFinished -= OnRunFinished;
                 _vm.ShowTeamRequested -= OnShowTeam;
+                _vm.PropertyChanged -= OnViewModelPropertyChanged;
             }
             _vm = DataContext as MainWindowViewModel;
             if (_vm is not null)
             {
                 _vm.Query.RunFinished += OnRunFinished;
                 _vm.ShowTeamRequested += OnShowTeam;
+                _vm.PropertyChanged += OnViewModelPropertyChanged;
             }
+            ApplyNavigatorWidth();
         };
     }
 
-    // ---- Main tab headers: one row; smaller headers when the full-size ones would wrap ----
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.ShowNavigator)) ApplyNavigatorWidth();
+    }
 
+    /// <summary>The navigator column: its saved width while shown, nothing while hidden (the tabs take it all).</summary>
+    private void ApplyNavigatorWidth()
+    {
+        var column = WorkArea.ColumnDefinitions[0];
+        if (_vm is { ShowNavigator: true } vm)
+        {
+            column.MinWidth = Application.AppSettingsService.MinNavigatorWidth;
+            column.MaxWidth = Application.AppSettingsService.MaxNavigatorWidth;
+            column.Width = new GridLength(vm.NavigatorWidth);
+        }
+        else
+        {
+            column.MinWidth = 0;
+            column.Width = new GridLength(0);
+        }
+    }
+
+    // ---- Main tab headers: one row; smaller headers when the full-size ones overflow, then sideways scrolling ----
+
+    private ScrollViewer? _mainTabScroll;
+    private Button? _allTabsButton;
     private double _compactBelow;
+
+    private void OnMainTabsTemplateApplied(object? sender, Avalonia.Controls.Primitives.TemplateAppliedEventArgs e)
+    {
+        _mainTabScroll = e.NameScope.Find<ScrollViewer>("PART_TabScroll");
+        _allTabsButton = e.NameScope.Find<Button>("PART_AllTabs");
+        if (_mainTabScroll is not null)
+        {
+            _mainTabScroll.AddHandler(PointerWheelChangedEvent, OnMainTabsWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _mainTabScroll.ScrollChanged += (_, _) => UpdateAllTabsButton();
+        }
+        if (_allTabsButton is not null) _allTabsButton.Click += (_, _) => ShowAllTabsMenu();
+    }
+
+    private bool MainTabsOverflow => _mainTabScroll is { } scroll && scroll.Extent.Width > scroll.Viewport.Width + 1;
 
     private void FitMainTabHeaders()
     {
@@ -43,26 +93,55 @@ public partial class MainWindow : Window
         if (MainTabs.Classes.Contains("compact"))
         {
             if (width <= _compactBelow) return;
-            MainTabs.Classes.Remove("compact"); // wider now: try full size again, and shrink back if it still wraps
+            MainTabs.Classes.Remove("compact"); // wider now: try full size again, and shrink back if it still overflows
         }
         Dispatcher.UIThread.Post(() =>
         {
-            if (!MainTabHeadersWrap()) return;
-            _compactBelow = MainTabs.Bounds.Width;
-            MainTabs.Classes.Add("compact");
+            if (MainTabsOverflow)
+            {
+                _compactBelow = MainTabs.Bounds.Width;
+                MainTabs.Classes.Add("compact");
+            }
+            Dispatcher.UIThread.Post(() => { UpdateAllTabsButton(); RevealSelectedMainTab(); }, DispatcherPriority.Loaded);
         }, DispatcherPriority.Loaded);
     }
 
-    private bool MainTabHeadersWrap()
+    private void UpdateAllTabsButton()
     {
-        double? top = null;
+        if (_allTabsButton is not null) _allTabsButton.IsVisible = MainTabsOverflow;
+    }
+
+    private void OnMainTabsWheel(object? sender, Avalonia.Input.PointerWheelEventArgs e)
+    {
+        if (_mainTabScroll is not { } scroll || !MainTabsOverflow) return;
+        var delta = Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y) ? e.Delta.X : e.Delta.Y;
+        scroll.Offset = scroll.Offset.WithX(Math.Clamp(scroll.Offset.X - delta * 60, 0, scroll.Extent.Width - scroll.Viewport.Width));
+        e.Handled = true;
+    }
+
+    private void RevealSelectedMainTab()
+    {
+        if (MainTabs.ContainerFromIndex(MainTabs.SelectedIndex) is { } tab) tab.BringIntoView();
+    }
+
+    /// <summary>Every main tab in a menu, so a tab scrolled out of view is one click away.</summary>
+    private void ShowAllTabsMenu()
+    {
+        if (_allTabsButton is null) return;
+        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
         for (var i = 0; i < MainTabs.ItemCount; i++)
         {
-            if (MainTabs.ContainerFromIndex(i) is not { IsVisible: true } tab) continue;
-            top ??= tab.Bounds.Y;
-            if (tab.Bounds.Y > top + 1) return true;
+            if (MainTabs.ContainerFromIndex(i) is not TabItem { IsVisible: true } tab) continue;
+            var index = i;
+            menu.Items.Add(new MenuItem
+            {
+                Header = new TextBlock { Text = tab.Header?.ToString() ?? "" },
+                IsEnabled = tab.IsEnabled,
+                FontWeight = index == MainTabs.SelectedIndex ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
+                Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => MainTabs.SelectedIndex = index)
+            });
         }
-        return false;
+        menu.ShowAt(_allTabsButton);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

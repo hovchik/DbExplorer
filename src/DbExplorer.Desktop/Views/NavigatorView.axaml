@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             x:Class="DbExplorer.Desktop.Views.NavigatorView"
+             x:DataType="vm:NavigatorViewModel">
+  <UserControl.Resources>
+    <!-- Fluent indents each level by 16 px plus the chevron; nine levels deep (down to a column) that ate half the pane -->
+    <x:Double x:Key="TreeViewItemIndent">12</x:Double>
+    <Thickness x:Key="TreeViewItemExpandCollapseChevronMargin">4,0,4,0</Thickness>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <!-- Dense rows like DBeaver's navigator, but with the app's 14 px text -->
+    <Style Selector="TreeView#Tree TreeViewItem">
+      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" x:DataType="vm:NavigatorNode" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="TreeView#Tree TreeViewItem /template/ Border#PART_LayoutRoot">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="TextBlock.detail">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+    </Style>
+    <Style Selector="Button.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel>
+    <!-- Header: filter (Ctrl+Shift+F in the tree focuses it) plus collapse and refresh -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="6,6,4,4">
+      <TextBox x:Name="FilterBox" Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter objects…"
+               ToolTip.Tip="Show only the tables, views, routines… whose name contains this text, in every database opened so far. Esc clears it."
+               KeyDown="OnFilterKeyDown">
+        <TextBox.InnerLeftContent>
+          <controls:StrokeIcon Data="{x:Static controls:Icons.Search}" Width="14" Height="14" Margin="8,0,0,0"
+                               Foreground="{DynamicResource AppHintForegroundBrush}" />
+        </TextBox.InnerLeftContent>
+      </TextBox>
+      <Button Grid.Column="1" Classes="tool" Margin="2,0,0,0" Command="{Binding CollapseAllCommand}" ToolTip.Tip="Collapse all">
+        <controls:StrokeIcon Data="{x:Static controls:Icons.Collapse}" />
+      </Button>
+      <Button Grid.Column="2" Classes="tool" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsConnected}"
+              ToolTip.Tip="Re-read the catalog (the selected database when it is not the connection's own)">
+        <controls:StrokeIcon Data="{x:Static controls:Icons.Refresh}" />
+      </Button>
+    </Grid>
+    <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="10,0,8,4" Text="{Binding FilterSummary}" TextWrapping="Wrap"
+               IsVisible="{Binding FilterSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    <TreeView x:Name="Tree" ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="2,0,4,4"
+              KeyDown="OnTreeKeyDown" ContextRequested="OnTreeContextRequested">
+      <TreeView.ItemTemplate>
+        <TreeDataTemplate DataType="vm:NavigatorNode" ItemsSource="{Binding Children}">
+          <Grid ColumnDefinitions="Auto,Auto,*" Background="Transparent" ToolTip.Tip="{Binding ToolTip}">
+            <controls:TintedIcon Grid.Column="0" Data="{Binding Icon}" ColorKey="{Binding ColorKey}" Width="16" Height="16"
+                                 VerticalAlignment="Center" Margin="0,0,7,0" />
+            <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       FontWeight="{Binding IsEmphasized, Converter={x:Static controls:NavigatorConverters.Weight}}"
+                       Opacity="{Binding IsDimmed, Converter={x:Static controls:NavigatorConverters.Dim}}" />
+            <TextBlock Grid.Column="2" Classes="detail" Text="{Binding Detail}"
+                       IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </Grid>
+        </TreeDataTemplate>
+      </TreeView.ItemTemplate>
+      <TreeView.ContextMenu>
+        <ContextMenu>
+          <!-- Saved connections -->
+          <MenuItem Header="Connect" Command="{Binding ConnectCommand}" IsVisible="{Binding SelectedIsOtherConnection}"
+                    IsEnabled="{Binding !IsConnected}" />
+          <MenuItem Header="Switch to this connection" Command="{Binding SwitchConnectionCommand}"
+                    IsVisible="{Binding SelectedIsOtherConnection}" IsEnabled="{Binding IsConnected}"
+                    ToolTip.Tip="Disconnect the current connection and connect to this one" />
+          <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding SelectedIsActiveConnection}" />
+          <MenuItem Header="Edit connection…" Command="{Binding EditConnectionCommand}" IsVisible="{Binding SelectedIsConnection}"
+                    IsEnabled="{Binding !IsConnected}" ToolTip.Tip="Connections can be edited while disconnected" />
+
+          <!-- Objects -->
+          <MenuItem Header="Open" InputGesture="Enter" FontWeight="SemiBold" Command="{Binding OpenCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
+                    ToolTip.Tip="Columns, indexes, references and definition in the Objects tab" />
+          <MenuItem Header="Select rows" Command="{Binding SelectRowsCommand}" IsVisible="{Binding SelectedIsTableLike}"
+                    ToolTip.Tip="A SELECT of the first 200 rows in a new Query tab (it runs when you press Run)" />
+          <MenuItem Header="Get data…" Command="{Binding GetDataCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
+                    IsEnabled="{Binding SelectedIsTableLike}" />
+          <MenuItem Header="Execute…" Command="{Binding ExecuteCommand}" IsVisible="{Binding SelectedIsRoutine}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}" />
+          <MenuItem Header="Debug…" Command="{Binding DebugCommand}" IsVisible="{Binding SelectedIsRoutine}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}" />
+          <MenuItem Header="Generate SQL" IsVisible="{Binding SelectedIsTable}">
+            <MenuItem Header="SELECT" Command="{Binding SelectRowsCommand}" />
+            <MenuItem Header="INSERT" Command="{Binding ScriptInsertCommand}" />
+            <MenuItem Header="UPDATE" Command="{Binding ScriptUpdateCommand}" />
+            <MenuItem Header="DELETE" Command="{Binding ScriptDeleteCommand}" />
+          </MenuItem>
+          <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" IsVisible="{Binding SelectedIsTable}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}" />
+          <Separator IsVisible="{Binding SelectedHasCatalogActions}" />
+          <MenuItem Header="Modify…" Command="{Binding ModifyCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
+                    ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />
+          <MenuItem Header="Drop table…" Command="{Binding DropTableCommand}" IsVisible="{Binding SelectedIsTable}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}" ToolTip.Tip="Asks first, then drops the table and all its rows." />
+
+          <!-- Anywhere in a connected tree -->
+          <Separator IsVisible="{Binding SelectedHasDatabase}" />
+          <MenuItem Header="New query here" Command="{Binding NewQueryCommand}" IsVisible="{Binding SelectedHasDatabase}"
+                    ToolTip.Tip="A new Query tab on this row's database" />
+          <MenuItem Header="Copy name" Command="{Binding CopyNameCommand}" IsVisible="{Binding SelectedHasName}" />
+          <MenuItem Header="Refresh" Command="{Binding RefreshCommand}" IsVisible="{Binding SelectedHasDatabase}" />
+        </ContextMenu>
+      </TreeView.ContextMenu>
+    </TreeView>
+  </DockPanel>
+</UserControl>

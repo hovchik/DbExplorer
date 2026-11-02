@@ -23,6 +23,23 @@ public sealed record HistoryItem(ScriptHistoryEntry Entry)
     }
 }
 
+/// <summary>A recently closed tab in the Reopen list.</summary>
+public sealed record ClosedTabItem(ClosedQueryTab Closed)
+{
+    public string Title => Closed.Tab.Title;
+    public string When => Closed.ClosedAt.LocalDateTime.ToString("t", CultureInfo.CurrentCulture);
+    public string Preview
+    {
+        get
+        {
+            if (Closed.Tab.FilePath is { } path && string.IsNullOrWhiteSpace(Closed.Tab.Sql)) return path;
+            var oneLine = string.Join(" ", Closed.Tab.Sql.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+            return oneLine.Length > 140 ? oneLine[..140] + "…" : oneLine;
+        }
+    }
+    public string ToolTip => Closed.Tab.FilePath ?? Title;
+}
+
 /// <summary>
 /// The Query tab as a small SQL IDE: several query tabs (each with its own editor, undo history and results),
 /// .sql files opened and saved, tabs restored on the next start, and the run history.
@@ -73,6 +90,16 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     [ObservableProperty] private QueryViewModel? _selectedDocument;
     [ObservableProperty] private IReadOnlyList<HistoryItem> _history = [];
     [ObservableProperty] private string _historyFilter = "";
+
+    /// <summary>The recently closed tabs, newest first (Ctrl+Shift+T reopens the first).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRecentlyClosed))]
+    [NotifyCanExecuteChangedFor(nameof(ReopenClosedTabCommand))]
+    private IReadOnlyList<ClosedTabItem> _recentlyClosed = [];
+
+    public bool HasRecentlyClosed => RecentlyClosed.Count > 0;
+
+    private ClosedTabs _closed = new();
     private IReadOnlyList<HistoryItem> _allHistory = [];
 
     public void Attach(DatabaseSession? session)
@@ -230,6 +257,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             return false;
 
         var index = Documents.IndexOf(doc);
+        if (_closed.Add(StateOf(doc), index, DateTimeOffset.Now)) await ClosedTabsChangedAsync();
         // Its last text stays in the local history, so a tab closed by mistake can be brought back.
         await RecordAsync(doc, LocalHistoryReason.Closed);
         await doc.EndTransactionAsync(commit: false, reason: "tab closed");
@@ -239,6 +267,83 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         else if (SelectedDocument == doc || SelectedDocument is null) SelectedDocument = Documents[Math.Clamp(index, 0, Documents.Count - 1)];
         await SaveTabsAsync();
         return true;
+    }
+
+    /// <summary>Brings back the most recently closed tab (Ctrl+Shift+T).</summary>
+    [RelayCommand(CanExecute = nameof(HasRecentlyClosed))]
+    private Task ReopenClosedTabAsync() => ReopenAsync(_closed.TakeLatest());
+
+    /// <summary>Brings back one tab picked from the Recently closed list.</summary>
+    [RelayCommand]
+    private Task ReopenTabAsync(ClosedTabItem? item) => item is null ? Task.CompletedTask : ReopenAsync(_closed.Take(item.Closed));
+
+    private async Task ReopenAsync(ClosedQueryTab? closed)
+    {
+        if (closed is null) return;
+        var t = closed.Tab;
+        await ClosedTabsChangedAsync();
+
+        // A file that is open again in another tab is just shown.
+        if (t.FilePath is not null && Documents.FirstOrDefault(d => ClosedTabs.SamePath(d.FilePath, t.FilePath)) is { } open)
+        {
+            SelectedDocument = open;
+            return;
+        }
+
+        // A tab with no unsaved changes shows its file as it is now; otherwise the text it had when closed.
+        var sql = t.Sql;
+        var dirty = t.IsDirty;
+        if (t is { FilePath: { } path, IsDirty: false })
+        {
+            try
+            {
+                if (File.Exists(path)) sql = await File.ReadAllTextAsync(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Keep the text it had when closed.
+            }
+        }
+
+        // The empty tab left behind by closing the last one gives its place up.
+        var placeholder = Documents.Count == 1 && Documents[0] is { FilePath: null } only && string.IsNullOrEmpty(only.Sql) ? Documents[0] : null;
+        var id = t.Id is { } known && Documents.All(d => d.Id != known) ? known : (Guid?)null;
+        var doc = AddTab(t.Title, sql, t.FilePath, dirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title),
+            databases: TabDatabaseMemory.From(t), id: id);
+        if (placeholder is not null)
+        {
+            placeholder.Attach(null);
+            Documents.Remove(placeholder);
+        }
+        var target = ClosedTabs.InsertIndex(closed.Index, Documents.Count - 1);
+        var from = Documents.IndexOf(doc);
+        if (from != target)
+        {
+            Documents.Move(from, target);
+            SelectedDocument = null;
+        }
+        SelectedDocument = doc;
+        await SaveTabsAsync();
+    }
+
+    private async Task ClosedTabsChangedAsync()
+    {
+        RecentlyClosed = _closed.Items.Select(c => new ClosedTabItem(c)).ToList();
+        try
+        {
+            await _scripts.SaveClosedTabsAsync(_closed.Items);
+        }
+        catch
+        {
+            // Best-effort, like the tab list.
+        }
+    }
+
+    [RelayCommand]
+    private Task ClearRecentlyClosedAsync()
+    {
+        _closed.Clear();
+        return ClosedTabsChangedAsync();
     }
 
     /// <summary>Keeps the tab's current text in its local history (best-effort, never an error dialog).</summary>
@@ -336,6 +441,15 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         try
         {
+            _closed = new ClosedTabs(await _scripts.LoadClosedTabsAsync());
+            RecentlyClosed = _closed.Items.Select(c => new ClosedTabItem(c)).ToList();
+        }
+        catch
+        {
+            // A damaged list only loses the reopen entries.
+        }
+        try
+        {
             var tabs = await _scripts.LoadTabsAsync();
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
@@ -362,17 +476,19 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             await doc.EndTransactionAsync(commit: false, reason: "application closed");
     }
 
+    private static QueryTabState StateOf(QueryViewModel d)
+    {
+        var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id };
+        d.Databases.SaveTo(state, d.CurrentDatabase);
+        return state;
+    }
+
     /// <returns>False when the tab list could not be written.</returns>
     public async Task<bool> SaveTabsAsync()
     {
         try
         {
-            await _scripts.SaveTabsAsync(Documents.Select(d =>
-            {
-                var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id };
-                d.Databases.SaveTo(state, d.CurrentDatabase);
-                return state;
-            }));
+            await _scripts.SaveTabsAsync(Documents.Select(StateOf));
             return true;
         }
         catch

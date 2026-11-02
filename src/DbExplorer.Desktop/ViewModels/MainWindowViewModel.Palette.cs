@@ -81,6 +81,15 @@ public partial class MainWindowViewModel
         {
             Add("Query tabs", "New query tab", () => { SelectedTab = AppTab.Query; Query.NewTab(); }, "Ctrl+N", keywords: "new script sql editor");
             Add("Query tabs", "Open SQL file…", () => RunInWorkspace(QueryFileAction.Open), "Ctrl+O", keywords: "load script");
+            // Closed Query tabs: the newest first (Ctrl+Shift+T), then each one by name.
+            foreach (var (closed, i) in Query.RecentlyClosed.Select((c, i) => (c, i)))
+            {
+                Add("Query tabs", i == 0 ? $"Reopen closed tab: {closed.Title}" : $"Reopen {closed.Title}", () =>
+                {
+                    SelectedTab = AppTab.Query;
+                    Query.ReopenTabCommand.Execute(closed);
+                }, i == 0 ? "Ctrl+Shift+T" : null, $"closed at {closed.When}", "restore undo close", id: i == 0 ? "reopen-closed-tab" : null);
+            }
             if (Query.SelectedDocument is { } tab)
             {
                 Add("Query tabs", "Save", () => RunInWorkspace(QueryFileAction.Save), "Ctrl+S", tab.Title, "write file");

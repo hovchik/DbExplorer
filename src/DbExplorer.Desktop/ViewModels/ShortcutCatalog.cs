@@ -61,6 +61,7 @@ public static class ShortcutCatalog
 
         new(QueryTabs, "Ctrl+N", "New query tab"),
         new(QueryTabs, "Ctrl+W", "Close the query tab"),
+        new(QueryTabs, "Ctrl+Shift+T", "Reopen the last closed tab"),
         new(QueryTabs, "Ctrl+O", "Open a .sql file"),
         new(QueryTabs, "Ctrl+S", "Save the tab to its file"),
         new(QueryTabs, "Ctrl+Shift+S", "Save the tab to a new file"),

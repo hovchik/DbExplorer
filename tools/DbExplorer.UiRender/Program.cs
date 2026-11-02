@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Logging;
 using Avalonia.Styling;
@@ -143,6 +144,7 @@ namespace DbExplorer.UiRender
             await Step("dialogs", RenderDialogsAsync);
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
+            await Step("reopen", RenderReopenClosedTabsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -655,6 +657,58 @@ namespace DbExplorer.UiRender
         }
 
         /// <summary>A tab with a few kept versions (runs, a save, a closed tab), then its local history window.</summary>
+        /// <summary>Recently closed Query tabs in the History flyout, and a tab brought back to its place.</summary>
+        private async Task RenderReopenClosedTabsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            foreach (var d in query.Documents.Skip(1).ToList()) query.Documents.Remove(d);
+            var dir = Directory.CreateTempSubdirectory("dbx-reopen-").FullName;
+            (string Name, string Sql)[] files =
+            [
+                ("monthly-revenue.sql", "select date_trunc('month', ordered_at) as month, sum(total)\nfrom orders\ngroup by 1\norder by 1;"),
+                ("top-customers.sql", "select c.name, sum(o.total) as total\nfrom orders o join customers c on c.id = o.customer_id\ngroup by c.name order by total desc limit 10;"),
+                ("stale-carts.sql", "delete from carts where updated_at < now() - interval '30 days';"),
+            ];
+            foreach (var (name, sql) in files)
+            {
+                var path = Path.Combine(dir, name);
+                await File.WriteAllTextAsync(path, sql);
+                await query.OpenFileAsync(path, name);
+            }
+            await Settle(4);
+            await Shot(_window, "reopen-before");
+            var view = _window.GetVisualDescendants().OfType<QueryWorkspaceView>().First();
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "top-customers.sql"));
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "stale-carts.sql"));
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "monthly-revenue.sql"));
+            await Settle(4);
+
+            var button = view.FindControl<Button>("HistoryButton")!;
+            button.Flyout!.ShowAt(button);
+            await Settle(8);
+            await Shot(_window, "reopen-flyout");
+            button.Flyout.Hide();
+            await Settle();
+
+            var tab = view.GetVisualDescendants().OfType<TabItem>().First();
+            if (tab.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(p => p.ContextMenu is not null) is { } header)
+            {
+                header.ContextMenu!.Open(header);
+                await Settle(6);
+                if (TopLevel.GetTopLevel(header.ContextMenu) is { } menuRoot && menuRoot != _window) await Shot(menuRoot, "reopen-menu");
+                else await Shot(_window, "reopen-menu");
+                header.ContextMenu.Close();
+            }
+
+            await query.ReopenClosedTabCommand.ExecuteAsync(null);
+            await query.ReopenClosedTabCommand.ExecuteAsync(null);
+            await Settle(4);
+            await Shot(_window, "reopen-after");
+            Console.WriteLine("  tabs: " + string.Join(", ", query.Documents.Select(d => d.Title)) + " · still closed: " +
+                              string.Join(", ", query.RecentlyClosed.Select(c => c.Title)));
+        }
+
         private async Task RenderLocalHistoryAsync()
         {
             _vm.SelectedTab = AppTab.Query;

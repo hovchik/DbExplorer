@@ -53,6 +53,7 @@ public sealed class ScriptStore(AppPaths paths)
     private string ScriptsFile => Path.Combine(paths.Root, "scripts.json");
     private string HistoryFile => Path.Combine(paths.Root, "script-history.json");
     private string TabsFile => Path.Combine(paths.Root, "query-tabs.json");
+    private string ClosedTabsFile => Path.Combine(paths.Root, "closed-query-tabs.json");
 
     public Task<List<QueryTabState>> LoadTabsAsync(CancellationToken ct = default) =>
         Locked(() => ReadAsync<QueryTabState>(TabsFile, ct), ct);
@@ -62,6 +63,18 @@ public sealed class ScriptStore(AppPaths paths)
         {
             Directory.CreateDirectory(paths.Root);
             await AtomicFile.WriteJsonAsync(TabsFile, tabs.ToList(), Json, ct);
+            return true;
+        }, ct);
+
+    /// <summary>The recently closed tabs (Reopen closed tab), newest first.</summary>
+    public Task<List<ClosedQueryTab>> LoadClosedTabsAsync(CancellationToken ct = default) =>
+        Locked(() => ReadAsync<ClosedQueryTab>(ClosedTabsFile, ct), ct);
+
+    public Task SaveClosedTabsAsync(IEnumerable<ClosedQueryTab> tabs, CancellationToken ct = default) =>
+        Locked(async () =>
+        {
+            Directory.CreateDirectory(paths.Root);
+            await AtomicFile.WriteJsonAsync(ClosedTabsFile, tabs.ToList(), Json, ct);
             return true;
         }, ct);
 

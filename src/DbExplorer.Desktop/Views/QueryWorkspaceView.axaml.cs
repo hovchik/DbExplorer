@@ -42,6 +42,7 @@ public partial class QueryWorkspaceView : UserControl
             case Key.PageUp: e.Handled = true; vm.SelectNeighbour(-1); break;
             case Key.PageDown: e.Handled = true; vm.SelectNeighbour(1); break;
             case Key.N: e.Handled = true; vm.NewTab(); break;
+            case Key.T when shift: e.Handled = true; await vm.ReopenClosedTabCommand.ExecuteAsync(null); break;
             case Key.W: e.Handled = true; await vm.CloseTabCommand.ExecuteAsync(null); break;
             case Key.O: e.Handled = true; await OpenAsync(); break;
             case Key.S: e.Handled = true; await SaveAsync(saveAs: shift); break;
@@ -275,6 +276,14 @@ public partial class QueryWorkspaceView : UserControl
     }
 
     private void OnHistoryOpened(object? sender, EventArgs e) => Vm?.LoadHistoryCommand.Execute(null);
+
+    private async void OnClosedTabPicked(object? sender, SelectionChangedEventArgs e)
+    {
+        if (Vm is not { } vm || ClosedList.SelectedItem is not ClosedTabItem item) return;
+        ClosedList.SelectedItem = null;
+        HistoryButton.Flyout?.Hide();
+        await vm.ReopenTabCommand.ExecuteAsync(item);
+    }
 
     private void OnHistoryDoubleTapped(object? sender, TappedEventArgs e)
     {

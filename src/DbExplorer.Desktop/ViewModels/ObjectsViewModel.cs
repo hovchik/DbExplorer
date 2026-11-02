@@ -360,6 +360,23 @@ public partial class ObjectsViewModel(
 
     public bool CanGetData => SelectedObject?.IsTableLike == true;
 
+    /// <summary>Import a CSV, TSV or Excel file into the selected table, or into a new table when no table is selected.</summary>
+    [RelayCommand]
+    private void ImportData() => ShowImport(SelectedObject is { Type: DbObjectType.Table } table ? table : null);
+
+    /// <summary>Import into a new table, whatever is selected (the window can still switch to an existing one).</summary>
+    [RelayCommand]
+    private void ImportNewTable() => ShowImport(null);
+
+    private void ShowImport(DbObject? table)
+    {
+        if (_session is not { } session) return;
+        dialogs.ShowImportData(new ImportDataViewModel(session, sessions, dialogs, table)
+        {
+            OpenSql = (sql, database, title) => OpenSqlRequested?.Invoke(sql, database, title)
+        });
+    }
+
     [RelayCommand(CanExecute = nameof(CanGetData))]
     private async Task GetDataAsync()
     {

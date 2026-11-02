@@ -133,6 +133,10 @@ public partial class MainWindowViewModel
         if (IsConnected)
         {
             Command("Navigator", "Collapse the navigator tree", Navigator.CollapseAllCommand, keywords: "tree fold");
+            if (Objects.SelectedObject is { Type: DbObjectType.Table } table)
+                Command("Data", $"Import data into {table.FullName}…", Objects.ImportDataCommand, keywords: "csv excel xlsx tsv load file rows");
+            Command("Data", "Import a CSV or Excel file…", Objects.ImportNewTableCommand, subtitle: "into a new or an existing table",
+                keywords: "csv excel xlsx tsv load file rows new table");
             Command("Comparer", "Compare schemas", Comparer.CompareSchemaCommand, keywords: "diff");
             Command("Comparer", "Compare data", Comparer.CompareDataCommand, keywords: "diff rows");
             Command("Locks", "Refresh locks", Locks.RefreshCommand, keywords: "blocking");

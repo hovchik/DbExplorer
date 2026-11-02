@@ -131,6 +131,8 @@
           <Separator IsVisible="{Binding SelectedHasCatalogActions}" />
           <MenuItem Header="Modify…" Command="{Binding ModifyCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
                     ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />
+          <MenuItem Header="Import data…" Command="{Binding ImportDataCommand}" IsVisible="{Binding SelectedIsTable}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}" ToolTip.Tip="Add rows from a CSV, TSV or Excel file" />
           <MenuItem Header="Drop table…" Command="{Binding DropTableCommand}" IsVisible="{Binding SelectedIsTable}"
                     IsEnabled="{Binding SelectedHasCatalogActions}" ToolTip.Tip="Asks first, then drops the table and all its rows." />
 

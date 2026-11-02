@@ -90,6 +90,12 @@ public interface IDialogService
 
     /// <summary>Lets the user pick a text file and reads it; null when cancelled.</summary>
     Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName);
+
+    /// <summary>Lets the user pick a file on this computer; its full path, or null when cancelled (or not a local file).</summary>
+    Task<string?> PickFilePathAsync(string title, IReadOnlyList<(string Name, string[] Patterns)> types);
+
+    /// <summary>The Import data window (CSV, TSV, Excel into a table); does not wait for it to close.</summary>
+    void ShowImportData(ImportDataViewModel viewModel);
 }
 
 public sealed class DialogService(ProviderRegistry registry, SshTunnelService tunnels) : IDialogService
@@ -269,6 +275,24 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         await using var stream = await files[0].OpenReadAsync();
         using var reader = new StreamReader(stream);
         return (files[0].Name, await reader.ReadToEndAsync());
+    }
+
+    public async Task<string?> PickFilePathAsync(string title, IReadOnlyList<(string Name, string[] Patterns)> types)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            FileTypeFilter = types.Select(t => new FilePickerFileType(t.Name) { Patterns = t.Patterns }).ToList()
+        });
+        return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public void ShowImportData(ImportDataViewModel viewModel)
+    {
+        var window = new ImportDataWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 
     public async Task CopyTextAsync(string text)

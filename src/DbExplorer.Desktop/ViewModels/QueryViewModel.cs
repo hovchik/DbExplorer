@@ -145,7 +145,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             _session.SnapshotChanged += OnSnapshotChanged;
             _session.DatabasesChanged += OnDatabasesChanged;
         }
-        ResultSets = [];
+        ResultSets = []; // pinned results stay: they are snapshots, and say which connection they came from
+        _resultsQuery = null;
         Messages.Clear();
         Status = "";
         AutoRefresh = false;
@@ -545,6 +546,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         IsRunning = true;
         StartElapsedClock();
         Messages.Clear();
+        _resultsQuery = sql;
         var outcome = RunOutcome.Failed;
         try
         {

@@ -28,6 +28,7 @@ public static class Icons
     public const string Check = "M5 12.5l4.5 4.5L19 7.5";
     public const string Lock = "M7 11V8a5 5 0 0 1 10 0v3 M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z";
     public const string ChevronDown = "M7 10l5 5 5-5";
+    public const string Pin = "M9 3h6 M10 3v6l-3.5 4.5h11L14 9V3 M12 13.5V21";
 
     // Database navigator
     public const string Server = "M4 4h16v6H4z M4 14h16v6H4z M8 7h.01 M8 17h.01";

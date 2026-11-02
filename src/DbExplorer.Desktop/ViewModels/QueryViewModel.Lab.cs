@@ -167,6 +167,7 @@ public partial class QueryViewModel
         IsRunning = true;
         Messages.Clear();
         ResultSets = [];
+        _resultsQuery = null;
         Status = status;
         try
         {

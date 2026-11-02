@@ -139,6 +139,7 @@ namespace DbExplorer.UiRender
             await Step("small", RenderSmallAsync);
             await Step("toolbar", RenderToolbarStatesAsync);
             await Step("querytabs", RenderManyQueryTabsAsync);
+            await Step("pins", RenderPinnedResultsAsync);
             await Step("dialogs", RenderDialogsAsync);
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
@@ -481,6 +482,41 @@ namespace DbExplorer.UiRender
             _window.Width = 1400;
             _window.Height = 900;
             await Settle(6);
+        }
+
+        /// <summary>Pinned results: a run's result pinned, then the same query run again after a change, so both are on screen.</summary>
+        private async Task RenderPinnedResultsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("SELECT status, count(*) AS orders FROM orders GROUP BY status ORDER BY status;\n" +
+                                   "SELECT id, status, note FROM orders WHERE status = 'new' ORDER BY id LIMIT 10;", "Order status");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count == 2, "status counts");
+            await Shot(_window, "pins-before");
+
+            doc.PinResultCommand.Execute(doc.ResultSets[0]);
+            await Settle(4);
+            await Shot(_window, "pins-pinned");
+
+            doc.SetText("UPDATE orders SET status = 'shipped' WHERE id IN (SELECT id FROM orders WHERE status = 'paid' ORDER BY id LIMIT 7);", markClean: true);
+            doc.AutoCommit = false; // rolled back below, so the sample database stays as seeded
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning, "update");
+            doc.SetText("SELECT status, count(*) AS orders FROM orders GROUP BY status ORDER BY status;", markClean: true);
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count == 1, "status counts again");
+            await Settle(4);
+            await Shot(_window, "pins-compare");
+            doc.SelectedResult = doc.Pins.Items[0];
+            await Settle(4);
+            await Shot(_window, "pins-open");
+
+            await doc.RollbackCommand.ExecuteAsync(null);
+            doc.AutoCommit = true;
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
         }
 
         // ------------------------------------------------------------------ dialogs

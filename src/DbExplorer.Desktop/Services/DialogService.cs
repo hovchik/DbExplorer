@@ -18,7 +18,7 @@ namespace DbExplorer.Desktop.Services;
 
 public interface IDialogService
 {
-    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null);
+    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null, bool isNew = false);
 
     Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,
@@ -84,11 +84,11 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
 {
     public Window? Owner { get; set; }
 
-    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null)
+    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null, bool isNew = false)
     {
         if (Owner is null) return null;
 
-        var vm = new ConnectionDialogViewModel(registry, draft, folders, tunnels);
+        var vm = new ConnectionDialogViewModel(registry, draft, folders, tunnels, isNew);
         var dialog = new ConnectionDialog { DataContext = vm, Title = title };
         // Asked for a password on connect: open where the missing one goes.
         dialog.ShowSshTab = draft.Ssh.NeedsPassword && !NeedsDatabasePassword(draft);

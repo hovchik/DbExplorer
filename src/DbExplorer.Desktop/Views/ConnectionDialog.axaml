@@ -147,15 +147,18 @@
       <TextBlock Classes="section" Text="Options" />
       <WrapPanel>
         <CheckBox Content="Encrypt (TLS)" IsChecked="{Binding Encrypt}" Margin="0,0,14,4"
-                  ToolTip.Tip="Require an encrypted SSL/TLS connection" />
+                  ToolTip.Tip="Require an encrypted SSL/TLS connection. On by default for servers on another computer." />
         <CheckBox Content="Trust certificate" IsChecked="{Binding TrustServerCertificate}" Margin="0,0,14,4"
-                  ToolTip.Tip="Accept the server's certificate without validating its chain (self-signed certificates)" />
+                  ToolTip.Tip="Accept any server certificate without checking it (self-signed certificates). Encrypts, but does not stop someone in between from reading the traffic." />
         <CheckBox Content="Read-only intent" IsChecked="{Binding ReadOnlyIntent}" IsEnabled="{Binding CanUseReadOnlyIntent}"
                   Margin="0,0,14,4"
                   ToolTip.Tip="ApplicationIntent=ReadOnly: Availability Group listeners route the app to a readable secondary" />
         <CheckBox Content="Read-only (block writes)" IsChecked="{Binding ReadOnly}" Margin="0,0,14,4"
                   ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only." />
       </WrapPanel>
+      <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding TlsSummary}" />
+      <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12" IsVisible="{Binding HasTlsWarning}"
+                 Foreground="{DynamicResource AppPlanWarningBrush}" Text="{Binding TlsWarning, StringFormat='⚠ {0}'}" />
     </StackPanel>
     </TabItem>
 

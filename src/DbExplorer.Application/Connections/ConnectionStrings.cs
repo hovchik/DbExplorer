@@ -706,7 +706,7 @@ public static class ConnectionStrings
             if (string.IsNullOrEmpty(value)) return;
             // JDBC properties put a value holding ; or } inside braces, with } doubled.
             sb.Append(';').Append(key).Append('=')
-                .Append(value.IndexOfAny([';', '{', '}', '=']) >= 0 || value != value.Trim() ? "{" + value.Replace("}", "}}") + "}" : value);
+                .Append(value.IndexOfAny([';', '{', '}', '=']) >= 0 || value[0] is '"' or '\'' || value != value.Trim() ? "{" + value.Replace("}", "}}") + "}" : value);
         }
         Add("databaseName", p.Database);
         Add("integratedSecurity", p.IntegratedSecurity ? "true" : null);

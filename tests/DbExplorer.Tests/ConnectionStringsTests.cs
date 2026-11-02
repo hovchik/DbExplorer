@@ -304,6 +304,15 @@ public class ConnectionStringsTests
         Assert.Equal("Orders", p.Database);
     }
 
+    [Theory]
+    [InlineData("'secret")]
+    [InlineData("\"secret")]
+    public void Jdbc_password_starting_with_a_quote_round_trips(string password)
+    {
+        var profile = new ConnectionProfile { ProviderKey = ConnectionStrings.SqlServer, Host = "h", UserName = "u", Password = password };
+        Assert.Equal(password, Parse(ConnectionStrings.Format(profile, ConnectionStringStyle.Url, includePassword: true)).Password);
+    }
+
     [Fact]
     public void Ambiguous_string_keeps_the_selected_engine()
     {

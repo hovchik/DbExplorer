@@ -20,6 +20,9 @@
     <Style Selector="StackPanel.form > TextBlock.section:nth-child(1)">
       <Setter Property="Margin" Value="0,0,0,6" />
     </Style>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource AppPlanWarningBrush}" />
+    </Style>
   </Window.Styles>
 
   <DockPanel>
@@ -31,7 +34,24 @@
     <Border DockPanel.Dock="Bottom" Padding="20,12" BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource AppHintForegroundBrush}" Background="{DynamicResource AppCodeBackgroundBrush}">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <Button Grid.Column="0" Content="Test connection" Command="{Binding TestCommand}" />
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+          <Button Content="Test connection" Command="{Binding TestCommand}" />
+          <Button Content="Copy ▾" ToolTip.Tip="Copy these settings as a connection string or URL">
+            <Button.Flyout>
+              <MenuFlyout Placement="TopEdgeAlignedLeft">
+                <MenuItem Header="Copy connection string" Command="{Binding CopyConnectionStringCommand}" CommandParameter="keyvalue"
+                          ToolTip.Tip="Key=value pairs for the engine's .NET driver, without the password" />
+                <MenuItem Header="Copy URL" Command="{Binding CopyConnectionStringCommand}" CommandParameter="url"
+                          ToolTip.Tip="postgresql:// or mysql:// URL, or a JDBC URL for SQL Server, without the password" />
+                <Separator />
+                <MenuItem Header="Copy connection string with password" Command="{Binding CopyConnectionStringCommand}"
+                          CommandParameter="keyvalue+password" />
+                <MenuItem Header="Copy URL with password" Command="{Binding CopyConnectionStringCommand}"
+                          CommandParameter="url+password" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
         <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="4">
           <TextBlock Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" MaxLines="4"
                      TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Message}" />
@@ -47,6 +67,29 @@
     <TabControl x:Name="Tabs" Margin="12,6,12,0" Padding="0">
     <TabItem Header="General">
     <StackPanel Classes="form" Margin="8,10,8,18">
+      <!-- Connection string: paste one to fill in the fields below -->
+      <Border IsVisible="{Binding HasClipboardOffer}" Margin="0,0,0,8" Padding="10,6" CornerRadius="4"
+              Background="{DynamicResource AppCodeBackgroundBrush}" BorderThickness="1"
+              BorderBrush="{DynamicResource SystemAccentColor}">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12"
+                     Text="{Binding ClipboardOffer}" />
+          <Button Grid.Column="1" Content="Use it" Margin="8,0,0,0" Padding="10,2" Classes="accent"
+                  Command="{Binding UseClipboardCommand}" ToolTip.Tip="Fill in the fields from the clipboard" />
+          <Button Grid.Column="2" Content="✕" Margin="4,0,0,0" Padding="6,2" Background="Transparent" BorderThickness="0"
+                  Command="{Binding DismissClipboardCommand}" ToolTip.Tip="Ignore" />
+        </Grid>
+      </Border>
+      <TextBlock Classes="field" Text="Connection string or URL" />
+      <Grid ColumnDefinitions="*,8,Auto">
+        <TextBox x:Name="ConnectionStringBox" Grid.Column="0" Text="{Binding ConnectionStringText}" FontSize="12"
+                 Watermark="Paste a URL (postgresql://, mysql://, jdbc:…) or Server=…;Database=…"
+                 ToolTip.Tip="Fills in the engine, server, port, database, user, password and TLS settings below. Nothing connects until you press Test or Save." />
+        <Button Grid.Column="2" Content="Fill in" Command="{Binding FillFromConnectionStringCommand}" />
+      </Grid>
+      <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="12"
+                 IsVisible="{Binding HasConnectionStringMessage}" Text="{Binding ConnectionStringMessage}"
+                 Classes.error="{Binding ConnectionStringFailed}" />
       <!-- General -->
       <TextBlock Classes="section" Text="General" />
       <Grid ColumnDefinitions="*,12,150">

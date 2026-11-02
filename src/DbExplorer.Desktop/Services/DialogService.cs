@@ -43,6 +43,9 @@ public interface IDialogService
     /// <param name="details">Shown below the message in a scrollable monospace box, e.g. the exact script that will run.</param>
     Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null);
 
+    /// <summary>The tables (with any filter) of the open Get data windows whose rows have edits that were not committed.</summary>
+    IReadOnlyList<string> DataWindowsWithUncommittedEdits();
+
     void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
 
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
@@ -271,6 +274,11 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         else window.Show();
     }
 
+    private readonly List<GetDataViewModel> _dataWindows = [];
+
+    public IReadOnlyList<string> DataWindowsWithUncommittedEdits() =>
+        _dataWindows.Where(w => w.HasUncommittedEdits).Select(w => w.Title.StartsWith("Data: ", StringComparison.Ordinal) ? w.Title[6..] : w.Title).ToList();
+
     public void ShowCommandPalette(IReadOnlyList<PaletteItem> items)
     {
         if (Owner is null) return;
@@ -285,6 +293,8 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         var vm = new GetDataViewModel();
         var window = new GetDataWindow { DataContext = vm };
         vm.Initialize(queryService, session, table, filter, filterDescription, this);
+        _dataWindows.Add(vm);
+        window.Closed += (_, _) => _dataWindows.Remove(vm);
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();

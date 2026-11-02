@@ -195,6 +195,10 @@
     </Style>
 
     <!-- One-row toolbars: inputs, actions and the status text share a line and wrap only when narrow -->
+    <!-- Fluent caps flyouts at 456 px; a flyout with wider content (History ▾) opts out with this class -->
+    <Style Selector="FlyoutPresenter.wide">
+      <Setter Property="MaxWidth" Value="900" />
+    </Style>
     <Style Selector="WrapPanel.toolbar">
       <Setter Property="Margin" Value="0,0,0,2" />
     </Style>

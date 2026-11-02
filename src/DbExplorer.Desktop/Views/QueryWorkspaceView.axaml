@@ -156,6 +156,8 @@
 				<MenuItem Header="Close others" Command="{Binding $parent[TabControl].DataContext.CloseOtherTabsCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close tabs to the right" Command="{Binding $parent[TabControl].DataContext.CloseTabsToRightCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close all" Command="{Binding $parent[TabControl].DataContext.CloseAllTabsCommand}" />
+				<Separator />
+				<MenuItem Header="Reopen closed tab" InputGesture="Ctrl+Shift+T" Command="{Binding $parent[TabControl].DataContext.ReopenClosedTabCommand}" />
 			  </ContextMenu>
 			</StackPanel.ContextMenu>
 			<TextBlock Classes="title" Text="{Binding Header}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
@@ -207,10 +209,32 @@
 	  <Button Classes="bar" Content="Open…" Click="OnOpen" ToolTip.Tip="Open a .sql file (Ctrl+O)" />
 	  <Button Classes="bar" Content="Save" Click="OnSave" ToolTip.Tip="Save the tab to its file (Ctrl+S)" />
 	  <Button Classes="bar" Content="Save as…" Click="OnSaveAs" ToolTip.Tip="Save the tab to a new .sql file (Ctrl+Shift+S)" />
-	  <Button Classes="bar" Content="History ▾" ToolTip.Tip="Scripts you ran before; double-click one to open it in a new tab. Local history… keeps whole versions of each tab.">
+	  <Button x:Name="HistoryButton" Classes="bar" Content="History ▾" ToolTip.Tip="Recently closed tabs and the scripts you ran before; double-click a script to open it in a new tab. Local history… keeps whole versions of each tab.">
 		<Button.Flyout>
-		  <Flyout Placement="BottomEdgeAlignedRight" Opened="OnHistoryOpened">
+		  <Flyout Placement="BottomEdgeAlignedRight" Opened="OnHistoryOpened" FlyoutPresenterClasses="wide">
 			<StackPanel Width="620" Spacing="6">
+			  <!-- Recently closed tabs: a click brings one back (Ctrl+Shift+T reopens the newest) -->
+			  <StackPanel Spacing="4" IsVisible="{Binding HasRecentlyClosed}">
+				<Grid ColumnDefinitions="*,Auto">
+				  <TextBlock Classes="hint" Text="Recently closed tabs · click to reopen (Ctrl+Shift+T reopens the last one)" VerticalAlignment="Center" />
+				  <Button Grid.Column="1" Classes="bar" Content="Clear" Command="{Binding ClearRecentlyClosedCommand}"
+						  ToolTip.Tip="Forget the closed tabs (their versions stay in Local history)" />
+				</Grid>
+				<ListBox x:Name="ClosedList" ItemsSource="{Binding RecentlyClosed}" MaxHeight="150" SelectionChanged="OnClosedTabPicked">
+				  <ListBox.ItemTemplate>
+					<DataTemplate x:DataType="vm:ClosedTabItem">
+					  <Grid ColumnDefinitions="18,160,60,*" ToolTip.Tip="{Binding ToolTip}">
+						<TextBlock Text="↺" />
+						<TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+						<TextBlock Grid.Column="2" Classes="hint" Text="{Binding When}" />
+						<TextBlock Grid.Column="3" Text="{Binding Preview}" TextTrimming="CharacterEllipsis"
+								   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12" />
+					  </Grid>
+					</DataTemplate>
+				  </ListBox.ItemTemplate>
+				</ListBox>
+				<TextBlock Classes="hint" Text="Scripts you ran" Margin="0,6,0,0" />
+			  </StackPanel>
 			  <Grid ColumnDefinitions="*,Auto">
 				<TextBox Text="{Binding HistoryFilter}" Watermark="Filter history…" />
 				<Button Grid.Column="1" Classes="bar" Content="Local history…" Margin="6,0,0,0" Command="{Binding ShowLocalHistoryCommand}"

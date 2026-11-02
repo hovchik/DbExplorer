@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Logging;
 using Avalonia.Styling;
@@ -145,6 +146,8 @@ namespace DbExplorer.UiRender
             await Step("dialogs", RenderDialogsAsync);
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
+            await Step("reopen", RenderReopenClosedTabsAsync);
+            await Step("offline", RenderOfflineAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -656,7 +659,83 @@ namespace DbExplorer.UiRender
             await Shot(_window, $"activity-{suffix}");
         }
 
+        /// <summary>Disconnected while on Objects: the window moves to the Query tab, which still edits (with names from
+        /// the saved catalog) but cannot run; reconnecting goes back to Objects.</summary>
+        private async Task RenderOfflineAsync()
+        {
+            _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+            await _vm.DisconnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
+            await WaitFor(() => _vm.Query.SelectedDocument?.CompletionInfo.StartsWith("Offline", StringComparison.Ordinal) == true, "offline catalog");
+            Console.WriteLine($"Offline: tab {_vm.SelectedTab}, hint '{_vm.Query.SelectedDocument?.CompletionInfo}'");
+            _vm.Query.OpenInNewTab("-- written offline\nSELECT c.name, o.total\nFROM customers c\nJOIN orders o ON o.customer_id = c.id;", "Offline draft");
+            await Settle(4);
+            await Shot(_window, "query-offline");
+            _window.Width = 1024; _window.Height = 700;
+            await Settle(4);
+            await Shot(_window, "small-query-offline");
+            _window.Width = 1400; _window.Height = 900;
+
+            // The draft was added while offline, so connecting stays on the Query tab to run it.
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "reconnect", 60_000);
+            Console.WriteLine($"Reconnected: tab {_vm.SelectedTab}");
+        }
+
         /// <summary>A tab with a few kept versions (runs, a save, a closed tab), then its local history window.</summary>
+        /// <summary>Recently closed Query tabs in the History flyout, and a tab brought back to its place.</summary>
+        private async Task RenderReopenClosedTabsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            foreach (var d in query.Documents.Skip(1).ToList()) query.Documents.Remove(d);
+            var dir = Directory.CreateTempSubdirectory("dbx-reopen-").FullName;
+            (string Name, string Sql)[] files =
+            [
+                ("monthly-revenue.sql", "select date_trunc('month', ordered_at) as month, sum(total)\nfrom orders\ngroup by 1\norder by 1;"),
+                ("top-customers.sql", "select c.name, sum(o.total) as total\nfrom orders o join customers c on c.id = o.customer_id\ngroup by c.name order by total desc limit 10;"),
+                ("stale-carts.sql", "delete from carts where updated_at < now() - interval '30 days';"),
+            ];
+            foreach (var (name, sql) in files)
+            {
+                var path = Path.Combine(dir, name);
+                await File.WriteAllTextAsync(path, sql);
+                await query.OpenFileAsync(path, name);
+            }
+            await Settle(4);
+            await Shot(_window, "reopen-before");
+            var view = _window.GetVisualDescendants().OfType<QueryWorkspaceView>().First();
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "top-customers.sql"));
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "stale-carts.sql"));
+            await query.CloseTabCommand.ExecuteAsync(query.Documents.First(d => d.Title == "monthly-revenue.sql"));
+            await Settle(4);
+
+            var button = view.FindControl<Button>("HistoryButton")!;
+            button.Flyout!.ShowAt(button);
+            await Settle(8);
+            await Shot(_window, "reopen-flyout");
+            button.Flyout.Hide();
+            await Settle();
+
+            var tab = view.GetVisualDescendants().OfType<TabItem>().First();
+            if (tab.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(p => p.ContextMenu is not null) is { } header)
+            {
+                header.ContextMenu!.Open(header);
+                await Settle(6);
+                if (TopLevel.GetTopLevel(header.ContextMenu) is { } menuRoot && menuRoot != _window) await Shot(menuRoot, "reopen-menu");
+                else await Shot(_window, "reopen-menu");
+                header.ContextMenu.Close();
+            }
+
+            await query.ReopenClosedTabCommand.ExecuteAsync(null);
+            await query.ReopenClosedTabCommand.ExecuteAsync(null);
+            await Settle(4);
+            await Shot(_window, "reopen-after");
+            Console.WriteLine("  tabs: " + string.Join(", ", query.Documents.Select(d => d.Title)) + " · still closed: " +
+                              string.Join(", ", query.RecentlyClosed.Select(c => c.Title)));
+        }
+
         private async Task RenderLocalHistoryAsync()
         {
             _vm.SelectedTab = AppTab.Query;

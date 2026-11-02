@@ -98,6 +98,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
                         ?? new TabDatabaseMemory();
         doc.Attach(_session);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
+        doc.OpenAtRequested += (docTitle, text, offset) => OpenInNewTab(text, docTitle, caretOffset: offset);
         doc.OpenAndRunRequested += (docTitle, text, db) =>
         {
             var opened = AddTab(docTitle, text, null, dirty: false, NullIfEmpty(db));
@@ -113,9 +114,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <summary>Opens <paramref name="sql"/> in a new tab (history, "script as", …).</summary>
     /// <param name="connectionDefault">With no <paramref name="database"/>: start in the connection's default database
     /// instead of the selected tab's.</param>
-    public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false, bool connectionDefault = false) =>
-        AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null,
+    /// <param name="caretOffset">Where the caret goes in the new tab (a usage in a view's source).</param>
+    public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false, bool connectionDefault = false,
+        int? caretOffset = null)
+    {
+        var doc = AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null,
             connectionDefault && string.IsNullOrEmpty(database) ? new TabDatabaseMemory() : null);
+        doc.PendingCaretOffset = caretOffset;
+    }
 
     private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 

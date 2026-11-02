@@ -121,6 +121,8 @@
           </MenuItem>
           <MenuItem Header="Show in diagram" Command="{Binding ShowInDiagramCommand}" IsVisible="{Binding SelectedIsTable}"
                     IsEnabled="{Binding SelectedHasCatalogActions}" />
+          <MenuItem Header="Find usages" Command="{Binding FindUsagesCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
+                    ToolTip.Tip="Views, routines and triggers that use it, and its foreign keys: what a change could break" />
           <Separator IsVisible="{Binding SelectedHasCatalogActions}" />
           <MenuItem Header="Modify…" Command="{Binding ModifyCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
                     ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />

@@ -22,7 +22,8 @@ public enum NavigatorObjectAction
     Debug,
     ShowInDiagram,
     Modify,
-    DropTable
+    DropTable,
+    FindUsages
 }
 
 public enum NavigatorConnectionAction
@@ -546,6 +547,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [RelayCommand] private void ShowInDiagram() => RunObjectAction(NavigatorObjectAction.ShowInDiagram);
     [RelayCommand] private void Modify() => RunObjectAction(NavigatorObjectAction.Modify);
     [RelayCommand] private void DropTable() => RunObjectAction(NavigatorObjectAction.DropTable);
+    [RelayCommand] private void FindUsages() => RunObjectAction(NavigatorObjectAction.FindUsages);
 
     private void RunObjectAction(NavigatorObjectAction action)
     {

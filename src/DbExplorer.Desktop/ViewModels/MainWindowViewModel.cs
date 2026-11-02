@@ -115,6 +115,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, title, database);
         };
+        objects.OpenSqlAtRequested += (sql, database, title, offset) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, title, database, caretOffset: offset);
+        };
         objects.DesignTableRequested += table =>
         {
             SelectedTab = AppTab.TableDesigner;
@@ -202,6 +207,9 @@ public partial class MainWindowViewModel : ViewModelBase
             case NavigatorObjectAction.DropTable:
                 SelectedTab = AppTab.Objects; // the confirmation's outcome is reported there
                 command = Objects.DropTableCommand;
+                break;
+            case NavigatorObjectAction.FindUsages:
+                command = Objects.FindUsagesCommand;
                 break;
             default:
                 return;

@@ -95,6 +95,7 @@ public partial class ObjectsViewModel(
         ModifyCommand.NotifyCanExecuteChanged();
         DeleteRowsCommand.NotifyCanExecuteChanged();
         DropTableCommand.NotifyCanExecuteChanged();
+        FindUsagesCommand.NotifyCanExecuteChanged();
         ColumnProfiles = [];
         TopValues = [];
     }
@@ -223,6 +224,34 @@ public partial class ObjectsViewModel(
     }
 
     private bool IsTable => SelectedObject?.Type == DbObjectType.Table;
+
+    /// <summary>Raised to open a view's or routine's source in a new Query tab with the caret at a usage: the SQL, the
+    /// database, the tab title and the offset.</summary>
+    public event Action<string, string?, string, int>? OpenSqlAtRequested;
+
+    private const int MaxModuleUsages = 2000;
+
+    private bool CanFindUsages => SelectedObject is { Type: not DbObjectType.Trigger };
+
+    /// <summary>The views, routines and triggers whose cached source uses the object, and its foreign keys: what a
+    /// change to it could break. Nothing is sent to the server.</summary>
+    [RelayCommand(CanExecute = nameof(CanFindUsages))]
+    private async Task FindUsagesAsync()
+    {
+        if (_session is not { } session || SelectedObject is not { } obj) return;
+        var finder = new SqlSymbolFinder(session.Snapshot, session.Provider.QuoteIdentifier, session.Provider.ProviderKey);
+        var (modules, keys) = await Task.Run(() => (finder.FindInModules(obj, max: MaxModuleUsages), finder.ForeignKeysOf(obj)));
+
+        var rows = new List<UsageRow>(UsagesViewModel.ModuleRows(modules, u =>
+            OpenSqlAtRequested?.Invoke(u.Module.Definition ?? "", NullIfEmpty(u.Module.Database), $"{u.Module.Schema}.{u.Module.Name}", u.Start),
+            modules.Count >= MaxModuleUsages));
+        rows.AddRange(UsagesViewModel.KeyRows(keys));
+        var parts = new List<string> { UsagesViewModel.Count(modules.Select(m => m.Module).Distinct().Count(), "view or routine", "views and routines") };
+        if (keys.Count > 0) parts.Add(UsagesViewModel.Count(keys.Count, "foreign key", "foreign keys"));
+        parts.Add("from the loaded metadata; Refresh metadata after changing objects");
+        var title = new SqlSymbol(SqlSymbolKind.Object, obj.Name, []) { Object = obj }.Title;
+        dialogs.ShowUsages(new UsagesViewModel($"Usages of {title}", string.Join(" · ", parts), rows));
+    }
 
     /// <summary>Opens a DELETE for the table in a Query tab, its WHERE still to fill in; nothing is deleted from here.</summary>
     [RelayCommand(CanExecute = nameof(IsTable))]

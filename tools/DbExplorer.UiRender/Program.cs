@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Logging;
 using Avalonia.Styling;
@@ -143,6 +144,7 @@ namespace DbExplorer.UiRender
             await Step("dialogs", RenderDialogsAsync);
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
+            await Step("usages", RenderUsagesAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -717,6 +719,77 @@ namespace DbExplorer.UiRender
             await Shot(palette, "local-history-palette");
             palette.Close();
             await Settle();
+        }
+
+        /// <summary>Rename (Shift+F6) on an alias, with a clash warning, the result, and Find usages (Alt+F7) of a table
+        /// and a column from the editor and from the Objects tab.</summary>
+        private async Task RenderUsagesAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            const string sql =
+                "with open_orders as (\n    select o.id, o.customer_id, o.status\n    from orders o\n    where o.status <> 'cancelled'\n)\n" +
+                "select c.name, count(*) as order_count\nfrom open_orders b\njoin customers c on c.id = b.customer_id\n" +
+                "group by c.name\norder by order_count desc;";
+            _vm.Query.OpenInNewTab(sql, "Open orders by customer");
+            var doc = _vm.Query.SelectedDocument!;
+            await WaitFor(() => doc.Inspector is not null, "catalog for symbols", 20_000);
+            await Settle(6);
+            var view = _window.GetVisualDescendants().OfType<QueryView>().First(v => v.IsEffectivelyVisible);
+            var editor = view.FindControl<AvaloniaEdit.TextEditor>("Editor")!;
+            var popup = view.FindControl<Popup>("RenamePopup")!;
+            var box = view.FindControl<TextBox>("RenameBox")!;
+            void Call(string method) => typeof(QueryView).GetMethod(method, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
+            async Task CallAsync(string method) => await (Task)typeof(QueryView).GetMethod(method, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null)!;
+            async Task ShotWithPopup(string name)
+            {
+                await Settle(6);
+                await Shot(_window, name);
+                if (popup.Child is { } child && TopLevel.GetTopLevel(child) is { } root && root != _window) await Shot(root, name + "-popup");
+            }
+
+            editor.Focus();
+            editor.CaretOffset = sql.IndexOf("o.status <>", StringComparison.Ordinal);
+            Call("StartRename");
+            await Settle(4);
+            box.Text = "ord";
+            await ShotWithPopup("rename-alias");
+            box.Text = "c";
+            await ShotWithPopup("rename-warning");
+            box.Text = "ord";
+            await Settle(2);
+            Call("ApplyRename");
+            await Settle(6);
+            await Shot(_window, "rename-done");
+
+            editor.CaretOffset = editor.Document.Text.IndexOf("as order_count", StringComparison.Ordinal) + 4;
+            Call("StartRename");
+            box.Text = "orders";
+            await ShotWithPopup("rename-column");
+            popup.IsOpen = false;
+            await Settle(2);
+
+            editor.CaretOffset = editor.Document.Text.IndexOf("from orders", StringComparison.Ordinal) + 6;
+            await CallAsync("FindUsagesAsync");
+            await ShootOwned<UsagesWindow>("usages-table", 8);
+
+            editor.CaretOffset = editor.Document.Text.IndexOf(".status <>", StringComparison.Ordinal) + 1;
+            await CallAsync("FindUsagesAsync");
+            await ShootOwned<UsagesWindow>("usages-column", 8);
+
+            _vm.SelectedTab = AppTab.Objects;
+            _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Type == DbObjectType.Table && o.Name == "customers");
+            await Settle(2);
+            await _vm.Objects.FindUsagesCommand.ExecuteAsync(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<UsagesWindow>().Any(), "objects usages", 10_000);
+            var usages = _window.OwnedWindows.OfType<UsagesWindow>().First();
+            var uvm = (UsagesViewModel)usages.DataContext!;
+            Console.WriteLine("  " + uvm.Subtitle);
+            uvm.Open(uvm.Rows.FirstOrDefault(r => r.CanOpen));
+            await Settle(8);
+            await Shot(usages, "usages-objects");
+            usages.Close();
+            await Settle(4);
+            await Shot(_window, "usages-opened");
         }
 
         // ------------------------------------------------------------------ helpers

@@ -57,6 +57,9 @@ public interface IDialogService
     /// <summary>Shows a query tab's local history (kept versions, diff, restore); does not wait for it to close.</summary>
     void ShowLocalHistory(LocalHistoryViewModel viewModel);
 
+    /// <summary>Find usages results, in one window that stays open beside the editor (a new search replaces the last one).</summary>
+    void ShowUsages(UsagesViewModel viewModel);
+
     /// <summary>Asks for one line of text; null when cancelled.</summary>
     Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null);
 
@@ -273,6 +276,18 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     public void ShowLocalHistory(LocalHistoryViewModel viewModel)
     {
         var window = new LocalHistoryWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+    }
+
+    private UsagesWindow? _usagesWindow;
+
+    public void ShowUsages(UsagesViewModel viewModel)
+    {
+        _usagesWindow?.Close();
+        var window = new UsagesWindow { DataContext = viewModel };
+        window.Closed += (_, _) => { if (ReferenceEquals(_usagesWindow, window)) _usagesWindow = null; };
+        _usagesWindow = window;
         if (Owner is not null) window.Show(Owner);
         else window.Show();
     }

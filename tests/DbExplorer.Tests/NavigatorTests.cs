@@ -284,6 +284,97 @@ public class NavigatorTests
         Assert.False(shop.IsDimmed);
     }
 
+    [Fact]
+    public async Task A_second_rebuild_while_the_first_still_restores_keeps_the_open_nodes()
+    {
+        var (vm, session, _) = Connected();
+
+        vm.Attach(session);   // opens the connection and its database, reading the server's database list first
+        vm.Rebuild();         // e.g. DatabasesChanged right after SnapshotChanged
+        await Until(() => !vm.IsRestoring);
+
+        var connection = Child(vm.Roots.Single(r => r.Title == "Local"), "Shop");
+        Assert.True(connection.IsExpanded);
+        Assert.True(Child(connection, "Shop").IsExpanded);
+    }
+
+    [Fact]
+    public void Filter_results_keep_the_best_match_first_across_every_database()
+    {
+        // A server-wide catalog: 600 partial matches in Audit, one exact match in Shop.
+        var objects = Enumerable.Range(0, 600).Select(i => Obj($"Old{i:000}Orders", database: "Audit"))
+            .Append(Obj("BackOrders")).Append(Obj("Orders")).ToList();
+        var session = new DatabaseSession(new ConnectionProfile { Name = "Server", ProviderKey = SqlDialect.SqlServerKey },
+            null!, DesktopTabTests.ScriptedProvider.Create(new(), SqlDialect.SqlServerKey), "1", Snapshot(objects));
+        var vm = new NavigatorViewModel(null!) { Profiles = [session.Profile] };
+        vm.Attach(session);
+
+        vm.FilterText = "Orders";
+
+        Assert.Equal($"First {NavigatorViewModel.MaxMatches} of 602 matches", vm.FilterSummary);
+        var shop = vm.Roots[0].Children.Single(d => d.Title == "Shop");
+        var tables = shop.SelfAndDescendants().Single(n => n.Kind == NavigatorNodeKind.Folder);
+        Assert.Equal(["Orders", "BackOrders"], tables.Children.Select(c => c.Title));
+    }
+
+    [Fact]
+    public async Task Scripts_use_the_columns_of_the_same_database_when_two_have_the_same_table()
+    {
+        var session = new DatabaseSession(new ConnectionProfile { Name = "Server", ProviderKey = SqlDialect.SqlServerKey },
+            null!, DesktopTabTests.ScriptedProvider.Create(new(), SqlDialect.SqlServerKey), "1",
+            Snapshot([Obj("Orders", database: "Audit"), Obj("Orders")],
+                [Col("Orders", "AuditId", 1, pk: true, database: "Audit"), Col("Orders", "OrderId", 1, pk: true)]));
+        var vm = new NavigatorViewModel(null!) { Profiles = [session.Profile] };
+        string? sql = null;
+        vm.OpenSqlRequested += (text, _, _) => sql = text;
+        vm.Attach(session);
+
+        await vm.RevealAsync(Obj("Orders"));
+        vm.ScriptDeleteCommand.Execute(null);
+
+        Assert.Contains("[OrderId] = <OrderId>", sql);
+        Assert.DoesNotContain("AuditId", sql);
+    }
+
+    [Fact]
+    public async Task Open_on_a_detail_folder_opens_its_table_and_new_query_on_the_connection_uses_its_database()
+    {
+        var (vm, session, _) = Connected();
+        vm.Attach(session);
+        var opened = new List<DbObject>();
+        var scripts = new List<string?>();
+        var hidden = false;
+        vm.ObjectActionRequested += (_, obj) => opened.Add(obj);
+        vm.OpenSqlRequested += (_, database, _) => scripts.Add(database);
+        vm.HideRequested += () => hidden = true;
+
+        await vm.RevealAsync(Obj("Orders"));
+        var orders = vm.SelectedNode!;
+        await orders.LoadAsync();
+        vm.SelectedNode = Child(orders, "Columns");
+        vm.OpenCommand.Execute(null);
+        Assert.Equal("Orders", Assert.Single(opened).Name);
+
+        await Until(() => !vm.IsRestoring);
+        vm.SelectedNode = Child(vm.Roots.Single(r => r.Title == "Local"), "Shop");
+        vm.NewQueryCommand.Execute(null);
+        Assert.Equal("Shop", Assert.Single(scripts));
+
+        vm.HideCommand.Execute(null);
+        Assert.True(hidden);
+    }
+
+    [Fact]
+    public void Double_click_shows_objects_and_columns_but_opens_and_closes_containers()
+    {
+        Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Object, "t", "k")));
+        Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Detail, "c", "k")));
+        Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Connection, "saved", "k")));
+        Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Connection, "connected", "k") { IsEmphasized = true }));
+        Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Folder, "Tables", "k")));
+        Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.DetailFolder, "Columns", "k")));
+    }
+
     [Theory]
     [InlineData(950, "950")]
     [InlineData(1_234, "1.2k")]

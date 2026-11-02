@@ -134,8 +134,10 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.OpenSqlRequested += (sql, database, title) =>
         {
             SelectedTab = AppTab.Query;
-            query.OpenInNewTab(sql, title, database);
+            // No database means the connection's default here, never the database of whichever tab is selected.
+            query.OpenInNewTab(sql, title, database, connectionDefault: true);
         };
+        navigator.HideRequested += () => ShowNavigator = false;
         navigator.ObjectActionRequested += OnNavigatorObjectAction;
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
@@ -650,6 +652,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
         Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
         Command("Import connections…", ImportConnectionsCommand);
+        items.Add(new PaletteItem(ShowNavigator ? "Hide the database navigator" : "Show the database navigator", "Ctrl+B",
+            PaletteItemKind.Command, _ => ShowNavigator = !ShowNavigator));
         Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
 
         if (!IsConnected && !IsBusy)

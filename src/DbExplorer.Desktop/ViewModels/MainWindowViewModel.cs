@@ -434,7 +434,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task NewConnectionAsync()
     {
         var draft = new ConnectionProfile { ProviderKey = _registry.All[0].Key };
-        var profile = await _dialogs.EditConnectionAsync(draft, "New connection", ConnectionFolders.All(Profiles));
+        var profile = await _dialogs.EditConnectionAsync(draft, "New connection", ConnectionFolders.All(Profiles), isNew: true);
         if (profile is null) return;
 
         Profiles.Add(profile);
@@ -700,7 +700,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Connection failed: " + ex.Message;
+            StatusText = "Connection failed: " + ConnectionSecurity.Describe(ex);
         }
         finally
         {

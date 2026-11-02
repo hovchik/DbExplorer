@@ -491,6 +491,17 @@ namespace DbExplorer.UiRender
             var draft = new ConnectionProfile { ProviderKey = registry.All[0].Key };
             await ShowAndShoot(new ConnectionDialog { DataContext = new ConnectionDialogViewModel(registry, draft, ["Local", "Clients/Acme"], tunnels), Title = "New connection" }, "connection-dialog");
 
+            // A new connection to another machine: encrypted and verified by default; Production shows the
+            // certificate warning once Trust certificate is ticked.
+            var remoteVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "db.example.com"
+            };
+            await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-remote");
+            remoteVm.Environment = ConnectionEnvironment.Production;
+            remoteVm.TrustServerCertificate = true;
+            await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-production-warning");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";

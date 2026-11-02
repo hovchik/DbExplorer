@@ -80,8 +80,8 @@ public static class MySqlSql
                 : p.TrustServerCertificate ? MySqlSslMode.Required
                 : p.CertificateHostName is null ? MySqlSslMode.VerifyFull : MySqlSslMode.VerifyCA,
             // MySQL 8's default login (caching_sha2_password) needs the server's RSA key on an unencrypted connection.
-            // Only allowed when the user did not ask for encryption, where a man in the middle is already possible.
-            AllowPublicKeyRetrieval = !p.Encrypt,
+            // Fetching it lets a man in the middle read the password, so only for a server on this computer.
+            AllowPublicKeyRetrieval = ConnectionSecurity.AllowMySqlPublicKeyRetrieval(p),
             // Scripts may use @variables; without this the driver takes them for missing parameters.
             AllowUserVariables = true,
             // '0000-00-00' dates read as DateTime.MinValue instead of failing the whole result set.

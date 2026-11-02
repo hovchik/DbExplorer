@@ -150,6 +150,7 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("migration", RenderMigrationAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -1000,6 +1001,37 @@ namespace DbExplorer.UiRender
             _vm.DismissConnectionFailureCommand.Execute(null);
             _vm.Profiles.Remove(wrong);
             _vm.Profiles.Remove(closed);
+            await Settle();
+        }
+
+        /// <summary>The Comparer's Migration tab: the shop against its older copy (uirender_shop_old from the seed script).</summary>
+        private async Task RenderMigrationAsync()
+        {
+            var c = _vm.Comparer;
+            _vm.SelectedTab = AppTab.Comparer;
+            if (c.LeftSession is null) await c.UseCurrentAsLeftCommand.ExecuteAsync(null);
+            if (c.RightSession is null) await c.UseCurrentAsRightCommand.ExecuteAsync(null);
+            await WaitFor(() => c.RightDatabases.Contains("uirender_shop_old"), "right databases");
+            c.SelectedTabIndex = ComparerViewModel.MigrationTab;
+            await Settle(4);
+            await Shot(_window, "migration-empty");
+            c.SelectedRightDatabase = "uirender_shop_old";
+            await WaitFor(() => !c.IsBusy && c.RightObjects.Any(o => o.Name == "legacy_import"), "old shop catalog", 30_000);
+            await c.GenerateMigrationCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy && c.HasMigration, "migration script", 30_000);
+            await Settle(4);
+            await Shot(_window, "migration");
+            c.MigrationDropExtras = true;
+            await c.GenerateMigrationCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "migration script with drops", 30_000);
+            await Shot(_window, "migration-drops");
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-migration");
+            _window.Width = 1400;
+            _window.Height = 900;
+            c.MigrationDropExtras = false;
             await Settle();
         }
 

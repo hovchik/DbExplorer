@@ -663,6 +663,7 @@ public partial class ComparerViewModel(
 
     partial void OnSelectedLeftDatabaseChanged(string? value)
     {
+        OnPropertyChanged(nameof(MigrationDirection));
         if (_replacingDatabases) return;
         _leftScope = null;
         UpdateLeftObjects();
@@ -673,6 +674,7 @@ public partial class ComparerViewModel(
 
     partial void OnSelectedRightDatabaseChanged(string? value)
     {
+        OnPropertyChanged(nameof(MigrationDirection));
         if (_replacingDatabases) return;
         _rightScope = null;
         UpdateRightObjects();
@@ -1348,5 +1350,6 @@ public partial class ComparerViewModel(
         CancelCommand.NotifyCanExecuteChanged();
         CreateRightDatabaseCommand.NotifyCanExecuteChanged();
         RefreshCopyCommands();
+        RefreshMigrationCommands();
     }
 }

@@ -820,69 +820,6 @@ public partial class MainWindowViewModel : ViewModelBase
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 
-    [RelayCommand]
-    private void OpenCommandPalette() => _dialogs.ShowCommandPalette(BuildPaletteItems());
-
-    private IReadOnlyList<PaletteItem> BuildPaletteItems()
-    {
-        var items = new List<PaletteItem>();
-
-        void Command(string title, System.Windows.Input.ICommand command, string? subtitle = null)
-        {
-            if (command.CanExecute(null))
-                items.Add(new PaletteItem(title, subtitle, PaletteItemKind.Command, _ => command.Execute(null)));
-        }
-
-        Command("Refresh metadata", RefreshMetadataCommand, "re-read the catalog");
-        Command("Disconnect", DisconnectCommand, Session?.Profile.ToString());
-        Command("Connect", ConnectCommand, SelectedProfile?.ToString());
-        Command("New connection…", NewConnectionCommand);
-        Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
-        Command("Duplicate connection…", DuplicateConnectionCommand, SelectedProfile?.ToString());
-        Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
-        Command("Import connections…", ImportConnectionsCommand);
-        items.Add(new PaletteItem(ShowNavigator ? "Hide the database navigator" : "Show the database navigator", "Ctrl+B",
-            PaletteItemKind.Command, _ => ShowNavigator = !ShowNavigator));
-        Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
-        if (Query.SelectedDocument is { } queryTab)
-            Command("Local history…", Query.ShowLocalHistoryCommand, $"earlier versions of {queryTab.Title} · Ctrl+Shift+H");
-
-        if (!IsConnected && !IsBusy)
-        {
-            foreach (var profile in Profiles.ToList())
-            {
-                items.Add(new PaletteItem($"Connect to {profile}", profile.Host, PaletteItemKind.Command, _ =>
-                {
-                    SelectedProfile = profile;
-                    if (ConnectCommand.CanExecute(null)) ConnectCommand.Execute(null);
-                }));
-            }
-        }
-
-        foreach (var theme in ThemeModes)
-            items.Add(new PaletteItem($"Theme: {theme}", null, PaletteItemKind.Command, _ => SelectedTheme = theme));
-
-        foreach (var tab in Enum.GetValues<AppTab>())
-        {
-            if (!IsConnected && tab is not (AppTab.Comparer or AppTab.ErModel)) continue;
-            var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
-            items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code").Replace("Er model", "ER model"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
-        }
-
-        if (Session is { } session)
-        {
-            var multipleDatabases = session.Snapshot.Objects.Select(o => o.Database).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
-            foreach (var obj in session.Snapshot.Objects.Where(o => o.Type != DbObjectType.Trigger))
-            {
-                var title = multipleDatabases && !string.IsNullOrEmpty(obj.Database) ? $"{obj.Database}.{obj.FullName}" : obj.FullName;
-                var subtitle = obj.Type + (obj.RowCount is long rows ? $" · {rows:N0} rows" : "");
-                items.Add(new PaletteItem(title, subtitle, PaletteItemKind.Object, modifier => OpenObject(obj, modifier)));
-            }
-        }
-
-        return items;
-    }
-
     private void OpenObject(DbObject obj, PaletteModifier modifier)
     {
         if (modifier == PaletteModifier.Shift && obj.Type is DbObjectType.Table or DbObjectType.ForeignTable)

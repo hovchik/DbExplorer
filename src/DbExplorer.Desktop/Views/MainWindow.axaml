@@ -12,7 +12,9 @@
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
     <KeyBinding Gesture="Ctrl+P" Command="{Binding OpenCommandPaletteCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenCommandListCommand}" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleNavigatorCommand}" />
+    <KeyBinding Gesture="F1" Command="{Binding ShowShortcutsCommand}" />
   </Window.KeyBindings>
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
@@ -360,7 +362,7 @@
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="12,0,0,0">
             <!-- Looks like a search field; opens the command palette -->
             <Button Classes="goto" Width="170" Command="{Binding OpenCommandPaletteCommand}"
-                    ToolTip.Tip="Jump to any table, view, procedure, tab or command (Ctrl+K or Ctrl+P)">
+                    ToolTip.Tip="Jump to any table, view, procedure, tab or command (Ctrl+K or Ctrl+P; Ctrl+Shift+P lists commands only; F1 shows every keyboard shortcut)">
               <Grid ColumnDefinitions="Auto,*,Auto">
                 <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Search}" Width="15" Height="15" />
                 <TextBlock Grid.Column="1" Classes="placeholder" Text="Go to…" Margin="8,0,0,0" VerticalAlignment="Center" />

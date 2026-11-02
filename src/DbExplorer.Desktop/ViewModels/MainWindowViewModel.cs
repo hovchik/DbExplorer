@@ -40,7 +40,8 @@ public partial class MainWindowViewModel : ViewModelBase
         QueryWorkspaceViewModel query,
         ComparerViewModel comparer,
         LabViewModel lab,
-        SecurityViewModel security)
+        SecurityViewModel security,
+        NavigatorViewModel navigator)
     {
         _store = store;
         _sessions = sessions;
@@ -64,7 +65,9 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
         Security = security;
-        _tabs = [objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, erModel, queryBuilder, query, comparer, lab, security];
+        Navigator = navigator;
+        _showNavigator = settings.ShowNavigator;
+        _tabs = [navigator, objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, erModel, queryBuilder, query, comparer, lab, security];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -126,6 +129,103 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
         };
+
+        navigator.Profiles = Profiles;
+        navigator.OpenSqlRequested += (sql, database, title) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, title, database);
+        };
+        navigator.ObjectActionRequested += OnNavigatorObjectAction;
+        navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
+    }
+
+    // ----- Database navigator (left of the tabs) -----
+
+    public NavigatorViewModel Navigator { get; }
+
+    [ObservableProperty] private bool _showNavigator;
+
+    partial void OnShowNavigatorChanged(bool value) => _settings.SetShowNavigator(value);
+
+    /// <summary>The navigator's width as the user last dragged it (saved with the settings).</summary>
+    public double NavigatorWidth
+    {
+        get => _settings.NavigatorWidth;
+        set => _settings.SetNavigatorWidth(value);
+    }
+
+    /// <summary>The app bar's sidebar button and Ctrl+B.</summary>
+    [RelayCommand]
+    private void ToggleNavigator() => ShowNavigator = !ShowNavigator;
+
+    /// <summary>Runs a navigator action through the Objects tab, which already knows how to open, modify or drop
+    /// the object; actions whose outcome is shown in the Objects tab switch to it.</summary>
+    private void OnNavigatorObjectAction(NavigatorObjectAction action, DbObject obj)
+    {
+        Objects.Reveal(obj);
+        if (Objects.SelectedObject is null)
+        {
+            StatusText = $"{obj.FullName} is not in the catalog any more. Refresh metadata to update the navigator.";
+            return;
+        }
+
+        System.Windows.Input.ICommand command;
+        switch (action)
+        {
+            case NavigatorObjectAction.Open:
+                SelectedTab = AppTab.Objects;
+                return;
+            case NavigatorObjectAction.GetData:
+                command = Objects.GetDataCommand;
+                break;
+            case NavigatorObjectAction.Execute:
+                command = Objects.ExecuteSelectedCommand;
+                break;
+            case NavigatorObjectAction.Debug:
+                command = Objects.DebugSelectedCommand;
+                break;
+            case NavigatorObjectAction.ShowInDiagram:
+                command = Objects.ShowInDiagramCommand;
+                break;
+            case NavigatorObjectAction.Modify:
+                command = Objects.ModifyCommand;
+                break;
+            case NavigatorObjectAction.DropTable:
+                SelectedTab = AppTab.Objects; // the confirmation's outcome is reported there
+                command = Objects.DropTableCommand;
+                break;
+            default:
+                return;
+        }
+        if (command.CanExecute(null)) command.Execute(null);
+    }
+
+    private async Task OnNavigatorConnectionActionAsync(NavigatorConnectionAction action, ConnectionProfile profile)
+    {
+        switch (action)
+        {
+            case NavigatorConnectionAction.Connect when !IsConnected && !IsBusy:
+                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
+                if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+                break;
+            case NavigatorConnectionAction.Switch when IsConnected && !IsBusy && Session?.Profile.Id != profile.Id:
+                if (DisconnectCommand.CanExecute(null)) await DisconnectCommand.ExecuteAsync(null);
+                if (IsConnected) return;
+                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
+                if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+                break;
+            case NavigatorConnectionAction.Disconnect:
+                if (DisconnectCommand.CanExecute(null)) await DisconnectCommand.ExecuteAsync(null);
+                break;
+            case NavigatorConnectionAction.Edit when !IsConnected:
+                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
+                if (EditConnectionCommand.CanExecute(null)) await EditConnectionCommand.ExecuteAsync(null);
+                break;
+            case NavigatorConnectionAction.RefreshMetadata:
+                if (RefreshMetadataCommand.CanExecute(null)) await RefreshMetadataCommand.ExecuteAsync(null);
+                break;
+        }
     }
 
     public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
@@ -599,6 +699,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         SelectedTab = AppTab.Objects;
         Objects.Reveal(obj);
+        if (ShowNavigator) _ = Navigator.RevealAsync(obj);
         if (modifier != PaletteModifier.Control) return;
         if (obj.IsTableLike && Objects.GetDataCommand.CanExecute(null)) Objects.GetDataCommand.Execute(null);
         else if (obj.IsRoutine && Objects.ExecuteSelectedCommand.CanExecute(null)) Objects.ExecuteSelectedCommand.Execute(null);

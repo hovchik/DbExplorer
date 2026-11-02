@@ -27,11 +27,15 @@
 	  <RowDefinition Height="3*" MinHeight="90" />
 	  <RowDefinition Height="Auto" />
 	</Grid.RowDefinitions>
-	<WrapPanel Grid.Row="0" Grid.ColumnSpan="2" Classes="toolbar">
-	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
+	<!-- One toolbar row at 1400 px even with the navigator open: the run status and timer moved to the line under
+	     the editor, and rarely changed options (run on multiple databases) live in Tools ▾ -->
+	<Grid Grid.Row="0" Grid.ColumnSpan="2">
+	<WrapPanel Classes="toolbar">
+	  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,8,4"
 				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to filter the list.">
-		<TextBlock Text="Database" VerticalAlignment="Center" />
-		<controls:DatabasePicker IsEnabled="{Binding CanChangeDatabase}" MinWidth="180" MaxWidth="320"
+		<controls:StrokeIcon Data="{x:Static controls:Icons.Database}" Width="18" Height="18" VerticalAlignment="Center"
+							 Foreground="{DynamicResource AppHintForegroundBrush}" />
+		<controls:DatabasePicker IsEnabled="{Binding CanChangeDatabase}" MinWidth="160" MaxWidth="320"
 								 ItemsSource="{Binding AvailableDatabases}" SelectedItem="{Binding CurrentDatabase}"
 								 PlaceholderText="(connection default)" />
 		<TextBlock Text="{Binding DatabaseWarning}" Foreground="#FFD08A00" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
@@ -45,8 +49,9 @@
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4"
 				  ToolTip.Tip="Re-run the last query at this interval. Only queries that read data are repeated; a tick is skipped while a run is still going, and auto refresh stops when the query fails.">
 		<ToggleButton Content="⟳ Auto refresh" IsChecked="{Binding AutoRefresh}" MinHeight="28" Padding="10,2" />
-		<ComboBox ItemsSource="{Binding AutoRefreshIntervals}" SelectedItem="{Binding AutoRefreshInterval}" MinWidth="80" />
-		<TextBlock Classes="hint" Text="{Binding AutoRefreshInfo}" VerticalAlignment="Center" />
+		<ComboBox ItemsSource="{Binding AutoRefreshIntervals}" SelectedItem="{Binding AutoRefreshInterval}" MinWidth="80"
+				  IsVisible="{Binding AutoRefresh}" />
+		<TextBlock Classes="hint" Text="{Binding AutoRefreshInfo}" VerticalAlignment="Center" IsVisible="{Binding AutoRefresh}" />
 	  </StackPanel>
 	  <Button Content="Explain ▾" Classes="tool" ToolTip.Tip="Execution plan of the selection / statement at the caret (Ctrl+L)">
 		<Button.Flyout>
@@ -99,6 +104,9 @@
 	  <Button Content="Tools ▾" Classes="tool">
 		<Button.Flyout>
 		  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+			<MenuItem Header="Run on multiple databases" ToggleType="CheckBox" IsChecked="{Binding RunOnMultipleDatabases, Mode=TwoWay}"
+					  ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column. The databases are picked with the button that appears next to Tools." />
+			<Separator />
 			<MenuItem Header="Format" InputGesture="Ctrl+Shift+F" Click="OnFormat" />
 			<MenuItem Header="Comment / uncomment lines" InputGesture="Ctrl+OemQuestion" Click="OnToggleComment" />
 			<MenuItem Header="UPPER CASE selection" InputGesture="Ctrl+Shift+U" Click="OnUpperCase" />
@@ -126,12 +134,12 @@
 		</Button.Flyout>
 	  </Button>
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4" ToolTip.Tip="Rows kept per result set (0 = all). Larger results are read to the end but not kept, so the app stays responsive.">
-		<TextBlock Text="Max rows" VerticalAlignment="Center" />
-		<NumericUpDown Value="{Binding MaxRows}" Minimum="0" Maximum="10000000" Increment="10000" FormatString="N0" Width="160" />
+		<TextBlock Text="Rows" VerticalAlignment="Center" />
+		<NumericUpDown Value="{Binding MaxRows}" Minimum="0" Maximum="10000000" Increment="10000" FormatString="N0" Width="92"
+					   ShowButtonSpinner="False" HorizontalContentAlignment="Right" />
 	  </StackPanel>
-	  <CheckBox Content="Run on multiple databases" IsChecked="{Binding RunOnMultipleDatabases}" Margin="0,0,8,4"
-				ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column" />
-	  <Button IsVisible="{Binding RunOnMultipleDatabases}">
+	  <Button IsVisible="{Binding RunOnMultipleDatabases}"
+			  ToolTip.Tip="Run on multiple databases is on (Tools ▾): the databases the script runs on">
 		<!-- A TextBlock, not a string: "_" in database names would otherwise be read as an access key -->
 		<TextBlock Text="{Binding TargetSummary, StringFormat='{}{0} ▾'}" />
 		<Button.Flyout>
@@ -163,11 +171,8 @@
 		  </Flyout>
 		</Button.Flyout>
 	  </Button>
-	  <ProgressBar Width="100" MinWidth="100" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
-	  <TextBlock Text="{Binding RunningElapsed}" IsVisible="{Binding IsRunning}" VerticalAlignment="Center" Margin="0,0,8,4"
-				 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" ToolTip.Tip="Time since the run started" />
-	  <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
 	</WrapPanel>
+	</Grid>
 
 	<Popup Grid.Row="1" x:Name="SignaturePopup" IsLightDismissEnabled="False" Placement="TopEdgeAlignedLeft">
 	  <Border Background="{DynamicResource AppPopupBackgroundBrush}" BorderBrush="{DynamicResource AppPopupBorderBrush}"
@@ -186,10 +191,26 @@
 	</Popup>
 	<!-- Editor and its hint bar share one row so the splitter below sits directly between editor and results -->
 	<DockPanel Grid.Row="1">
-	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="2,2,2,0">
-	  <TextBlock Grid.Column="0" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis"
+	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto" Margin="2,2,2,0">
+	  <!-- The run's state right under the editor: timer while it runs, then "Completed in …" or the error -->
+	  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" Margin="0,0,12,0" MaxWidth="640"
+				  IsVisible="{Binding IsRunning}">
+		<ProgressBar Width="60" MinWidth="60" IsIndeterminate="True" VerticalAlignment="Center" />
+		<TextBlock Text="{Binding RunningElapsed}" FontSize="12" VerticalAlignment="Center"
+				   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" ToolTip.Tip="Time since the run started" />
+	  </StackPanel>
+	  <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+				 MaxWidth="640" Margin="0,0,12,0" ToolTip.Tip="{Binding Status}">
+		<TextBlock.IsVisible>
+		  <MultiBinding Converter="{x:Static BoolConverters.And}">
+			<Binding Path="!IsRunning" />
+			<Binding Path="Status" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+		  </MultiBinding>
+		</TextBlock.IsVisible>
+	  </TextBlock>
+	  <TextBlock Grid.Column="1" Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
 				 Text="Ctrl+Space suggest · Alt+Enter fix · F5 run · Ctrl+Enter statement · Ctrl+L plan · F12/Ctrl+Click definition · Ctrl+Shift+F format · Ctrl+/ comment · Ctrl+D duplicate · Alt+↑↓ move line · Alt+Z wrap · Ctrl+wheel zoom" />
-	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+	  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12">
 		<TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding CostLensText}" Foreground="{Binding CostLensBrush}" VerticalAlignment="Center"
 				   ToolTip.Tip="{Binding CostLensDetail}" MaxWidth="460" TextTrimming="CharacterEllipsis"
 				   IsVisible="{Binding CostLensText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

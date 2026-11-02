@@ -121,6 +121,52 @@ public static class ObjectScripts
                $"DELETE FROM {dialect.Table(table.Schema, table.Name)}\nWHERE {condition};\n";
     }
 
+    /// <summary>A SELECT of the first <paramref name="limit"/> rows with every column named, one per line (the
+    /// navigator's "Select rows" and DBeaver's "Read data in SQL console").</summary>
+    public static string SelectScript(string providerKey, DbObject table, IEnumerable<DbColumn> columns, int limit = 200)
+    {
+        var dialect = SqlDialect.For(providerKey);
+        var names = columns.OrderBy(c => c.Ordinal).Select(c => dialect.Quote(c.Name)).ToList();
+        var list = names.Count == 0 ? "*" : "\n  " + string.Join(",\n  ", names) + "\n";
+        return dialect.SelectTop(list, dialect.Table(table.Schema, table.Name), null, null, limit)
+            .Replace(" \n", "\n", StringComparison.Ordinal)
+            .Replace("\n FROM ", "\nFROM ", StringComparison.Ordinal) + "\n";
+    }
+
+    /// <summary>An INSERT naming every writable column (identity and computed columns left out), the values as
+    /// placeholders that fail if run untouched.</summary>
+    public static string InsertTemplate(string providerKey, DbObject table, IEnumerable<DbColumn> columns)
+    {
+        var dialect = SqlDialect.For(providerKey);
+        var writable = columns.Where(c => !dialect.IsReadOnlyColumn(c) && !c.IsIdentity).OrderBy(c => c.Ordinal).ToList();
+        if (writable.Count == 0)
+            return $"-- {dialect.Table(table.Schema, table.Name)} has no writable columns in the cached catalog.\n";
+        return $"-- Insert a row into {dialect.Table(table.Schema, table.Name)}. Replace the placeholders.\n" +
+               $"INSERT INTO {dialect.Table(table.Schema, table.Name)} (\n  " +
+               string.Join(",\n  ", writable.Select(c => dialect.Quote(c.Name))) +
+               "\n) VALUES (\n  " +
+               string.Join(",\n  ", writable.Select(c => $"<{c.Name}>")) + "\n);\n";
+    }
+
+    /// <summary>An UPDATE setting every writable non-key column, keyed on the primary key like
+    /// <see cref="DeleteTemplate"/>; the placeholders fail if run untouched.</summary>
+    public static string UpdateTemplate(string providerKey, DbObject table, IEnumerable<DbColumn> columns)
+    {
+        var dialect = SqlDialect.For(providerKey);
+        var all = columns.OrderBy(c => c.Ordinal).ToList();
+        var keys = all.Where(c => c.IsPrimaryKey).ToList();
+        var set = all.Where(c => !c.IsPrimaryKey && !c.IsIdentity && !dialect.IsReadOnlyColumn(c)).ToList();
+        if (set.Count == 0)
+            return $"-- {dialect.Table(table.Schema, table.Name)} has no writable non-key columns in the cached catalog.\n";
+        var condition = keys.Count > 0
+            ? string.Join("\n  AND ", keys.Select(k => $"{dialect.Quote(k.Name)} = <{k.Name}>"))
+            : "<condition>";
+        return $"-- Update rows of {dialect.Table(table.Schema, table.Name)}. Keep only the columns to change and fill in the WHERE.\n" +
+               $"UPDATE {dialect.Table(table.Schema, table.Name)}\nSET " +
+               string.Join(",\n    ", set.Select(c => $"{dialect.Quote(c.Name)} = <{c.Name}>")) +
+               $"\nWHERE {condition};\n";
+    }
+
     /// <summary>DROP TABLE for the table, as the confirmation shows it and as it runs.</summary>
     public static string DropTable(string providerKey, DbObject table) =>
         SqlDialect.For(providerKey).DropTable(SqlDialect.For(providerKey).Table(table.Schema, table.Name));

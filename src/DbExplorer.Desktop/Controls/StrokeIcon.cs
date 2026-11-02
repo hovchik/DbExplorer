@@ -27,6 +27,25 @@ public static class Icons
     public const string Check = "M5 12.5l4.5 4.5L19 7.5";
     public const string Lock = "M7 11V8a5 5 0 0 1 10 0v3 M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z";
     public const string ChevronDown = "M7 10l5 5 5-5";
+
+    // Database navigator
+    public const string Server = "M4 4h16v6H4z M4 14h16v6H4z M8 7h.01 M8 17h.01";
+    public const string Database = "M12 8c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3z M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3";
+    public const string Schema = "M12 3l9 5-9 5-9-5z M3 13l9 5 9-5";
+    public const string Folder = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
+    public const string Table = "M4 4h16v16H4z M4 10h16 M4 15h16 M10 10v10";
+    public const string View = "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z M12 15a3 3 0 1 0 0-6a3 3 0 1 0 0 6z";
+    public const string Function = "M15 4h-2a3 3 0 0 0-3 3v13 M6 11h8 M14 14l5 6 M19 14l-5 6";
+    public const string Procedure = "M5 4l14 8-14 8z";
+    public const string Bolt = "M13 2L4 14h7l-1 8 9-12h-7z";
+    public const string Hash = "M5 9h14 M5 15h14 M10 4L8 20 M16 4l-2 16";
+    public const string Link = "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1";
+    public const string Column = "M9 4h6v16H9z";
+    public const string Key = "M8 15a4 4 0 1 0 0-8a4 4 0 1 0 0 8z M12 11h9 M18 11v3 M21 11v3";
+    public const string Index = "M4 6h16 M4 12h10 M4 18h6";
+    public const string Info = "M12 21a9 9 0 1 0 0-18a9 9 0 1 0 0 18z M12 11v5 M12 8h.01";
+    public const string Sidebar = "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16";
+    public const string Collapse = "M7 9l5-5 5 5 M7 15l5 5 5-5";
 }
 
 /// <summary>

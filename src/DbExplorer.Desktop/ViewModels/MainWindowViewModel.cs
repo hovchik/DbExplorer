@@ -331,7 +331,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Could not load saved connections: " + ex.Message;
+            ShowError("Could not load saved connections: " + ex.Message);
             return;
         }
 
@@ -461,7 +461,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var index = IndexOfProfile(current.Id);
         if (index < 0)
         {
-            StatusText = $"{current} is no longer in the saved connections; the edit was not saved.";
+            ShowError($"{current} is no longer in the saved connections; the edit was not saved.");
             return;
         }
         Profiles[index] = edited;
@@ -588,7 +588,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Could not export connections: " + ex.Message;
+            ShowError("Could not export connections: " + ex.Message);
         }
     }
 
@@ -655,7 +655,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Could not import connections: " + ex.Message;
+            ShowError("Could not import connections: " + ex.Message);
         }
     }
 
@@ -681,7 +681,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         var ct = BeginLoad();
-        StatusText = $"Connecting to {profile}…";
+        ShowProgress($"Connecting to {profile}…");
         try
         {
             var session = await _sessions.ConnectAsync(profile, ct, LoadProgress(ct));
@@ -692,6 +692,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
             Session = session;
+            ConnectionFailure = null;
             StatusText = BuildStatus(Session) + (Session.Snapshot.IsStale ? " · updating metadata in the background…" : "");
         }
         catch (Exception) when (ct.IsCancellationRequested)
@@ -700,7 +701,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Connection failed: " + ConnectionSecurity.Describe(ex);
+            ReportConnectionFailure(ex, profile);
         }
         finally
         {
@@ -763,7 +764,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (Session is not { } s) return;
 
         var ct = BeginLoad();
-        StatusText = "Reading catalog…";
+        ShowProgress("Reading catalog…");
         try
         {
             await _sessions.RefreshMetadataAsync(s, ct, LoadProgress(ct));
@@ -775,7 +776,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Refresh failed: " + ex.Message;
+            ShowError("Refresh failed: " + ex.Message);
         }
         finally
         {
@@ -806,7 +807,7 @@ public partial class MainWindowViewModel : ViewModelBase
         new Progress<string>(text =>
         {
             // Reports are posted, so one can arrive after its load ended or a newer one began: drop those.
-            if (IsBusy && _loadCts?.Token == ct && !ct.IsCancellationRequested) StatusText = text;
+            if (IsBusy && _loadCts?.Token == ct && !ct.IsCancellationRequested) ShowProgress(text);
         });
 
     private bool CanCancelLoad => IsBusy && _loadCts is { IsCancellationRequested: false };
@@ -816,7 +817,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_loadCts is not { IsCancellationRequested: false } cts) return;
         cts.Cancel();
-        StatusText = "Cancelling…";
+        ShowProgress("Cancelling…");
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 
@@ -912,7 +913,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Could not save connections: " + ex.Message;
+            ShowError("Could not save connections: " + ex.Message);
         }
     }
 

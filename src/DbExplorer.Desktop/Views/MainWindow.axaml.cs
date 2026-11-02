@@ -41,6 +41,10 @@ public partial class MainWindow : Window
                 _vm.Query.RunFinished += OnRunFinished;
                 _vm.ShowTeamRequested += OnShowTeam;
                 _vm.PropertyChanged += OnViewModelPropertyChanged;
+                _vm.SetClipboardText = async text =>
+                {
+                    if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+                };
             }
             ApplyNavigatorWidth();
             if (_vm is not null && !_placementApplied)

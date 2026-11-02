@@ -129,6 +129,8 @@ namespace DbExplorer.UiRender
             _vm.SelectedProfile = pgProfile;
             await Settle();
             await Shot(_window, "main-disconnected");
+            await Step("errors", () => RenderConnectionErrorsAsync(pg));
+            _vm.SelectedProfile = pgProfile;
 
             await _vm.ConnectCommand.ExecuteAsync(null);
             await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "connect", 60_000);
@@ -723,6 +725,51 @@ namespace DbExplorer.UiRender
 
         /// <summary>The prompt before closing with an open transaction and a Query builder canvas: built from the
         /// real tab state, so it also checks what the main window collects.</summary>
+        /// <summary>
+        /// A failed connect (wrong password, then nothing listening on the port): the failure card with Edit / Retry, the
+        /// red status line, and the status history opened from it, at both sizes.
+        /// </summary>
+        private async Task RenderConnectionErrorsAsync(string[] pg)
+        {
+            var wrong = Profile("Shop (wrong password)", SqlDialect.PostgresKey, pg, ConnectionEnvironment.Development, "Local");
+            wrong.Password = "not-the-password";
+            var closed = Profile("Billing", SqlDialect.PostgresKey, pg, ConnectionEnvironment.Staging, "Clients/Acme");
+            closed.Host = "127.0.0.1";
+            closed.Port = 1;
+            _vm.Profiles.Add(wrong);
+            _vm.Profiles.Add(closed);
+
+            _vm.SelectedProfile = closed;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy, "refused connect");
+            _vm.SelectedProfile = wrong;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy && _vm.ShowConnectionFailure, "failed connect");
+            Console.WriteLine("  " + _vm.StatusText);
+            await Shot(_window, "error-login");
+
+            var status = _window.FindControl<Button>("StatusButton")!;
+            status.Flyout!.ShowAt(status);
+            await Settle(6);
+            await Shot(_window, "error-history");
+            status.Flyout.Hide();
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            _vm.SelectedProfile = closed;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy, "refused connect");
+            await Settle(6);
+            await Shot(_window, "small-error-refused");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            _vm.DismissConnectionFailureCommand.Execute(null);
+            _vm.Profiles.Remove(wrong);
+            _vm.Profiles.Remove(closed);
+            await Settle();
+        }
+
         private async Task RenderLeavePromptAsync()
         {
             _vm.SelectedTab = AppTab.Query;

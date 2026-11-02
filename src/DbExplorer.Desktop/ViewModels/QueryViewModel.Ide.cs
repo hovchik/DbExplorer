@@ -172,6 +172,7 @@ public partial class QueryViewModel
         _runCts = new CancellationTokenSource();
         IsRunning = true;
         Messages.Clear();
+        _resultsQuery = sql;
         Status = analyze ? "Running and measuring…" : "Getting the estimated plan…";
         try
         {

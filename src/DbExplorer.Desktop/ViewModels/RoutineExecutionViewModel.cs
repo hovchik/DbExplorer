@@ -179,6 +179,36 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
 
     public bool IsGrid => Plan is null;
 
+    /// <summary>A Query tab result the user pinned: it stays when the query runs again and cannot be edited.</summary>
+    public bool IsPinned { get; init; }
+
+    /// <summary>When the result was pinned (local time).</summary>
+    public DateTime? PinnedAt { get; init; }
+
+    /// <summary>The SQL that produced a pinned result, when known; shown in its tab's tooltip.</summary>
+    public string? Query { get; init; }
+
+    /// <summary>The tab header: pinned results carry the time they were pinned, so two runs of a query tell apart.</summary>
+    public string Header => IsPinned && PinnedAt is { } at ? $"{Title} · {at:HH:mm:ss}" : Title;
+
+    /// <summary>Tooltip of the tab header.</summary>
+    public string HeaderTip
+    {
+        get
+        {
+            if (!IsPinned) return Title + "\nPin it to keep it when the query runs again.";
+            var lines = new List<string> { $"Pinned at {PinnedAt:HH:mm:ss} · {Rows.Count:N0} row(s)" };
+            if (!string.IsNullOrEmpty(Connection)) lines.Add(Connection);
+            if (!string.IsNullOrWhiteSpace(Query))
+            {
+                var sql = Query.Trim();
+                lines.Add(sql.Length > 400 ? sql[..400] + "…" : sql);
+            }
+            lines.Add("Read-only snapshot: kept when the query runs again, closed with ✕.");
+            return string.Join("\n", lines);
+        }
+    }
+
     public bool CanEdit(int column) => CommitEdits is not null && Source?.CanEdit(column) == true;
 
     /// <summary>Rows can be added to and deleted from this result (it reads one table whose key is in the result).</summary>

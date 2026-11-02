@@ -1311,6 +1311,13 @@ public partial class ResultGridView : UserControl
         var rs = ResultSet;
         var editable = rs?.Source?.HasEditableColumns == true && rs.CommitEdits is not null;
         var links = rs?.OpenReference is not null && rs.Source?.HasReferences == true;
+        if (rs is { IsPinned: true })
+        {
+            EditInfoText.Text = "Pinned · read-only";
+            ToolTip.SetTip(EditInfoText, "A snapshot kept when the query runs again. Its values are not edited or refreshed; close it with ✕ on its tab.");
+            EditInfoText.IsVisible = true;
+            return;
+        }
         if (rs?.Source is null || (rs.CommitEdits is null && !links))
         {
             EditInfoText.IsVisible = false;

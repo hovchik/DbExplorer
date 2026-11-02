@@ -244,10 +244,55 @@
 	<GridSplitter x:Name="ResultsSplitter" Grid.Row="2" ResizeDirection="Rows" Background="Transparent"
 				  ToolTip.Tip="Drag to resize the editor and results · double-click to reset" />
 
-	<TabControl Grid.Row="3" ItemsSource="{Binding ResultSets}">
+	<!-- Results: pinned snapshots first (kept when the query runs again), then the latest run's result sets -->
+	<TabControl Grid.Row="3" x:Name="ResultTabs" ItemsSource="{Binding ShownResults}" SelectedItem="{Binding SelectedResult}">
+	  <TabControl.Styles>
+		<Style Selector="Button.resulttab">
+		  <Setter Property="Padding" Value="3" />
+		  <Setter Property="MinWidth" Value="0" />
+		  <Setter Property="MinHeight" Value="0" />
+		  <Setter Property="Background" Value="Transparent" />
+		  <Setter Property="BorderThickness" Value="0" />
+		  <Setter Property="CornerRadius" Value="3" />
+		  <Setter Property="VerticalAlignment" Value="Center" />
+		  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+		</Style>
+		<Style Selector="Button.resulttab:pointerover /template/ ContentPresenter">
+		  <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+		</Style>
+		<Style Selector="Button.resulttab:pointerover">
+		  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+		</Style>
+		<Style Selector="controls|StrokeIcon.pinned">
+		  <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+		</Style>
+	  </TabControl.Styles>
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
-		  <TextBlock Text="{Binding Title}" />
+		  <StackPanel Orientation="Horizontal" Spacing="4" Background="Transparent" ToolTip.Tip="{Binding HeaderTip}">
+			<StackPanel.ContextMenu>
+			  <ContextMenu>
+				<MenuItem Header="Pin result" IsVisible="{Binding !IsPinned}"
+						  Command="{Binding $parent[TabControl].DataContext.PinResultCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Rename…" IsVisible="{Binding IsPinned}"
+						  Command="{Binding $parent[TabControl].DataContext.RenamePinnedResultCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close" IsVisible="{Binding IsPinned}"
+						  Command="{Binding $parent[TabControl].DataContext.ClosePinnedResultCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close all pinned" Command="{Binding $parent[TabControl].DataContext.CloseAllPinnedResultsCommand}" />
+			  </ContextMenu>
+			</StackPanel.ContextMenu>
+			<controls:StrokeIcon Classes="pinned" Data="{x:Static controls:Icons.Pin}" Width="13" Height="13"
+								 VerticalAlignment="Center" IsVisible="{Binding IsPinned}" />
+			<TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
+			<Button Classes="resulttab" IsVisible="{Binding !IsPinned}" ToolTip.Tip="Pin: keep this result when the query runs again"
+					Command="{Binding $parent[TabControl].DataContext.PinResultCommand}" CommandParameter="{Binding}">
+			  <controls:StrokeIcon Data="{x:Static controls:Icons.Pin}" Width="12" Height="12" />
+			</Button>
+			<Button Classes="resulttab" IsVisible="{Binding IsPinned}" ToolTip.Tip="Close this pinned result"
+					Command="{Binding $parent[TabControl].DataContext.ClosePinnedResultCommand}" CommandParameter="{Binding}">
+			  <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" Width="11" Height="11" />
+			</Button>
+		  </StackPanel>
 		</DataTemplate>
 	  </TabControl.ItemTemplate>
 	  <TabControl.ContentTemplate>

@@ -21,7 +21,7 @@ For IT, unattended: `DbExplorer-Setup-1.2.0.exe /VERYSILENT /ALLUSERS /TASKS="de
 
 ## Building it
 
-On Windows, with the .NET 8 SDK. The script also needs Inno Setup 6.3+ or 7; if it can't find it, it installs it
+On Windows, with the .NET 10 SDK. The script also needs Inno Setup 6.3+ or 7; if it can't find it, it installs it
 with winget the first time (or get it from https://jrsoftware.org/isdl.php, or pass `-Iscc <path to ISCC.exe>`):
 
 ```powershell

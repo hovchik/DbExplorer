@@ -1,6 +1,6 @@
 # DB Explorer
 
-A cross-platform desktop app (.NET 8 + Avalonia) for exploring databases without disturbing them.
+A cross-platform desktop app (.NET 10 + Avalonia) for exploring databases without disturbing them.
 SQL Server is the primary engine; PostgreSQL (12+) and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
 Connections can go through an **SSH tunnel** (password or private key; the server's host key is pinned on first use).
 
@@ -53,7 +53,7 @@ Everywhere:
 
 ## Build and run
 
-Requires the .NET 8 SDK.
+Requires the .NET 10 SDK.
 
 ```bash
 dotnet restore
@@ -86,7 +86,7 @@ Or publish a folder to zip:
 ```bash
 # Windows (the FolderProfile publish profile): self-contained, ReadyToRun, no .NET install needed on the target machine
 dotnet publish src/DbExplorer.Desktop -p:PublishProfile=FolderProfile
-# → src/DbExplorer.Desktop/bin/Release/net8.0/publish/  (zip the folder; run DbExplorer.exe)
+# → src/DbExplorer.Desktop/bin/Release/net10.0/publish/  (zip the folder; run DbExplorer.exe)
 
 # Linux / macOS
 dotnet publish src/DbExplorer.Desktop -c Release -r linux-x64 --self-contained -o publish/linux-x64

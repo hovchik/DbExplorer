@@ -140,6 +140,7 @@ namespace DbExplorer.UiRender
             await Step("toolbar", RenderToolbarStatesAsync);
             await Step("querytabs", RenderManyQueryTabsAsync);
             await Step("dialogs", RenderDialogsAsync);
+            await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -214,6 +215,25 @@ namespace DbExplorer.UiRender
             await Settle(4);
             await Shot(_window, "navigator-menu");
             tree.ContextMenu.Close();
+
+            // Saved connections can be managed while connected: the menu on another (not open) connection.
+            var reporting = new ConnectionProfile
+            {
+                Name = "Reporting", Folder = "Local", ProviderKey = SqlDialect.PostgresKey, Host = "reports.internal",
+                Port = 5432, Database = "reports", UserName = "report", Environment = ConnectionEnvironment.Staging
+            };
+            _vm.Profiles.Add(reporting);
+            await Settle(2);
+            static IEnumerable<NavigatorNode> All(IEnumerable<NavigatorNode> nodes) => nodes.SelectMany(n => All(n.Children).Prepend(n));
+            nav.SelectedNode = All(nav.Roots).First(n => n.Kind == NavigatorNodeKind.Connection && n.Profile?.Id == reporting.Id);
+            await Settle(2);
+            tree.ContextMenu.Open(tree);
+            await Settle(4);
+            await Shot(_window, "navigator-connection-menu");
+            tree.ContextMenu.Close();
+            _vm.Profiles.Remove(reporting);
+            nav.SelectedNode = null;
+            await Settle(2);
 
             nav.FilterText = "order";
             await Settle(6);
@@ -473,6 +493,17 @@ namespace DbExplorer.UiRender
             var draft = new ConnectionProfile { ProviderKey = registry.All[0].Key };
             await ShowAndShoot(new ConnectionDialog { DataContext = new ConnectionDialogViewModel(registry, draft, ["Local", "Clients/Acme"], tunnels), Title = "New connection" }, "connection-dialog");
 
+            // A new connection to another machine: encrypted and verified by default; Production shows the
+            // certificate warning once Trust certificate is ticked.
+            var remoteVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "db.example.com"
+            };
+            await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-remote");
+            remoteVm.Environment = ConnectionEnvironment.Production;
+            remoteVm.TrustServerCertificate = true;
+            await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-production-warning");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";
@@ -653,6 +684,33 @@ namespace DbExplorer.UiRender
         }
 
         // ------------------------------------------------------------------ helpers
+
+        /// <summary>The prompt before closing with an open transaction and a Query builder canvas: built from the
+        /// real tab state, so it also checks what the main window collects.</summary>
+        private async Task RenderLeavePromptAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("UPDATE orders SET note = note WHERE id = 1;", "Orders fix");
+            var doc = _vm.Query.SelectedDocument!;
+            doc.AutoCommit = false;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.HasOpenTransaction, "open transaction");
+            _vm.QueryBuilder.AddTable(Table("orders"), 40, 40);
+            _vm.QueryBuilder.AddTable(Table("customers"), 300, 40);
+
+            foreach (var reason in Enum.GetValues<LeaveReason>())
+                Console.WriteLine($"{reason}: {string.Join(" | ", _vm.DescribeUnsavedWork(reason))}");
+            var lines = _vm.DescribeUnsavedWork(LeaveReason.Quit);
+            if (lines.Count != 2) throw new InvalidOperationException($"expected 2 lines, got {lines.Count}");
+            await ShowAndShoot(new ConfirmWindow(UnsavedWork.Message(LeaveReason.Quit, _vm.Session!.Profile.DisplayName, lines),
+                UnsavedWork.ConfirmText(LeaveReason.Quit)), "leave-quit");
+            await ShowAndShoot(new ConfirmWindow(UnsavedWork.Message(LeaveReason.Disconnect, _vm.Session!.Profile.DisplayName,
+                    [.. lines, "Security: 2 unapplied changes are discarded", "Data window for public.orders: uncommitted edits are discarded"]),
+                UnsavedWork.ConfirmText(LeaveReason.Disconnect)), "leave-disconnect");
+
+            await doc.EndTransactionAsync(commit: false, reason: "render done");
+        }
 
         private async Task ShowAndShoot(Window dialog, string name, Action<Window>? afterShow = null)
         {

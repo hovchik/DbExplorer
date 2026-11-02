@@ -22,6 +22,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<AppPaths>();
         services.AddSingleton<AppSettingsService>();
+        services.AddSingleton<Workspace.WorkspaceStore>();
         services.AddSingleton<ISecretProtector>(_ => OperatingSystem.IsWindows()
             ? new DpapiSecretProtector()
             : new NoSecretProtector());

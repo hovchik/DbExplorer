@@ -300,7 +300,7 @@
                       PlaceholderText="Select a connection…"
                       IsTextSearchEnabled="True"
                       IsEnabled="{Binding !IsConnected}"
-                      ToolTip.Tip="Connection (locked while connected)">
+                      ToolTip.Tip="Connection (locked while connected; you can still add, edit, duplicate and import connections)">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
                   <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
@@ -328,7 +328,10 @@
               <Button Classes="tool" ToolTip.Tip="Edit connection…" Command="{Binding EditConnectionCommand}">
                 <controls:StrokeIcon Data="{x:Static controls:Icons.Pencil}" />
               </Button>
-              <Button Classes="tool" ToolTip.Tip="Delete connection" Command="{Binding DeleteConnectionCommand}">
+              <Button Classes="tool" ToolTip.Tip="Duplicate connection…" Command="{Binding DuplicateConnectionCommand}">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Copy}" />
+              </Button>
+              <Button Classes="tool" ToolTip.Tip="{Binding DeleteConnectionTip}" Command="{Binding DeleteConnectionCommand}">
                 <controls:StrokeIcon Data="{x:Static controls:Icons.Trash}" />
               </Button>
               <Button Classes="tool" ToolTip.Tip="Import or export connections">
@@ -402,6 +405,9 @@
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />
+                  <MenuItem Header="Reopen last connection at start" ToggleType="CheckBox"
+                            IsChecked="{Binding ReconnectOnStart}"
+                            ToolTip.Tip="Open the connection that was open when DB Explorer closed. Production connections and ones without a saved password are only selected." />
                   <MenuItem Header="Software rendering (after restart)" ToggleType="CheckBox"
                             IsChecked="{Binding SoftwareRendering}"
                             ToolTip.Tip="Draw the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up." />

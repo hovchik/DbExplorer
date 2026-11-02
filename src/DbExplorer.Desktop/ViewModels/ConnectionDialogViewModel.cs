@@ -14,7 +14,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     private readonly Guid _id;
     private readonly SshTunnelService? _tunnels;
 
-    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft, IReadOnlyList<string>? folders = null, SshTunnelService? tunnels = null)
+    public ConnectionDialogViewModel(ProviderRegistry registry, ConnectionProfile draft, IReadOnlyList<string>? folders = null, SshTunnelService? tunnels = null,
+        bool isNew = false)
     {
         _tunnels = tunnels;
         _useSsh = draft.Ssh.Enabled;
@@ -43,6 +44,44 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _readOnlyIntent = draft.ReadOnlyIntent;
         _readOnly = draft.ReadOnly;
         _environment = draft.Environment;
+        // A new connection's TLS boxes follow the host (encrypt and verify unless the server is on this computer)
+        // until the user ticks one of them; an existing connection keeps what it was saved with.
+        _tlsFollowsHost = isNew;
+        if (isNew) (_encrypt, _trustServerCertificate) = ConnectionSecurity.DefaultsFor(_host);
+    }
+
+    private bool _tlsFollowsHost;
+    private bool _applyingTlsDefaults;
+
+    /// <summary>What the Encrypt and Trust certificate boxes mean together, under them.</summary>
+    public string TlsSummary => ConnectionSecurity.Describe(Encrypt, TrustServerCertificate, Host);
+
+    /// <summary>Shown when a Production connection does not check the server certificate.</summary>
+    public string? TlsWarning => ConnectionSecurity.Warning(Encrypt, TrustServerCertificate, Environment);
+
+    public bool HasTlsWarning => TlsWarning is not null;
+
+    partial void OnHostChanged(string value)
+    {
+        if (_tlsFollowsHost)
+        {
+            _applyingTlsDefaults = true;
+            try { (Encrypt, TrustServerCertificate) = ConnectionSecurity.DefaultsFor(value); }
+            finally { _applyingTlsDefaults = false; }
+        }
+        OnTlsChanged();
+    }
+
+    partial void OnEncryptChanged(bool value) => OnTlsChanged(userChange: true);
+    partial void OnTrustServerCertificateChanged(bool value) => OnTlsChanged(userChange: true);
+    partial void OnEnvironmentChanged(ConnectionEnvironment value) => OnTlsChanged();
+
+    private void OnTlsChanged(bool userChange = false)
+    {
+        if (userChange && !_applyingTlsDefaults) _tlsFollowsHost = false;
+        OnPropertyChanged(nameof(TlsSummary));
+        OnPropertyChanged(nameof(TlsWarning));
+        OnPropertyChanged(nameof(HasTlsWarning));
     }
 
     public IReadOnlyList<ConnectionEnvironment> Environments { get; } = Enum.GetValues<ConnectionEnvironment>();
@@ -150,7 +189,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
             }
             catch (Exception ex)
             {
-                Message = sshResult + "✗ Database: " + (tunnel?.Explain(ex) ?? ex).Message;
+                Message = sshResult + "✗ Database: " + ConnectionSecurity.Describe(tunnel?.Explain(ex) ?? ex);
             }
         }
         finally
@@ -184,7 +223,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Message = "✗ " + ex.Message;
+            Message = "✗ " + ConnectionSecurity.Describe(ex);
         }
         finally
         {

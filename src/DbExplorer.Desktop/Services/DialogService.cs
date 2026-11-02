@@ -18,7 +18,7 @@ namespace DbExplorer.Desktop.Services;
 
 public interface IDialogService
 {
-    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null);
+    Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null, bool isNew = false);
 
     Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,
@@ -42,6 +42,9 @@ public interface IDialogService
 
     /// <param name="details">Shown below the message in a scrollable monospace box, e.g. the exact script that will run.</param>
     Task<bool> ConfirmAsync(string message, string confirmText = "Run", string? requiredText = null, string? banner = null, string? details = null);
+
+    /// <summary>The tables (with any filter) of the open Get data windows whose rows have edits that were not committed.</summary>
+    IReadOnlyList<string> DataWindowsWithUncommittedEdits();
 
     void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
 
@@ -87,11 +90,11 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
 {
     public Window? Owner { get; set; }
 
-    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null)
+    public async Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null, bool isNew = false)
     {
         if (Owner is null) return null;
 
-        var vm = new ConnectionDialogViewModel(registry, draft, folders, tunnels);
+        var vm = new ConnectionDialogViewModel(registry, draft, folders, tunnels, isNew);
         var dialog = new ConnectionDialog { DataContext = vm, Title = title };
         // Asked for a password on connect: open where the missing one goes.
         dialog.ShowSshTab = draft.Ssh.NeedsPassword && !NeedsDatabasePassword(draft);
@@ -281,6 +284,11 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         else window.Show();
     }
 
+    private readonly List<GetDataViewModel> _dataWindows = [];
+
+    public IReadOnlyList<string> DataWindowsWithUncommittedEdits() =>
+        _dataWindows.Where(w => w.HasUncommittedEdits).Select(w => w.Title.StartsWith("Data: ", StringComparison.Ordinal) ? w.Title[6..] : w.Title).ToList();
+
     public void ShowCommandPalette(IReadOnlyList<PaletteItem> items)
     {
         if (Owner is null) return;
@@ -295,6 +303,8 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         var vm = new GetDataViewModel();
         var window = new GetDataWindow { DataContext = vm };
         vm.Initialize(queryService, session, table, filter, filterDescription, this);
+        _dataWindows.Add(vm);
+        window.Closed += (_, _) => _dataWindows.Remove(vm);
 
         if (Owner is not null) window.Show(Owner);
         else window.Show();

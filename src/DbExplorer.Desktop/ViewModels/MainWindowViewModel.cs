@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Providers;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Application.Workspace;
 using DbExplorer.Core.Connections;
@@ -334,6 +335,8 @@ public partial class MainWindowViewModel : ViewModelBase
             await Query.RestoreTabsAsync();
             if (SavedWorkspace.QueryTabIndex is { } index && index >= 0 && index < Query.Documents.Count)
                 Query.SelectedDocument = Query.Documents[index];
+            // Files named on the command line (Explorer's Open) come after the restored tabs and are the ones shown.
+            if (StartupFiles.Count > 0) await OpenFilesAsync(StartupFiles);
             foreach (var p in ConnectionFolders.Order(await _store.LoadAsync())) Profiles.Add(p);
             (action, var saved, note) = StartupConnection.Decide(SavedWorkspace, Profiles, _settings.ReconnectOnStart);
             SelectedProfile = saved ?? Profiles.FirstOrDefault();
@@ -349,6 +352,32 @@ public partial class MainWindowViewModel : ViewModelBase
         if (action == StartupConnectionAction.Connect && ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
         // Nothing connected (not asked to, or the connect failed): open on the Query tab rather than a disabled one.
         ShowQueryWhileOffline();
+    }
+
+    /// <summary>The files the app was started with (Explorer's Open on a .sql file).</summary>
+    public IReadOnlyList<string> StartupFiles { get; set; } = [];
+
+    /// <summary>Opens files in Query tabs (from Explorer, another start of the app or a drop on the window) and shows
+    /// the Query tab; a file that cannot be opened is named in the status bar.</summary>
+    public async Task OpenFilesAsync(IReadOnlyList<string> paths)
+    {
+        var failed = new List<string>();
+        var opened = 0;
+        foreach (var path in paths)
+        {
+            try
+            {
+                await Query.OpenPathAsync(path);
+                opened++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqlFileException or ArgumentException or NotSupportedException)
+            {
+                failed.Add(ex is FileNotFoundException or DirectoryNotFoundException ? $"{Path.GetFileName(path)} was not found" : ex.Message);
+            }
+        }
+        if (opened > 0) SelectedTab = AppTab.Query;
+        if (failed.Count > 0)
+            ShowError((failed.Count == 1 ? "Could not open a file: " : $"Could not open {failed.Count} files: ") + string.Join("; ", failed));
     }
 
     // ----- Offline: the Query tab stands in for the tabs that need a connection -----

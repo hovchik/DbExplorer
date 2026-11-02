@@ -147,6 +147,7 @@ namespace DbExplorer.UiRender
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
+            await Step("sqlfiles", RenderSqlFilesAsync);
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
@@ -750,6 +751,41 @@ namespace DbExplorer.UiRender
             await Shot(_window, "reopen-after");
             Console.WriteLine("  tabs: " + string.Join(", ", query.Documents.Select(d => d.Title)) + " · still closed: " +
                               string.Join(", ", query.RecentlyClosed.Select(c => c.Title)));
+        }
+
+        /// <summary>.sql files: the Recent list under Open, and the bar shown when another program changed a file the tab has edits in.</summary>
+        private async Task RenderSqlFilesAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            foreach (var d in query.Documents.Skip(1).ToList()) query.Documents.Remove(d);
+            var dir = Directory.CreateTempSubdirectory("dbx-sqlfiles-").FullName;
+            string[] names = ["daily-orders.sql", "refund-audit.sql", "customer-cleanup.sql"];
+            foreach (var name in names)
+            {
+                var path = Path.Combine(dir, name);
+                await File.WriteAllTextAsync(path, $"-- {name}\nselect id, status, total\nfrom orders\nwhere ordered_at >= current_date - 7;");
+                await _vm.OpenFilesAsync([path]);
+            }
+            await Settle(4);
+            var view = _window.GetVisualDescendants().OfType<QueryWorkspaceView>().First();
+            var open = view.FindControl<SplitButton>("OpenButton")!;
+            open.Flyout!.ShowAt(open);
+            await Settle(8);
+            await Shot(_window, "sqlfiles-recent");
+            open.Flyout.Hide();
+            await Settle();
+
+            var tab = query.Documents.First(d => d.Title == "daily-orders.sql");
+            query.SelectedDocument = tab;
+            tab.Document.Insert(tab.Document.TextLength, "\n-- my edit");
+            var file = tab.FilePath!;
+            await File.WriteAllTextAsync(file, "-- changed by a teammate\nselect 1;");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(1));
+            await query.CheckFilesOnDiskAsync();
+            await Settle(4);
+            await Shot(_window, "sqlfiles-changed");
+            Console.WriteLine("  disk notice: " + tab.DiskNotice);
         }
 
         private async Task RenderLocalHistoryAsync()

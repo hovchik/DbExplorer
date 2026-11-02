@@ -139,7 +139,7 @@
 			<ToolTip.Tip>
 			  <StackPanel>
 				<TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
-				<TextBlock Classes="hint" Text="{Binding FilePath}" IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}" />
+				<TextBlock Classes="hint" Text="{Binding FileToolTip}" IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}" />
 				<TextBlock Classes="hint" Text="Drag to move · middle-click to close" Margin="0,4,0,0" />
 			  </StackPanel>
 			</ToolTip.Tip>
@@ -148,6 +148,8 @@
 				<MenuItem Header="Rename…" Command="{Binding $parent[TabControl].DataContext.RenameTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Duplicate" Command="{Binding $parent[TabControl].DataContext.DuplicateTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Local history…" InputGesture="Ctrl+Shift+H" Command="{Binding $parent[TabControl].DataContext.ShowLocalHistoryCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Show in folder" IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}"
+						  Command="{Binding $parent[TabControl].DataContext.ShowInFolderCommand}" CommandParameter="{Binding}" />
 				<Separator />
 				<MenuItem Header="Move left" InputGesture="Ctrl+Shift+PageUp" Command="{Binding $parent[TabControl].DataContext.MoveTabLeftCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Move right" InputGesture="Ctrl+Shift+PageDown" Command="{Binding $parent[TabControl].DataContext.MoveTabRightCommand}" CommandParameter="{Binding}" />
@@ -206,7 +208,33 @@
 		</Button>
 	  </StackPanel>
 	  <Button Classes="bar" Content="＋ New" Command="{Binding NewQueryCommand}" ToolTip.Tip="New query tab (Ctrl+N)" />
-	  <Button Classes="bar" Content="Open…" Click="OnOpen" ToolTip.Tip="Open a .sql file (Ctrl+O)" />
+	  <!-- Open… picks files; the arrow lists the recent ones. Files can also be dropped on the window or opened from Explorer. -->
+	  <SplitButton x:Name="OpenButton" Content="Open…" Click="OnOpen" MinHeight="26" Padding="8,2" FontSize="12"
+				   ToolTip.Tip="Open a .sql file (Ctrl+O). The arrow lists recent files. You can also drop files on the window.">
+		<SplitButton.Flyout>
+		  <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="wide">
+			<StackPanel Width="460" Spacing="4">
+			  <Grid ColumnDefinitions="*,Auto">
+				<TextBlock Classes="hint" VerticalAlignment="Center"
+						   Text="{Binding RecentHeader}" />
+				<Button Grid.Column="1" Classes="bar" Content="Clear" Command="{Binding ClearRecentFilesCommand}" IsVisible="{Binding HasRecentFiles}"
+						ToolTip.Tip="Forget the recent files (the files themselves stay)" />
+			  </Grid>
+			  <ListBox x:Name="RecentList" ItemsSource="{Binding RecentFiles}" MaxHeight="360" IsVisible="{Binding HasRecentFiles}"
+					   SelectionChanged="OnRecentPicked">
+				<ListBox.ItemTemplate>
+				  <DataTemplate x:DataType="vm:RecentFileItem">
+					<StackPanel ToolTip.Tip="{Binding Path}">
+					  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+					  <TextBlock Classes="hint" FontSize="11" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+					</StackPanel>
+				  </DataTemplate>
+				</ListBox.ItemTemplate>
+			  </ListBox>
+			</StackPanel>
+		  </Flyout>
+		</SplitButton.Flyout>
+	  </SplitButton>
 	  <Button Classes="bar" Content="Save" Click="OnSave" ToolTip.Tip="Save the tab to its file (Ctrl+S)" />
 	  <Button Classes="bar" Content="Save as…" Click="OnSaveAs" ToolTip.Tip="Save the tab to a new .sql file (Ctrl+Shift+S)" />
 	  <Button x:Name="HistoryButton" Classes="bar" Content="History ▾" ToolTip.Tip="Recently closed tabs and the scripts you ran before; double-click a script to open it in a new tab. Local history… keeps whole versions of each tab.">

@@ -97,8 +97,10 @@
                     IsVisible="{Binding SelectedIsOtherConnection}" IsEnabled="{Binding IsConnected}"
                     ToolTip.Tip="Disconnect the current connection and connect to this one" />
           <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding SelectedIsActiveConnection}" />
-          <MenuItem Header="Edit connection…" Command="{Binding EditConnectionCommand}" IsVisible="{Binding SelectedIsConnection}"
-                    IsEnabled="{Binding !IsConnected}" ToolTip.Tip="Connections can be edited while disconnected" />
+          <MenuItem Header="Edit connection…" Command="{Binding EditConnectionCommand}" IsVisible="{Binding SelectedIsConnection}" />
+          <MenuItem Header="Duplicate connection…" Command="{Binding DuplicateConnectionCommand}" IsVisible="{Binding SelectedIsConnection}"
+                    ToolTip.Tip="A copy of this connection under a new name, opened for editing" />
+          <MenuItem Header="Delete connection…" Command="{Binding DeleteConnectionCommand}" IsVisible="{Binding SelectedIsOtherConnection}" />
 
           <!-- Objects -->
           <MenuItem Header="Open" InputGesture="Enter" FontWeight="SemiBold" Command="{Binding OpenCommand}" IsVisible="{Binding SelectedHasCatalogActions}"

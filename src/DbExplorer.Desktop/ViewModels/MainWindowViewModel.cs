@@ -227,9 +227,14 @@ public partial class MainWindowViewModel : ViewModelBase
             case NavigatorConnectionAction.Disconnect:
                 if (DisconnectCommand.CanExecute(null)) await DisconnectCommand.ExecuteAsync(null);
                 break;
-            case NavigatorConnectionAction.Edit when !IsConnected:
-                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
-                if (EditConnectionCommand.CanExecute(null)) await EditConnectionCommand.ExecuteAsync(null);
+            case NavigatorConnectionAction.Edit when !IsBusy:
+                await EditProfileAsync(profile);
+                break;
+            case NavigatorConnectionAction.Duplicate when !IsBusy:
+                await DuplicateProfileAsync(profile);
+                break;
+            case NavigatorConnectionAction.Delete when !IsBusy:
+                await DeleteProfileAsync(profile);
                 break;
             case NavigatorConnectionAction.RefreshMetadata:
                 if (RefreshMetadataCommand.CanExecute(null)) await RefreshMetadataCommand.ExecuteAsync(null);
@@ -410,9 +415,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
 
-    private bool HasSelection => SelectedProfile is not null && !IsConnected && !IsBusy;
+    // Saved connections can be managed while connected: only the open connection itself cannot be deleted (or picked
+    // in the locked toolbar picker), and edits to it reach the open session as described in ConnectionEdits.
+    private bool HasSelection => SelectedProfile is not null && !IsBusy;
     private bool CanConnect => SelectedProfile is not null && !IsConnected && !IsBusy;
     private bool CanUseSession => IsConnected && !IsBusy;
+    private bool CanCreate => !IsBusy;
+    private bool CanDelete => SelectedProfile is { } p && !IsBusy && !IsOpen(p);
+
+    private bool IsOpen(ConnectionProfile profile) => Session?.Profile.Id == profile.Id;
+
+    /// <summary>The toolbar's delete button explains why it is greyed out on the open connection.</summary>
+    public string DeleteConnectionTip => SelectedProfile is { } p && IsOpen(p)
+        ? "Delete connection (disconnect first: this connection is open)"
+        : "Delete connection…";
 
     [RelayCommand(CanExecute = nameof(CanCreate))]
     private async Task NewConnectionAsync()
@@ -424,15 +440,20 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles.Add(profile);
         SortProfiles(profile);
         await SaveProfilesAsync();
+        if (IsConnected) StatusText = $"Saved {profile}. It is in the navigator; disconnect to connect to it.";
     }
 
-    private bool CanCreate => !IsBusy && !IsConnected;
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private Task EditConnectionAsync() => SelectedProfile is { } current ? EditProfileAsync(current) : Task.CompletedTask;
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
-    private async Task EditConnectionAsync()
-    {
-        if (SelectedProfile is not { } current) return;
+    private Task DuplicateConnectionAsync() => SelectedProfile is { } current ? DuplicateProfileAsync(current) : Task.CompletedTask;
 
+    [RelayCommand(CanExecute = nameof(CanDelete))]
+    private Task DeleteConnectionAsync() => SelectedProfile is { } current ? DeleteProfileAsync(current) : Task.CompletedTask;
+
+    private async Task EditProfileAsync(ConnectionProfile current)
+    {
         var edited = await _dialogs.EditConnectionAsync(current.Clone(), "Edit connection", ConnectionFolders.All(Profiles));
         if (edited is null) return;
 
@@ -446,7 +467,85 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles[index] = edited;
         SortProfiles(edited);
         await SaveProfilesAsync();
+
+        if (Session is { } session && session.Profile.Id == edited.Id) await AfterOpenConnectionEditedAsync(session, edited);
     }
+
+    /// <summary>
+    /// The open connection was edited: labels, environment and read-only apply at once; server, sign-in, TLS and SSH
+    /// changes need a reconnect, which is offered (open transactions would be rolled back, so never done silently).
+    /// </summary>
+    private async Task AfterOpenConnectionEditedAsync(DatabaseSession session, ConnectionProfile edited)
+    {
+        var reconnect = ConnectionEdits.NeedsReconnect(session.Profile, edited);
+        if (ConnectionEdits.ApplyToOpenSession(session.Profile, edited)) RefreshSessionLabels(session);
+        if (!reconnect)
+        {
+            StatusText = $"Saved {edited}";
+            return;
+        }
+
+        var now = await _dialogs.ConfirmAsync(
+            $"{edited.DisplayName} is open with its previous server, sign-in or security settings. Reconnect now to use the " +
+            "new ones? Open transactions and uncommitted grid edits are rolled back; Query tabs stay open.",
+            "Reconnect");
+        if (!now || !ReferenceEquals(Session, session))
+        {
+            StatusText = $"Saved {edited}. The open connection keeps its previous settings until you reconnect.";
+            return;
+        }
+
+        await DisconnectAsync();
+        if (IsConnected) return;
+        SelectedProfile = Profiles.FirstOrDefault(p => p.Id == edited.Id) ?? SelectedProfile;
+        if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>The window title, banner and status after the open connection's name or environment changed.</summary>
+    private void RefreshSessionLabels(DatabaseSession session)
+    {
+        OnPropertyChanged(nameof(ConnectedEnvironment));
+        OnPropertyChanged(nameof(ShowEnvironmentBanner));
+        OnPropertyChanged(nameof(EnvironmentBanner));
+        OnPropertyChanged(nameof(WindowTitle));
+        if (!IsBusy) StatusText = BuildStatus(session);
+    }
+
+    private async Task DuplicateProfileAsync(ConnectionProfile source)
+    {
+        var draft = ConnectionEdits.Duplicate(source, Profiles);
+        var copy = await _dialogs.EditConnectionAsync(draft, "Duplicate connection", ConnectionFolders.All(Profiles));
+        if (copy is null) return;
+
+        Profiles.Add(copy);
+        SortProfiles(copy);
+        await SaveProfilesAsync();
+        StatusText = $"Saved {copy}" + (IsConnected ? ". It is in the navigator; disconnect to connect to it." : "");
+    }
+
+    private async Task DeleteProfileAsync(ConnectionProfile profile)
+    {
+        if (IsOpen(profile))
+        {
+            StatusText = $"{profile.DisplayName} is open. Disconnect before deleting it.";
+            return;
+        }
+        if (!await _dialogs.ConfirmAsync(
+                $"Delete the saved connection {profile.QualifiedName}? Its saved password is removed too. " +
+                "Export it first if you might need it again.", "Delete"))
+            return;
+
+        var index = IndexOfProfile(profile.Id);
+        if (index < 0) return;
+        Profiles.RemoveAt(index);
+        SelectedProfile = OpenProfile() ?? (SelectedProfile is { } still && Profiles.Contains(still) ? still : Profiles.FirstOrDefault());
+        await SaveProfilesAsync();
+        StatusText = $"Deleted {profile.QualifiedName}";
+    }
+
+    /// <summary>The open connection's entry in <see cref="Profiles"/>, or null when disconnected.</summary>
+    private ConnectionProfile? OpenProfile() =>
+        Session is { } s ? Profiles.FirstOrDefault(p => p.Id == s.Profile.Id) : null;
 
     private int IndexOfProfile(Guid id)
     {
@@ -455,7 +554,10 @@ public partial class MainWindowViewModel : ViewModelBase
         return -1;
     }
 
-    /// <summary>Keeps the list grouped by folder, then by name, and selects <paramref name="select"/>.</summary>
+    /// <summary>
+    /// Keeps the list grouped by folder, then by name, and selects <paramref name="select"/>; while connected the
+    /// (locked) picker keeps showing the open connection.
+    /// </summary>
     private void SortProfiles(ConnectionProfile select)
     {
         var ordered = ConnectionFolders.Order(Profiles);
@@ -464,16 +566,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var at = Profiles.IndexOf(ordered[i]);
             if (at != i) Profiles.Move(at, i);
         }
-        SelectedProfile = select;
-    }
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private async Task DeleteConnectionAsync()
-    {
-        if (SelectedProfile is not { } current) return;
-        Profiles.Remove(current);
-        SelectedProfile = Profiles.FirstOrDefault();
-        await SaveProfilesAsync();
+        SelectedProfile = OpenProfile() ?? select;
     }
 
     private bool CanExport => Profiles.Count > 0 && !IsBusy;
@@ -544,13 +637,21 @@ public partial class MainWindowViewModel : ViewModelBase
             var result = ConnectionTransfer.Merge(Profiles, incoming, choice);
             Profiles.Clear();
             foreach (var profile in ConnectionFolders.Order(result.Profiles)) Profiles.Add(profile);
-            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
+            SelectedProfile = OpenProfile() ?? Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
             await SaveProfilesAsync();
 
             var parts = new List<string> { $"added {result.Added}" };
             if (result.Replaced > 0) parts.Add($"overwrote {result.Replaced}");
             if (result.Skipped > 0) parts.Add($"skipped {result.Skipped}");
-            StatusText = $"Imported connections from {picked.Name}: {string.Join(", ", parts)}";
+            var note = "";
+            // Overwriting the open connection: apply what applies at once, and say when the rest waits for a reconnect.
+            if (Session is { } session && OpenProfile() is { } imported && !ReferenceEquals(imported, session.Profile))
+            {
+                if (ConnectionEdits.ApplyToOpenSession(session.Profile, imported)) RefreshSessionLabels(session);
+                if (ConnectionEdits.NeedsReconnect(session.Profile, imported))
+                    note = $" · {imported.DisplayName} keeps its previous settings until you reconnect";
+            }
+            StatusText = $"Imported connections from {picked.Name}: {string.Join(", ", parts)}{note}";
         }
         catch (Exception ex)
         {
@@ -737,6 +838,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Connect", ConnectCommand, SelectedProfile?.ToString());
         Command("New connection…", NewConnectionCommand);
         Command("Edit connection…", EditConnectionCommand, SelectedProfile?.ToString());
+        Command("Duplicate connection…", DuplicateConnectionCommand, SelectedProfile?.ToString());
         Command("Export connections…", ExportConnectionsCommand, "with or without passwords");
         Command("Import connections…", ImportConnectionsCommand);
         items.Add(new PaletteItem(ShowNavigator ? "Hide the database navigator" : "Show the database navigator", "Ctrl+B",
@@ -816,7 +918,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         NewConnectionCommand.NotifyCanExecuteChanged();
         EditConnectionCommand.NotifyCanExecuteChanged();
+        DuplicateConnectionCommand.NotifyCanExecuteChanged();
         DeleteConnectionCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(DeleteConnectionTip));
         ExportConnectionsCommand.NotifyCanExecuteChanged();
         ImportConnectionsCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();

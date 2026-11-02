@@ -214,6 +214,25 @@ namespace DbExplorer.UiRender
             await Shot(_window, "navigator-menu");
             tree.ContextMenu.Close();
 
+            // Saved connections can be managed while connected: the menu on another (not open) connection.
+            var reporting = new ConnectionProfile
+            {
+                Name = "Reporting", Folder = "Local", ProviderKey = SqlDialect.PostgresKey, Host = "reports.internal",
+                Port = 5432, Database = "reports", UserName = "report", Environment = ConnectionEnvironment.Staging
+            };
+            _vm.Profiles.Add(reporting);
+            await Settle(2);
+            static IEnumerable<NavigatorNode> All(IEnumerable<NavigatorNode> nodes) => nodes.SelectMany(n => All(n.Children).Prepend(n));
+            nav.SelectedNode = All(nav.Roots).First(n => n.Kind == NavigatorNodeKind.Connection && n.Profile?.Id == reporting.Id);
+            await Settle(2);
+            tree.ContextMenu.Open(tree);
+            await Settle(4);
+            await Shot(_window, "navigator-connection-menu");
+            tree.ContextMenu.Close();
+            _vm.Profiles.Remove(reporting);
+            nav.SelectedNode = null;
+            await Settle(2);
+
             nav.FilterText = "order";
             await Settle(6);
             await Shot(_window, "navigator-filter");

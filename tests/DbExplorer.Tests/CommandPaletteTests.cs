@@ -128,14 +128,38 @@ public class CommandPaletteTests : IDisposable
         ShortcutCatalog.All.SelectMany(s => s.Keys.Split(" / ", StringSplitOptions.TrimEntries)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     [Fact]
-    public void Every_key_binding_in_the_xaml_is_in_the_shortcut_sheet()
+    public void Key_bindings_come_from_the_keymap_not_the_xaml()
     {
-        var keys = CatalogKeys();
-        var missing = Directory.EnumerateFiles(Desktop, "*.axaml", SearchOption.AllDirectories)
-            .SelectMany(f => Regex.Matches(File.ReadAllText(f), "<KeyBinding Gesture=\"([^\"]+)\"").Select(m => (File: Path.GetFileName(f), Keys: m.Groups[1].Value)))
-            .Where(x => x.Keys != "Escape" ? !keys.Contains(x.Keys) : !keys.Contains("Esc"))
+        // Fixed gestures in XAML could not be changed in the F1 sheet; views bind them with Keymap.Bind instead.
+        var hardCoded = Directory.EnumerateFiles(Desktop, "*.axaml", SearchOption.AllDirectories)
+            .SelectMany(f => Regex.Matches(File.ReadAllText(f), "<KeyBinding Gesture=\"([^\"]+)\"").Select(m => $"{Path.GetFileName(f)}: {m.Groups[1].Value}"))
             .ToList();
-        Assert.Empty(missing);
+        Assert.Empty(hardCoded);
+    }
+
+    [Fact]
+    public void Menu_items_name_commands_that_exist()
+    {
+        var ids = Directory.EnumerateFiles(Desktop, "*.axaml", SearchOption.AllDirectories)
+            .SelectMany(f => Regex.Matches(File.ReadAllText(f), "Keymap.Command=\"([^\"]+)\"").Select(m => m.Groups[1].Value))
+            .ToList();
+        Assert.True(ids.Count > 20, $"only {ids.Count} menu items use the keymap");
+        Assert.All(ids, id => Assert.NotNull(DbExplorer.Application.Shortcuts.ShortcutCommands.Get(id)));
+    }
+
+    [Fact]
+    public void Menu_gestures_in_the_xaml_are_only_fixed_keys()
+    {
+        // A changeable command's key in a menu comes from Keymap.Command, so it follows a change in the F1 sheet.
+        var changeable = DbExplorer.Application.Shortcuts.ShortcutCommands.All.SelectMany(c => c.Defaults).Select(c => c.ToString()).ToHashSet();
+        // Ctrl+F is Find in the editor (fixed) and the quick filter in the grid (changeable).
+        changeable.ExceptWith(DbExplorer.Application.Shortcuts.ShortcutCommands.Fixed.SelectMany(f => f.Keys.Split(" / ")));
+        var stale = Directory.EnumerateFiles(Desktop, "*.axaml", SearchOption.AllDirectories)
+            .SelectMany(f => Regex.Matches(File.ReadAllText(f), "InputGesture=\"([^\"]+)\"").Select(m => (File: Path.GetFileName(f), Keys: m.Groups[1].Value)))
+            .Where(x => changeable.Contains(x.Keys.Replace("PageUp", "PgUp").Replace("PageDown", "PgDn")))
+            .Select(x => $"{x.File}: {x.Keys}")
+            .ToList();
+        Assert.Empty(stale);
     }
 
     [Fact]

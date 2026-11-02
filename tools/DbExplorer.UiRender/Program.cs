@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Logging;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -150,6 +151,7 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("keys", RenderKeysAndVimAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -952,6 +954,73 @@ namespace DbExplorer.UiRender
             await Shot(sheet, "shortcuts-filtered");
             sheet.Close();
             await Settle();
+        }
+
+        /// <summary>The F1 sheet while a key is changed (with a conflict), after the change with Vim mode on, and the
+        /// query editor in Vim mode driven by real key presses: normal, visual, a : command and its result.</summary>
+        private async Task RenderKeysAndVimAsync()
+        {
+            var keymap = _provider.GetRequiredService<DbExplorer.Application.Shortcuts.KeymapService>();
+            _vm.ShowShortcutsCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<ShortcutSheetWindow>().Any(), "sheet", 10_000);
+            var sheet = _window.OwnedWindows.OfType<ShortcutSheetWindow>().First();
+            var sheetVm = (ShortcutSheetViewModel)sheet.DataContext!;
+            await Settle(4);
+            var format = sheetVm.Groups.SelectMany(g => g.Items).Single(i => i.Id == DbExplorer.Application.Shortcuts.ShortcutCommands.Format);
+            sheetVm.StartEditCommand.Execute(format);
+            await Settle(2);
+            sheet.KeyPressQwerty(PhysicalKey.D, RawInputModifiers.Control);
+            await Settle(6);
+            await Shot(sheet, "shortcuts-editing");
+            sheet.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+            await Settle(2);
+            sheetVm.VimMode = true;
+            sheetVm.Filter = "format";
+            await Settle(6);
+            await Shot(sheet, "shortcuts-changed");
+            sheetVm.Filter = "";
+            await Settle(2);
+            var scroller = sheet.GetVisualDescendants().OfType<ScrollViewer>().First();
+            scroller.Offset = new Vector(0, scroller.Extent.Height);
+            await Settle(6);
+            await Shot(sheet, "shortcuts-vim");
+            sheet.Close();
+            await Settle();
+
+            _vm.SelectedTab = AppTab.Query;
+            const string sql = "select c.name, count(*) as orders\nfrom customers c\njoin orders o on o.customer_id = c.id\nwhere o.status = 'open'\ngroup by c.name;";
+            _vm.Query.OpenInNewTab(sql, "Vim mode");
+            await Settle(6);
+            var view = _window.GetVisualDescendants().OfType<QueryView>().First(v => v.IsEffectivelyVisible);
+            var editor = view.FindControl<AvaloniaEdit.TextEditor>("Editor")!;
+            editor.TextArea.Focus();
+            editor.CaretOffset = 0;
+            await Settle(2);
+            void Type(string text)
+            {
+                foreach (var ch in text) _window.KeyTextInput(ch.ToString());
+            }
+            Type("jw");
+            await Settle(4);
+            await Shot(_window, "vim-normal");
+            Type("vee");
+            await Settle(4);
+            await Shot(_window, "vim-visual");
+            _window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            Type(":%s/c\\.name/c.full_name/g");
+            await Settle(4);
+            await Shot(_window, "vim-command");
+            _window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+            Type("Gcwhaving");
+            await Settle(4);
+            await Shot(_window, "vim-insert");
+            _window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            await Settle(2);
+            Console.WriteLine("  vim text: " + editor.Document.Text.Replace("\n", " | "));
+
+            keymap.ResetAll();
+            keymap.SetVimMode(false);
+            await Settle(2);
         }
 
         // ------------------------------------------------------------------ helpers

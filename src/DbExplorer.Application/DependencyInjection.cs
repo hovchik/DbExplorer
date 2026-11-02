@@ -22,6 +22,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<AppPaths>();
         services.AddSingleton<AppSettingsService>();
+        services.AddSingleton(sp => new Shortcuts.KeymapService(sp.GetRequiredService<AppPaths>()));
         services.AddSingleton<Workspace.WorkspaceStore>();
         services.AddSingleton<ISecretProtector>(_ => OperatingSystem.IsWindows()
             ? new DpapiSecretProtector()

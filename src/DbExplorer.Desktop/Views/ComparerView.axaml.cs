@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 
 namespace DbExplorer.Desktop.Views;
@@ -12,6 +14,12 @@ public partial class ComparerView : UserControl
     public ComparerView()
     {
         InitializeComponent();
+        Keymap.Bind(this, () => DataContext is not ComparerViewModel vm ? [] :
+        [
+            (ShortcutCommands.NextDifference, vm.NextDifferenceCommand),
+            (ShortcutCommands.PreviousDifference, vm.PreviousDifferenceCommand),
+            (ShortcutCommands.CancelComparison, vm.CancelCommand)
+        ]);
     }
 
     /// <summary>Opens the drop-down as soon as the box is focused, so the full object list can be

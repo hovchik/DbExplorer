@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:services="using:DbExplorer.Desktop.Services"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
 			 x:Class="DbExplorer.Desktop.Views.QueryWorkspaceView"
@@ -147,17 +148,17 @@
 			  <ContextMenu>
 				<MenuItem Header="Rename…" Command="{Binding $parent[TabControl].DataContext.RenameTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Duplicate" Command="{Binding $parent[TabControl].DataContext.DuplicateTabCommand}" CommandParameter="{Binding}" />
-				<MenuItem Header="Local history…" InputGesture="Ctrl+Shift+H" Command="{Binding $parent[TabControl].DataContext.ShowLocalHistoryCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Local history…" services:Keymap.Command="tabs.history" Command="{Binding $parent[TabControl].DataContext.ShowLocalHistoryCommand}" CommandParameter="{Binding}" />
 				<Separator />
-				<MenuItem Header="Move left" InputGesture="Ctrl+Shift+PageUp" Command="{Binding $parent[TabControl].DataContext.MoveTabLeftCommand}" CommandParameter="{Binding}" />
-				<MenuItem Header="Move right" InputGesture="Ctrl+Shift+PageDown" Command="{Binding $parent[TabControl].DataContext.MoveTabRightCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Move left" services:Keymap.Command="tabs.move-left" Command="{Binding $parent[TabControl].DataContext.MoveTabLeftCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Move right" services:Keymap.Command="tabs.move-right" Command="{Binding $parent[TabControl].DataContext.MoveTabRightCommand}" CommandParameter="{Binding}" />
 				<Separator />
-				<MenuItem Header="Close" InputGesture="Ctrl+W" Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Close" services:Keymap.Command="tabs.close" Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close others" Command="{Binding $parent[TabControl].DataContext.CloseOtherTabsCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close tabs to the right" Command="{Binding $parent[TabControl].DataContext.CloseTabsToRightCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close all" Command="{Binding $parent[TabControl].DataContext.CloseAllTabsCommand}" />
 				<Separator />
-				<MenuItem Header="Reopen closed tab" InputGesture="Ctrl+Shift+T" Command="{Binding $parent[TabControl].DataContext.ReopenClosedTabCommand}" />
+				<MenuItem Header="Reopen closed tab" services:Keymap.Command="tabs.reopen" Command="{Binding $parent[TabControl].DataContext.ReopenClosedTabCommand}" />
 			  </ContextMenu>
 			</StackPanel.ContextMenu>
 			<TextBlock Classes="title" Text="{Binding Header}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />

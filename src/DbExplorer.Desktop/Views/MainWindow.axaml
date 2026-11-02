@@ -10,13 +10,7 @@
         xmlns:models="using:DbExplorer.Core.Models"
         xmlns:vm="using:DbExplorer.Desktop.ViewModels"
         WindowStartupLocation="CenterScreen">
-  <Window.KeyBindings>
-    <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
-    <KeyBinding Gesture="Ctrl+P" Command="{Binding OpenCommandPaletteCommand}" />
-    <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenCommandListCommand}" />
-    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleNavigatorCommand}" />
-    <KeyBinding Gesture="F1" Command="{Binding ShowShortcutsCommand}" />
-  </Window.KeyBindings>
+  <!-- Ctrl+K, Ctrl+P, Ctrl+Shift+P, Ctrl+B and F1 are bound in code from the keymap (they can be changed in the F1 sheet). -->
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
   </Window.Resources>

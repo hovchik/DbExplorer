@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -50,20 +52,35 @@ public partial class QueryWorkspaceView : UserControl
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (Vm is not { } vm || !(e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))) return;
-        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        switch (e.Key)
+        if (Vm is not { } vm || Keymap.Find(ShortcutAreas.QueryTabs, e) is not { } id) return;
+        e.Handled = true;
+        switch (id)
         {
-            case Key.PageUp when shift: e.Handled = true; await vm.MoveTabLeftCommand.ExecuteAsync(null); break;
-            case Key.PageDown when shift: e.Handled = true; await vm.MoveTabRightCommand.ExecuteAsync(null); break;
-            case Key.PageUp: e.Handled = true; vm.SelectNeighbour(-1); break;
-            case Key.PageDown: e.Handled = true; vm.SelectNeighbour(1); break;
-            case Key.N: e.Handled = true; vm.NewTab(); break;
-            case Key.T when shift: e.Handled = true; await vm.ReopenClosedTabCommand.ExecuteAsync(null); break;
-            case Key.W: e.Handled = true; await vm.CloseTabCommand.ExecuteAsync(null); break;
-            case Key.O: e.Handled = true; await OpenAsync(); break;
-            case Key.S: e.Handled = true; await SaveAsync(saveAs: shift); break;
-            case Key.H when shift: e.Handled = true; vm.ShowLocalHistoryCommand.Execute(null); break;
+            case ShortcutCommands.MoveTabLeft: await vm.MoveTabLeftCommand.ExecuteAsync(null); break;
+            case ShortcutCommands.MoveTabRight: await vm.MoveTabRightCommand.ExecuteAsync(null); break;
+            case ShortcutCommands.PreviousTab: vm.SelectNeighbour(-1); break;
+            case ShortcutCommands.NextTab: vm.SelectNeighbour(1); break;
+            case ShortcutCommands.NewTab: vm.NewTab(); break;
+            case ShortcutCommands.ReopenTab: await vm.ReopenClosedTabCommand.ExecuteAsync(null); break;
+            case ShortcutCommands.CloseTab: await vm.CloseTabCommand.ExecuteAsync(null); break;
+            case ShortcutCommands.OpenFile: await OpenAsync(); break;
+            case ShortcutCommands.Save: await SaveAsync(saveAs: false); break;
+            case ShortcutCommands.SaveAs: await SaveAsync(saveAs: true); break;
+            case ShortcutCommands.LocalHistory: vm.ShowLocalHistoryCommand.Execute(null); break;
+            default: e.Handled = false; break;
+        }
+    }
+
+    /// <summary>":w", ":q" and ":wq" typed in a Vim-mode editor.</summary>
+    internal async Task RunVimCommandAsync(QueryViewModel doc, Application.Vim.VimExCommand command)
+    {
+        if (Vm is not { } vm) return;
+        vm.SelectedDocument = doc;
+        if (command is Application.Vim.VimExCommand.Save or Application.Vim.VimExCommand.SaveAndClose) await SaveAsync(saveAs: false);
+        if (command is Application.Vim.VimExCommand.Close or Application.Vim.VimExCommand.SaveAndClose)
+        {
+            // A tab whose save was cancelled keeps its unsaved changes and asks before closing, as Ctrl+W does.
+            await vm.CloseTabCommand.ExecuteAsync(doc);
         }
     }
 

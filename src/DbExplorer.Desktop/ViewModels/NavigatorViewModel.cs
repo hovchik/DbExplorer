@@ -597,6 +597,15 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         CopyRequested?.Invoke(text);
     }
 
+    /// <summary>The selected saved connection as a connection string or URL ("url"), never with its password.</summary>
+    [RelayCommand]
+    private void CopyConnectionString(string? kind)
+    {
+        if (SelectedNode is not { Kind: NavigatorNodeKind.Connection, Profile: { } profile }) return;
+        var style = kind == "url" ? ConnectionStringStyle.Url : ConnectionStringStyle.KeyValue;
+        CopyRequested?.Invoke(ConnectionStrings.Format(profile, style));
+    }
+
     [RelayCommand]
     private void Connect() => RunConnectionAction(NavigatorConnectionAction.Connect);
 

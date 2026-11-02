@@ -148,6 +148,7 @@ namespace DbExplorer.UiRender
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
             await Step("offline", RenderOfflineAsync);
+            await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -546,6 +547,20 @@ namespace DbExplorer.UiRender
             remoteVm.TrustServerCertificate = true;
             await ShowAndShoot(new ConnectionDialog { DataContext = remoteVm, Title = "New connection" }, "connection-dialog-production-warning");
 
+            // Connection string: the clipboard offer on a new connection, a filled-in string, and a string that can't be read.
+            var pasteVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true);
+            pasteVm.OfferClipboard("postgresql://app:secret@db.example.com:6543/shop?sslmode=require&application_name=web");
+            await ShowAndShoot(new ConnectionDialog { DataContext = pasteVm, Title = "New connection" }, "connection-string-offer");
+            var filledVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true);
+            filledVm.Fill("jdbc:sqlserver://sql01.corp\\SALES:1450;databaseName=Orders;user=report;password=pw;encrypt=true;loginTimeout=30;applicationIntent=ReadOnly", clearBox: true);
+            await ShowAndShoot(new ConnectionDialog { DataContext = filledVm, Title = "New connection" }, "connection-string-filled");
+            var badVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = registry.All[0].Key }, ["Local"], tunnels, isNew: true)
+            {
+                ConnectionStringText = "Server=db01;Port=fifty"
+            };
+            badVm.FillFromConnectionStringCommand.Execute(null);
+            await ShowAndShoot(new ConnectionDialog { DataContext = badVm, Title = "New connection" }, "connection-string-error");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";
@@ -870,6 +885,73 @@ namespace DbExplorer.UiRender
             usages.Close();
             await Settle(4);
             await Shot(_window, "usages-opened");
+        }
+
+        /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it
+        /// against the real editor, and the F1 shortcut sheet.</summary>
+        private async Task RenderPaletteAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("select id,name from customers where id=1", "Palette check");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle(6);
+
+            async Task<CommandPaletteWindow> OpenPalette(System.Windows.Input.ICommand command)
+            {
+                command.Execute(null);
+                await WaitFor(() => _window.OwnedWindows.OfType<CommandPaletteWindow>().Any(), "palette", 10_000);
+                return _window.OwnedWindows.OfType<CommandPaletteWindow>().First();
+            }
+
+            // Run "Format SQL" through the palette: it must reach the editor view and change the text.
+            var palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            var pvm = (CommandPaletteViewModel)palette.DataContext!;
+            pvm.Query = "format sql";
+            await Settle(2);
+            if (pvm.Selected?.Title != "Format SQL") throw new InvalidOperationException("Format SQL not first: " + pvm.Selected?.Title);
+            pvm.Accept(PaletteModifier.None);
+            await Settle(6);
+            var formatted = doc.Document.Text;
+            Console.WriteLine("Formatted via palette: " + formatted.Replace("\n", " ⏎ "));
+            if (formatted == "select id,name from customers where id=1") throw new InvalidOperationException("palette Format did not reach the editor");
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            pvm = (CommandPaletteViewModel)palette.DataContext!;
+            pvm.Query = "theme";
+            await Settle(2);
+            pvm.Selected = pvm.Results.First(r => r.Title == "Theme: Light");
+            pvm.Accept(PaletteModifier.None);
+            await Settle(4);
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            await Settle(4);
+            await Shot(palette, "palette-recent");
+            palette.Close();
+            await Settle();
+
+            palette = await OpenPalette(_vm.OpenCommandListCommand);
+            await Settle(4);
+            await Shot(palette, "palette-commands");
+            palette.Close();
+            await Settle();
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            ((CommandPaletteViewModel)palette.DataContext!).Query = "ctrl+l";
+            await Settle(4);
+            await Shot(palette, "palette-keys");
+            palette.Close();
+            await Settle();
+
+            _vm.ShowShortcutsCommand.Execute(null);
+            await ShootOwned<ShortcutSheetWindow>("shortcuts", 8);
+            _vm.ShowShortcutsCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<ShortcutSheetWindow>().Any(), "sheet", 10_000);
+            var sheet = _window.OwnedWindows.OfType<ShortcutSheetWindow>().First();
+            ((ShortcutSheetViewModel)sheet.DataContext!).Filter = "run";
+            await Settle(6);
+            await Shot(sheet, "shortcuts-filtered");
+            sheet.Close();
+            await Settle();
         }
 
         // ------------------------------------------------------------------ helpers

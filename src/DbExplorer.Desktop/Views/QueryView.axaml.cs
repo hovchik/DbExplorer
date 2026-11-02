@@ -130,6 +130,7 @@ public partial class QueryView : UserControl
             _vm.ErrorCleared -= OnErrorCleared;
             _vm.CompletionValuesArrived -= OnCompletionValuesArrived;
             _vm.InspectorChanged -= RestartInspections;
+            _vm.EditorActionRequested -= OnEditorActionRequested;
             Editor.Document.Changed -= OnDocumentChanged;
         }
 
@@ -141,6 +142,7 @@ public partial class QueryView : UserControl
             _vm.ErrorCleared += OnErrorCleared;
             _vm.CompletionValuesArrived += OnCompletionValuesArrived;
             _vm.InspectorChanged += RestartInspections;
+            _vm.EditorActionRequested += OnEditorActionRequested;
             Editor.Document.Changed += OnDocumentChanged;
         }
         HookSettings();
@@ -354,6 +356,38 @@ public partial class QueryView : UserControl
     private void OnMaximizeResults(object? sender, RoutedEventArgs e) => SetSplit(1, 12);
     private void OnMaximizeEditor(object? sender, RoutedEventArgs e) => SetSplit(12, 1);
     private void OnResetLayout(object? sender, RoutedEventArgs e) => SetSplit(DefaultEditorShare, DefaultResultsShare);
+
+    // ----- Command palette -----
+
+    /// <summary>An action picked in the command palette; the editor gets the focus back first so the caret and
+    /// selection it acts on are the ones the user left.</summary>
+    private void OnEditorActionRequested(EditorAction action)
+    {
+        Editor.TextArea.Focus();
+        switch (action)
+        {
+            case EditorAction.RunScript: Run(currentStatement: false); break;
+            case EditorAction.RunStatement: Run(currentStatement: true); break;
+            case EditorAction.Explain: Explain(analyze: false); break;
+            case EditorAction.ExplainAnalyze: Explain(analyze: true); break;
+            case EditorAction.Format: Format(); break;
+            case EditorAction.ToggleComment: ToggleComment(); break;
+            case EditorAction.Find: _search.IsReplaceMode = false; _search.Open(); break;
+            case EditorAction.Replace: _search.IsReplaceMode = true; _search.Open(); break;
+            case EditorAction.GoToLine: OpenGoToLine(); break;
+            case EditorAction.UpperCase: ChangeCase(upper: true); break;
+            case EditorAction.LowerCase: ChangeCase(upper: false); break;
+            case EditorAction.Duplicate: Duplicate(); break;
+            case EditorAction.NextWarning: GoToProblem(1); break;
+            case EditorAction.ZoomIn: Zoom(+1); break;
+            case EditorAction.ZoomOut: Zoom(-1); break;
+            case EditorAction.ResetZoom: ResetZoom(); break;
+            case EditorAction.ToggleWordWrap: ToggleWordWrap(); break;
+            case EditorAction.MaximizeResults: SetSplit(1, 12); break;
+            case EditorAction.MaximizeEditor: SetSplit(12, 1); break;
+            case EditorAction.ResetLayout: SetSplit(DefaultEditorShare, DefaultResultsShare); break;
+        }
+    }
 
     // ----- Keys -----
 

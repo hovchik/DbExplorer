@@ -89,6 +89,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <summary>A run of any tab ended; the window turns long ones the user did not watch into a notification.</summary>
     public event Action<QueryViewModel, TimeSpan, RunOutcome>? RunFinished;
 
+    /// <summary>The command palette asks the workspace view to open or save a file (it owns the file pickers).</summary>
+    public event Func<QueryFileAction, Task>? FileActionRequested;
+
+    public Task RequestFileActionAsync(QueryFileAction action) => FileActionRequested?.Invoke(action) ?? Task.CompletedTask;
+
     [ObservableProperty] private QueryViewModel? _selectedDocument;
     [ObservableProperty] private IReadOnlyList<HistoryItem> _history = [];
     [ObservableProperty] private string _historyFilter = "";

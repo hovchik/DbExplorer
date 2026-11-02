@@ -46,7 +46,10 @@ public interface IDialogService
     /// <summary>The tables (with any filter) of the open Get data windows whose rows have edits that were not committed.</summary>
     IReadOnlyList<string> DataWindowsWithUncommittedEdits();
 
-    void ShowCommandPalette(IReadOnlyList<PaletteItem> items);
+    void ShowCommandPalette(CommandPaletteViewModel palette);
+
+    /// <summary>The keyboard shortcut sheet (F1); one at a time, brought to the front if already open.</summary>
+    void ShowShortcutSheet();
 
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
     Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
@@ -304,11 +307,26 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     public IReadOnlyList<string> DataWindowsWithUncommittedEdits() =>
         _dataWindows.Where(w => w.HasUncommittedEdits).Select(w => w.Title.StartsWith("Data: ", StringComparison.Ordinal) ? w.Title[6..] : w.Title).ToList();
 
-    public void ShowCommandPalette(IReadOnlyList<PaletteItem> items)
+    public void ShowCommandPalette(CommandPaletteViewModel palette)
     {
         if (Owner is null) return;
-        var window = new CommandPaletteWindow { DataContext = new CommandPaletteViewModel(items) };
+        var window = new CommandPaletteWindow { DataContext = palette };
         window.Show(Owner);
+    }
+
+    private ShortcutSheetWindow? _shortcutSheet;
+
+    public void ShowShortcutSheet()
+    {
+        if (Owner is null) return;
+        if (_shortcutSheet is not null)
+        {
+            _shortcutSheet.Activate();
+            return;
+        }
+        _shortcutSheet = new ShortcutSheetWindow { DataContext = new ShortcutSheetViewModel() };
+        _shortcutSheet.Closed += (_, _) => _shortcutSheet = null;
+        _shortcutSheet.Show(Owner);
     }
 
     public Task ShowGetDataAsync(

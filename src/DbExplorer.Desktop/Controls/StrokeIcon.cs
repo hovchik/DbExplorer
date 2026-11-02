@@ -46,6 +46,7 @@ public static class Icons
     public const string Key = "M8 15a4 4 0 1 0 0-8a4 4 0 1 0 0 8z M12 11h9 M18 11v3 M21 11v3";
     public const string Index = "M4 6h16 M4 12h10 M4 18h6";
     public const string Info = "M12 21a9 9 0 1 0 0-18a9 9 0 1 0 0 18z M12 11v5 M12 8h.01";
+    public const string Alert = "M12 3.5L21.5 20h-19z M12 10v4.5 M12 17.5h.01";
     public const string Sidebar = "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16";
     public const string Collapse = "M7 9l5-5 5 5 M7 15l5 5 5-5";
 }

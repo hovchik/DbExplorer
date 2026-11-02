@@ -580,6 +580,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var index = IndexOfProfile(profile.Id);
         if (index < 0) return;
         Profiles.RemoveAt(index);
+        if (_failedProfileId == profile.Id) ConnectionFailure = null;
         SelectedProfile = OpenProfile() ?? (SelectedProfile is { } still && Profiles.Contains(still) ? still : Profiles.FirstOrDefault());
         await SaveProfilesAsync();
         StatusText = $"Deleted {profile.QualifiedName}";

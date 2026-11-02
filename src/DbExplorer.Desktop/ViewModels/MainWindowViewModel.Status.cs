@@ -166,7 +166,7 @@ public partial class MainWindowViewModel
     [RelayCommand]
     private async Task RetryConnectAsync()
     {
-        SelectFailedProfile();
+        if (SelectFailedProfile() is null) return;
         ConnectionFailure = null;
         if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
     }
@@ -187,6 +187,7 @@ public partial class MainWindowViewModel
         }
     }
 
+    /// <summary>The connection the card is about, selected; null (and the card dismissed) when it no longer exists.</summary>
     private Core.Connections.ConnectionProfile? SelectFailedProfile()
     {
         if (_failedProfileId is { } id && Profiles.FirstOrDefault(p => p.Id == id) is { } profile)
@@ -194,6 +195,9 @@ public partial class MainWindowViewModel
             if (!IsConnected) SelectedProfile = profile;
             return profile;
         }
-        return SelectedProfile;
+        // The connection was deleted (or a Team pull dropped it) after it failed: the card no longer describes
+        // anything Edit or Retry could act on, so it goes away instead of acting on whatever is selected now.
+        ConnectionFailure = null;
+        return null;
     }
 }

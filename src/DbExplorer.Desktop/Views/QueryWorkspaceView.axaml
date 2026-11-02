@@ -147,6 +147,7 @@
 			  <ContextMenu>
 				<MenuItem Header="Rename…" Command="{Binding $parent[TabControl].DataContext.RenameTabCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Duplicate" Command="{Binding $parent[TabControl].DataContext.DuplicateTabCommand}" CommandParameter="{Binding}" />
+				<MenuItem Header="Local history…" InputGesture="Ctrl+Shift+H" Command="{Binding $parent[TabControl].DataContext.ShowLocalHistoryCommand}" CommandParameter="{Binding}" />
 				<Separator />
 				<MenuItem Header="Move left" InputGesture="Ctrl+Shift+PageUp" Command="{Binding $parent[TabControl].DataContext.MoveTabLeftCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Move right" InputGesture="Ctrl+Shift+PageDown" Command="{Binding $parent[TabControl].DataContext.MoveTabRightCommand}" CommandParameter="{Binding}" />
@@ -206,11 +207,15 @@
 	  <Button Classes="bar" Content="Open…" Click="OnOpen" ToolTip.Tip="Open a .sql file (Ctrl+O)" />
 	  <Button Classes="bar" Content="Save" Click="OnSave" ToolTip.Tip="Save the tab to its file (Ctrl+S)" />
 	  <Button Classes="bar" Content="Save as…" Click="OnSaveAs" ToolTip.Tip="Save the tab to a new .sql file (Ctrl+Shift+S)" />
-	  <Button Classes="bar" Content="History ▾" ToolTip.Tip="Scripts you ran before; double-click one to open it in a new tab">
+	  <Button Classes="bar" Content="History ▾" ToolTip.Tip="Scripts you ran before; double-click one to open it in a new tab. Local history… keeps whole versions of each tab.">
 		<Button.Flyout>
 		  <Flyout Placement="BottomEdgeAlignedRight" Opened="OnHistoryOpened">
 			<StackPanel Width="620" Spacing="6">
-			  <TextBox Text="{Binding HistoryFilter}" Watermark="Filter history…" />
+			  <Grid ColumnDefinitions="*,Auto">
+				<TextBox Text="{Binding HistoryFilter}" Watermark="Filter history…" />
+				<Button Grid.Column="1" Classes="bar" Content="Local history…" Margin="6,0,0,0" Command="{Binding ShowLocalHistoryCommand}"
+						ToolTip.Tip="Every version of this tab's text that a run, save, open or close kept, with a diff and Restore (Ctrl+Shift+H)" />
+			  </Grid>
 			  <ListBox x:Name="HistoryList" ItemsSource="{Binding History}" MaxHeight="420" DoubleTapped="OnHistoryDoubleTapped">
 				<ListBox.ItemTemplate>
 				  <DataTemplate x:DataType="vm:HistoryItem">

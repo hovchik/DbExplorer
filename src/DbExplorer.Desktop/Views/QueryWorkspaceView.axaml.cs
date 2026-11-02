@@ -45,6 +45,7 @@ public partial class QueryWorkspaceView : UserControl
             case Key.W: e.Handled = true; await vm.CloseTabCommand.ExecuteAsync(null); break;
             case Key.O: e.Handled = true; await OpenAsync(); break;
             case Key.S: e.Handled = true; await SaveAsync(saveAs: shift); break;
+            case Key.H when shift: e.Handled = true; vm.ShowLocalHistoryCommand.Execute(null); break;
         }
     }
 

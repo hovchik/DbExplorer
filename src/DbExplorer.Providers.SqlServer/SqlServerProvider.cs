@@ -344,6 +344,15 @@ public sealed class SqlServerProvider : IDatabaseProvider
         };
     }
 
+    public async Task<long> StreamScriptAsync(string sql, string? database, ResultSetStream stream, CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString(SqlServerSql.ScriptAppName, database ?? _profile.Database, forceReadWrite: true));
+        await cn.OpenAsync(ct);
+        // No timeout (a large export takes as long as it takes; Cancel stops it) and no rows kept from other result sets.
+        await RunBatchesAsync(cn, null, sql, timeoutSeconds: 0, maxRows: 0, stoppedOnServer: false, ct, stream);
+        return stream.RowCount;
+    }
+
     /// <summary>
     /// Runs every GO-separated batch on the connection, keeping at most <paramref name="maxRows"/> rows per result set
     /// (the rest is read and discarded so later statements still run, unless a read-only script lets the server stop). Server errors are rethrown as
@@ -387,7 +396,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     private static async Task<(List<QueryResultSet> ResultSets, int RowsAffected)> RunBatchesAsync(
-        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, bool stoppedOnServer, CancellationToken ct)
+        SqlConnection cn, SqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, bool stoppedOnServer, CancellationToken ct,
+        ResultSetStream? stream = null)
     {
         var resultSets = new List<QueryResultSet>();
         var rowsAffected = 0;
@@ -409,6 +419,20 @@ public sealed class SqlServerProvider : IDatabaseProvider
                     if (reader.FieldCount > 0)
                     {
                         var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                        if (stream?.Takes(resultSets.Count) == true)
+                        {
+                            stream.Begin(columns);
+                            while (await reader.ReadAsync(ct))
+                            {
+                                var values = new object?[reader.FieldCount];
+                                reader.GetValues(values!);
+                                for (var i = 0; i < values.Length; i++)
+                                    if (values[i] == DBNull.Value) values[i] = null;
+                                stream.Write(values);
+                            }
+                            resultSets.Add(new QueryResultSet { Columns = columns, TotalRowCount = stream.RowCount });
+                            continue;
+                        }
                         var rows = new List<IReadOnlyList<object?>>();
                         long total = 0;
                         while (await reader.ReadAsync(ct))
@@ -699,6 +723,12 @@ public sealed class SqlServerProvider : IDatabaseProvider
             {
                 connection.InfoMessage -= OnInfo;
             }
+        }
+
+        public async Task<long> StreamAsync(string sql, ResultSetStream stream, CancellationToken ct = default)
+        {
+            await RunBatchesAsync(connection, transaction, sql, timeoutSeconds: 0, maxRows: 0, stoppedOnServer: false, ct, stream);
+            return stream.RowCount;
         }
 
         public async Task RollbackAsync(CancellationToken ct = default)

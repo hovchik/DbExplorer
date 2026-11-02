@@ -385,13 +385,22 @@ public sealed class MySqlProvider : IDatabaseProvider
         return result with { Elapsed = sw.Elapsed };
     }
 
+    public async Task<long> StreamScriptAsync(string sql, string? database, ResultSetStream stream, CancellationToken ct = default)
+    {
+        await using var cn = await OpenAsync(database, ct);
+        // No timeout (a large export takes as long as it takes; Cancel stops it) and no rows kept from other result sets.
+        await RunAsync(cn, null, sql, timeoutSeconds: 0, maxRows: 0, readOnly: null, ct, stream);
+        return stream.RowCount;
+    }
+
     /// <summary>
     /// Runs a (multi-statement) script, keeping at most <paramref name="maxRows"/> rows per result set. A read-only
     /// script with a row limit gets sql_select_limit, so the server stops every SELECT just past the limit instead of
     /// sending (and the app discarding) every row of a large table.
     /// </summary>
     private static async Task<QueryExecutionResult> RunAsync(
-        MySqlConnection cn, MySqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, ReadOnlyScript? readOnly, CancellationToken ct)
+        MySqlConnection cn, MySqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, ReadOnlyScript? readOnly, CancellationToken ct,
+        ResultSetStream? stream = null)
     {
         var resultSets = new List<QueryResultSet>();
         var messages = new List<string>();
@@ -411,7 +420,7 @@ public sealed class MySqlProvider : IDatabaseProvider
             try
             {
                 await using var cmd = new MySqlCommand(text, cn, tx) { CommandTimeout = timeoutSeconds };
-                rowsAffected = await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: limited, resultSets, ct);
+                rowsAffected = await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: limited, resultSets, ct, stream);
             }
             catch (MySqlException ex) when (ex.ErrorCode != MySqlErrorCode.QueryInterrupted || !ct.IsCancellationRequested)
             {
@@ -441,13 +450,27 @@ public sealed class MySqlProvider : IDatabaseProvider
 
     /// <summary>Reads every result set of the command, keeping at most <paramref name="maxRows"/> rows of each.</summary>
     private static async Task<int> ReadResultSetsAsync(
-        MySqlCommand cmd, int maxRows, bool stoppedOnServer, List<QueryResultSet> resultSets, CancellationToken ct)
+        MySqlCommand cmd, int maxRows, bool stoppedOnServer, List<QueryResultSet> resultSets, CancellationToken ct,
+        ResultSetStream? stream = null)
     {
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         do
         {
             if (reader.FieldCount <= 0) continue;
             var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+            if (stream?.Takes(resultSets.Count) == true)
+            {
+                stream.Begin(columns);
+                while (await reader.ReadAsync(ct))
+                {
+                    var values = new object?[reader.FieldCount];
+                    for (var i = 0; i < values.Length; i++)
+                        values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    stream.Write(values);
+                }
+                resultSets.Add(new QueryResultSet { Columns = columns, TotalRowCount = stream.RowCount });
+                continue;
+            }
             var rows = new List<IReadOnlyList<object?>>();
             long total = 0;
             while (await reader.ReadAsync(ct))
@@ -721,6 +744,12 @@ public sealed class MySqlProvider : IDatabaseProvider
             var sw = Stopwatch.StartNew();
             var result = await RunAsync(connection, transaction, sql, timeoutSeconds, maxRows, readOnly, ct);
             return result with { Elapsed = sw.Elapsed };
+        }
+
+        public async Task<long> StreamAsync(string sql, ResultSetStream stream, CancellationToken ct = default)
+        {
+            await RunAsync(connection, transaction, sql, timeoutSeconds: 0, maxRows: 0, readOnly: null, ct, stream);
+            return stream.RowCount;
         }
 
         public async Task RollbackAsync(CancellationToken ct = default)

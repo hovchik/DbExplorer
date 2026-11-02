@@ -189,13 +189,17 @@ public partial class ResultGridView : UserControl
             menu.Opening += (_, _) => UpdateCellMenu();
         }
         InitPivot();
+        InitExport();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (change.Property == ResultSetProperty)
+        {
             Rebuild(change.GetNewValue<ResultSetView?>());
+            UpdateMoreRowsBar();
+        }
     }
 
     // ---------------------------------------------------------------- building
@@ -1555,13 +1559,6 @@ public partial class ResultGridView : UserControl
             _ = SetClipboardAsync(ResultExporter.FormatInvariant(Cell(row, column)));
     }
 
-    private void OnExportCsv(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Csv);
-    private void OnExportExcel(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Excel);
-    private void OnExportJson(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Json);
-    private void OnExportMarkdown(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Markdown);
-    private void OnExportInsert(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Insert);
-    private void OnExportHtml(object? sender, RoutedEventArgs e) => _ = ExportAsync(ExportFormat.Html);
-
     private Task CopyTsvAsync(IReadOnlyList<ColumnState> columns, IReadOnlyList<ResultRow> rows, bool includeHeader)
     {
         if (ResultSet is null || rows.Count == 0 || columns.Count == 0) return Task.CompletedTask;
@@ -1582,71 +1579,6 @@ public partial class ResultGridView : UserControl
     {
         if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
             await clipboard.SetTextAsync(text);
-    }
-
-    private async Task ExportAsync(ExportFormat format)
-    {
-        if (ResultSet is not { } rs || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
-
-        var extension = ResultExporter.FileExtension(format);
-        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Export results",
-            SuggestedFileName = SuggestedName(rs) + "." + extension,
-            DefaultExtension = extension,
-            ShowOverwritePrompt = true,
-            FileTypeChoices = [new FilePickerFileType(format.ToString()) { Patterns = ["*." + extension] }]
-        });
-        if (file is null) return;
-
-        // The rows and columns as shown now (rows are replaced, never changed, when edited); formatting and writing a
-        // large result happen off the UI thread.
-        var visible = VisibleColumns();
-        var columns = Names(visible);
-        var shown = _viewRows.ToList();
-        var html = new HtmlExportInfo(rs.SourceTable ?? rs.Title, DateTimeOffset.Now)
-        {
-            Source = rs.SourceTable is null ? rs.Title : rs.SourceTable,
-            Connection = rs.Connection,
-            FetchedRowCount = rs.Rows.Count,
-            FetchedColumnCount = _columns.Count,
-            IsTruncated = rs.IsTruncated,
-            TotalRowCount = rs.TotalRowCount,
-            TotalRowCountIsExact = rs.TotalRowCountIsExact
-        };
-        try
-        {
-            await using var stream = await file.OpenWriteAsync();
-            RowCountText.Text = $"Exporting {shown.Count:N0} row(s)…";
-            await Task.Run(async () =>
-            {
-                stream.SetLength(0);
-                var rows = Project(shown, visible);
-                if (format == ExportFormat.Excel)
-                {
-                    ResultExporter.WriteXlsx(stream, columns, rows, rs.Title);
-                    return;
-                }
-
-                var text = format switch
-                {
-                    ExportFormat.Csv => ResultExporter.ToCsv(columns, rows),
-                    ExportFormat.Json => ResultExporter.ToJson(columns, rows),
-                    ExportFormat.Markdown => ResultExporter.ToMarkdown(columns, rows),
-                    ExportFormat.Html => ResultExporter.ToHtml(columns, rows, html),
-                    _ => BuildInsert(rs, columns, rows)
-                };
-                // BOM so Excel detects UTF-8 when opening CSV directly.
-                var encoding = format == ExportFormat.Csv ? new UTF8Encoding(true) : new UTF8Encoding(false);
-                await using var writer = new StreamWriter(stream, encoding);
-                await writer.WriteAsync(text);
-            });
-            RowCountText.Text = $"Exported {shown.Count:N0} row(s) to {file.Name}";
-        }
-        catch (Exception ex)
-        {
-            RowCountText.Text = "Export failed: " + ex.Message;
-        }
     }
 
     private static string SuggestedName(ResultSetView rs)

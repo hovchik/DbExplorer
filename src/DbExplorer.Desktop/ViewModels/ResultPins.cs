@@ -42,6 +42,8 @@ public sealed class ResultPins
             Query = query ?? view.Query,
             CommitEdits = null,
             OpenReference = null,
+            Rerun = null,
+            RerunUnavailable = view.IsTruncated ? "A pinned result is a snapshot: it is not run again. Use the latest run's result to fetch more or export everything." : null,
             Rows = view.Rows.ToArray()
         };
         _items.Add(pinned);

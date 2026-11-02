@@ -87,19 +87,8 @@
 			</MenuFlyout>
 		  </Button.Flyout>
 		</Button>
-		<Button Classes="compact" Content="Export ▾"
-				ToolTip.Tip="Exports the rows and columns in view: filters, sort order and hidden columns apply">
-		  <Button.Flyout>
-			<MenuFlyout Placement="BottomEdgeAlignedRight">
-			  <MenuItem Header="CSV (.csv)…" Click="OnExportCsv" />
-			  <MenuItem Header="Excel (.xlsx)…" Click="OnExportExcel" />
-			  <MenuItem Header="JSON (.json)…" Click="OnExportJson" />
-			  <MenuItem Header="Markdown table (.md)…" Click="OnExportMarkdown" />
-			  <MenuItem Header="Interactive HTML page (.html)…" Click="OnExportHtml" />
-			  <MenuItem Header="SQL INSERT script (.sql)…" Click="OnExportInsert" />
-			</MenuFlyout>
-		  </Button.Flyout>
-		</Button>
+		<Button x:Name="ExportButton" Classes="compact" Content="Export ▾"
+				ToolTip.Tip="Export the rows and columns in view (filters, sort order and hidden columns apply), or the full result when it was cut off at the row limit" />
 	  </StackPanel>
 	</Grid>
 
@@ -126,6 +115,24 @@
 					ToolTip.Tip="Column that is summarised in each cell" />
 		  <TextBlock x:Name="PivotInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" TextTrimming="CharacterEllipsis" />
 		</WrapPanel>
+	  </DockPanel>
+	</Border>
+
+	<!-- The result was cut off at the row limit: fetch more rows, or export every row straight to a file -->
+	<Border x:Name="MoreRowsBar" DockPanel.Dock="Top" IsVisible="False" Margin="0,2,0,4" Padding="8,4" CornerRadius="6"
+			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}">
+	  <DockPanel>
+		<StackPanel x:Name="MoreRowsButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
+		  <Button x:Name="FetchNextButton" Classes="compact" Click="OnFetchNext"
+				  ToolTip.Tip="Run the query again and keep this many more rows (the tab's row limit stays as it is)" />
+		  <Button x:Name="FetchAllButton" Classes="compact" Content="Fetch all" Click="OnFetchAll"
+				  ToolTip.Tip="Run the query again and keep every row in the grid" />
+		  <Button x:Name="ExportFullButton" Classes="compact accent" Content="Export full result ▾"
+				  ToolTip.Tip="Run the query again and write every row straight to a file, without loading it into the grid" />
+		  <Button x:Name="CancelExportButton" Classes="compact" Content="Cancel" IsVisible="False" Click="OnCancelExport"
+				  ToolTip.Tip="Stop the export; the file is left incomplete" />
+		</StackPanel>
+		<TextBlock x:Name="MoreRowsText" VerticalAlignment="Center" TextWrapping="Wrap" />
 	  </DockPanel>
 	</Border>
 

@@ -66,7 +66,8 @@ public partial class QueryViewModel
                 notes.Add(failed == 0 ? $"✓ {outcomes.Count} expectation(s) met" : $"✗ {failed} of {outcomes.Count} expectation(s) failed");
             }
 
-            if (Enabled(ExperimentalFeature.ResultDiff))
+            // Fetch more reads more of the same rows: not a change to compare, nor a run to compare the next one with.
+            if (Enabled(ExperimentalFeature.ResultDiff) && !_isFetchMoreRun)
             {
                 var key = QueryKey(sql);
                 var against = _baseline is { } pinned && pinned.Query == key ? pinned : _previousResults is { } previous && previous.Query == key ? previous : null;

@@ -138,6 +138,8 @@
           <Separator IsVisible="{Binding SelectedHasDatabase}" />
           <MenuItem Header="New query here" Command="{Binding NewQueryCommand}" IsVisible="{Binding SelectedHasDatabase}"
                     ToolTip.Tip="A new Query tab on this row's database" />
+          <MenuItem Header="Export documentation…" Command="{Binding ExportDocumentationCommand}" IsVisible="{Binding SelectedCanDocument}"
+                    ToolTip.Tip="Tables, columns, keys, comments and the diagram as one HTML or Markdown file" />
           <MenuItem Header="Copy name" Command="{Binding CopyNameCommand}" IsVisible="{Binding SelectedHasName}" />
           <MenuItem Header="Refresh" Command="{Binding RefreshCommand}" IsVisible="{Binding SelectedHasDatabase}" />
         </ContextMenu>

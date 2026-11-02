@@ -31,6 +31,8 @@ public enum NavigatorConnectionAction
     Disconnect,
     Switch,
     Edit,
+    Duplicate,
+    Delete,
     RefreshMetadata
 }
 
@@ -604,6 +606,12 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     [RelayCommand]
     private void EditConnection() => RunConnectionAction(NavigatorConnectionAction.Edit);
+
+    [RelayCommand]
+    private void DuplicateConnection() => RunConnectionAction(NavigatorConnectionAction.Duplicate);
+
+    [RelayCommand]
+    private void DeleteConnection() => RunConnectionAction(NavigatorConnectionAction.Delete);
 
     private void RunConnectionAction(NavigatorConnectionAction action)
     {

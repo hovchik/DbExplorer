@@ -846,6 +846,16 @@ public partial class MainWindowViewModel : ViewModelBase
         Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
         if (Query.SelectedDocument is { } queryTab)
             Command("Local history…", Query.ShowLocalHistoryCommand, $"earlier versions of {queryTab.Title} · Ctrl+Shift+H");
+        // Closed Query tabs: the newest first, then each one by name.
+        foreach (var (closed, i) in Query.RecentlyClosed.Select((c, i) => (c, i)))
+        {
+            items.Add(new PaletteItem(i == 0 ? $"Reopen closed tab: {closed.Title}" : $"Reopen {closed.Title}",
+                i == 0 ? $"closed at {closed.When} · Ctrl+Shift+T" : $"closed at {closed.When}", PaletteItemKind.Command, _ =>
+                {
+                    SelectedTab = AppTab.Query;
+                    Query.ReopenTabCommand.Execute(closed);
+                }));
+        }
 
         if (!IsConnected && !IsBusy)
         {

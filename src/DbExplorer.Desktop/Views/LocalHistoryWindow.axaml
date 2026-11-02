@@ -1,0 +1,117 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:q="using:DbExplorer.Application.Query"
+        xmlns:conv="using:DbExplorer.Desktop.Converters"
+        x:Class="DbExplorer.Desktop.Views.LocalHistoryWindow"
+        x:DataType="vm:LocalHistoryViewModel"
+        Title="{Binding Title}"
+        Width="1040" Height="660" MinWidth="720" MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <conv:DiffKindToBrushConverter x:Key="DiffKindBrush" />
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ListBox.diff ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="12">
+    <!-- Scope and search -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Classes="hint" TextWrapping="Wrap"
+                   Text="One version per run, save, open and close, kept on this computer for 30 days." />
+      </StackPanel>
+      <CheckBox Grid.Column="1" Content="All scripts, closed tabs too" IsChecked="{Binding ShowAll}" Margin="12,0" VerticalAlignment="Center" />
+      <TextBox Grid.Column="2" Width="220" Text="{Binding Filter}" Watermark="Search text or tab name…" VerticalAlignment="Center" />
+    </Grid>
+
+    <!-- Actions -->
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Content="Clear local history…" Command="{Binding ClearCommand}"
+                ToolTip.Tip="Delete every kept version of every script (open tabs and .sql files are not touched)" />
+        <Button Content="Copy" Command="{Binding CopyCommand}" ToolTip.Tip="Copy this version's text" />
+        <Button Content="Open in new tab" Command="{Binding OpenInNewTabCommand}" ToolTip.Tip="Open this version in a new query tab" />
+        <Button Classes="accent" Content="{Binding RestoreLabel}" Command="{Binding RestoreCommand}"
+                ToolTip.Tip="Replace the tab's text with this version. Ctrl+Z in the editor undoes it." />
+        <Button Content="Close" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+    </Grid>
+
+    <Grid ColumnDefinitions="340,6,*">
+      <!-- Versions, newest first -->
+      <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4">
+        <Grid>
+          <ListBox x:Name="VersionList" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}" Background="Transparent">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:LocalHistoryEntry">
+                <StackPanel Spacing="1" Margin="0,2">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding When}" FontWeight="SemiBold" />
+                    <Border Grid.Column="1" Classes="badge">
+                      <TextBlock Classes="hint" Text="{Binding Reason}" FontSize="11" />
+                    </Border>
+                  </Grid>
+                  <TextBlock Classes="hint" FontSize="11" TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding ScriptTitle}" /><Run Text=" · " /><Run Text="{Binding Size}" />
+                  </TextBlock>
+                  <TextBlock Classes="mono" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Classes="hint" Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" TextWrapping="Wrap"
+                     Margin="16" VerticalAlignment="Top" />
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+      <!-- The selected version compared with the tab's text or the version before it -->
+      <DockPanel Grid.Column="2">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,0,0,6">
+          <TextBlock Text="Compare with" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <RadioButton Grid.Column="1" GroupName="compare" Content="Current text" IsChecked="{Binding !CompareWithPrevious}" Margin="0,0,8,0" />
+          <RadioButton Grid.Column="2" GroupName="compare" Content="Previous version" IsChecked="{Binding CompareWithPrevious}" />
+          <CheckBox Grid.Column="4" Content="Only changes" IsChecked="{Binding OnlyChanges}" />
+        </Grid>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+          <TextBlock Text="{Binding DiffSummary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="1" Classes="hint" Text="{Binding Legend}" Margin="12,0,0,0" />
+        </Grid>
+        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4"
+                Background="{DynamicResource AppCodeBackgroundBrush}">
+          <ListBox Classes="diff" ItemsSource="{Binding DiffRows}" Background="Transparent">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="q:LocalHistoryDiffRow">
+                <Grid ColumnDefinitions="46,18,*" Background="{Binding Kind, Converter={StaticResource DiffKindBrush}}">
+                  <TextBlock Classes="mono hint" Text="{Binding LineText}" HorizontalAlignment="Right" Margin="0,1,8,1" />
+                  <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Sign}" FontWeight="Bold" Margin="0,1" />
+                  <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Text}" Margin="0,1,8,1" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</Window>

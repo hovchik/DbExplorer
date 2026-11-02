@@ -9,6 +9,7 @@ using DbExplorer.Application;
 using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Copy;
+using DbExplorer.Application.Query;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop;
@@ -140,6 +141,7 @@ namespace DbExplorer.UiRender
             await Step("querytabs", RenderManyQueryTabsAsync);
             await Step("dialogs", RenderDialogsAsync);
             await Step("leave", RenderLeavePromptAsync);
+            await Step("localhistory", RenderLocalHistoryAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -614,6 +616,71 @@ namespace DbExplorer.UiRender
             await _vm.Activity.LoadTopQueriesCommand.ExecuteAsync(null);
             await Settle(4);
             await Shot(_window, $"activity-{suffix}");
+        }
+
+        /// <summary>A tab with a few kept versions (runs, a save, a closed tab), then its local history window.</summary>
+        private async Task RenderLocalHistoryAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            var closed = query.NewTab();
+            closed.Title = "Old report";
+            closed.SetText("select status, count(*)\nfrom orders\ngroup by status;", markClean: false);
+            await query.RecordAsync(closed, LocalHistoryReason.Closed);
+
+            var tab = query.NewTab();
+            tab.Title = "Orders by customer";
+            string[] versions =
+            [
+                "select *\nfrom orders;",
+                "select o.id, o.total\nfrom orders o\nwhere o.total > 100;",
+                "select c.name, count(*) as orders, sum(o.total) as total\nfrom orders o\njoin customers c on c.id = o.customer_id\nwhere o.total > 100\ngroup by c.name\norder by total desc;",
+            ];
+            var reasons = new[] { LocalHistoryReason.Run, LocalHistoryReason.Run, LocalHistoryReason.Saved };
+            for (var i = 0; i < versions.Length; i++)
+            {
+                tab.SetText(versions[i], markClean: false);
+                await query.RecordAsync(tab, reasons[i]);
+                await Task.Delay(20);
+            }
+            tab.SetText(versions[^1].Replace("> 100", "> 250").Replace("order by total desc;", "order by total desc\nlimit 20;"), markClean: false);
+            await Settle();
+
+            query.ShowLocalHistoryCommand.Execute(tab);
+            await WaitFor(() => _window.OwnedWindows.OfType<LocalHistoryWindow>().Any(), "open local history", 10_000);
+            var window = _window.OwnedWindows.OfType<LocalHistoryWindow>().First();
+            var hvm = (LocalHistoryViewModel)window.DataContext!;
+            await WaitFor(() => hvm.Entries.Count > 0, "local history entries", 5_000);
+            hvm.SelectedEntry = hvm.Entries.FirstOrDefault(e => e.Version.Reason == LocalHistoryReason.Saved) ?? hvm.SelectedEntry;
+            await Settle(6);
+            await Shot(window, "local-history");
+
+            hvm.SelectedEntry = hvm.Entries.Skip(1).FirstOrDefault() ?? hvm.SelectedEntry;
+            hvm.CompareWithPrevious = true;
+            await Settle(4);
+            await Shot(window, "local-history-previous");
+
+            hvm.CompareWithPrevious = false;
+            hvm.ShowAll = true;
+            await WaitFor(() => hvm.Entries.Any(e => e.Version.Reason == LocalHistoryReason.Closed), "all scripts", 5_000);
+            hvm.SelectedEntry = hvm.Entries.First(e => e.Version.Reason == LocalHistoryReason.Closed);
+            await Settle(4);
+            await Shot(window, "local-history-all");
+            window.Close();
+            await Settle();
+
+            var empty = query.NewTab();
+            query.ShowLocalHistoryCommand.Execute(empty);
+            await ShootOwned<LocalHistoryWindow>("local-history-empty", 8);
+
+            _vm.OpenCommandPaletteCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<CommandPaletteWindow>().Any(), "palette", 10_000);
+            var palette = _window.OwnedWindows.OfType<CommandPaletteWindow>().First();
+            ((CommandPaletteViewModel)palette.DataContext!).Query = "local history";
+            await Settle(4);
+            await Shot(palette, "local-history-palette");
+            palette.Close();
+            await Settle();
         }
 
         // ------------------------------------------------------------------ helpers

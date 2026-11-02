@@ -150,6 +150,7 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("testdata", RenderTestDataAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -885,6 +886,28 @@ namespace DbExplorer.UiRender
             usages.Close();
             await Settle(4);
             await Shot(_window, "usages-opened");
+        }
+
+        /// <summary>The Generate test data window on a parent table and on a child table with foreign keys.</summary>
+        private async Task RenderTestDataAsync()
+        {
+            _vm.SelectedTab = AppTab.Objects;
+            foreach (var name in new[] { "customers", "orders" })
+            {
+                _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Type == DbObjectType.Table && o.Name == name);
+                await Settle(2);
+                _vm.Objects.GenerateTestDataCommand.Execute(null);
+                await WaitFor(() => _window.OwnedWindows.OfType<TestDataWindow>().Any(), "test data window", 10_000);
+                var window = _window.OwnedWindows.OfType<TestDataWindow>().First();
+                var tvm = (TestDataViewModel)window.DataContext!;
+                await WaitFor(() => !tvm.IsBusy, "test data plan", 20_000);
+                tvm.Seed = 12345;
+                Console.WriteLine("  " + tvm.Status);
+                await Settle(8);
+                await Shot(window, "testdata-" + name);
+                window.Close();
+                await Settle(2);
+            }
         }
 
         /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it

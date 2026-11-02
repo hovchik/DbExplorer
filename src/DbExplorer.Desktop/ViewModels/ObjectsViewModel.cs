@@ -94,6 +94,7 @@ public partial class ObjectsViewModel(
         ShowInDiagramCommand.NotifyCanExecuteChanged();
         ModifyCommand.NotifyCanExecuteChanged();
         DeleteRowsCommand.NotifyCanExecuteChanged();
+        GenerateTestDataCommand.NotifyCanExecuteChanged();
         DropTableCommand.NotifyCanExecuteChanged();
         FindUsagesCommand.NotifyCanExecuteChanged();
         ColumnProfiles = [];
@@ -261,6 +262,16 @@ public partial class ObjectsViewModel(
         var columns = session.Snapshot.ColumnsOf(table.Database, table.Schema, table.Name);
         OpenSqlRequested?.Invoke(ObjectScripts.DeleteTemplate(session.Provider.ProviderKey, table, columns),
             NullIfEmpty(table.Database), "Delete " + table.Name);
+    }
+
+    /// <summary>Opens the test data generator for the table. Nothing is written until the user confirms an insert there
+    /// (typing PRODUCTION on a production connection); read-only connections can only preview and open the script.</summary>
+    [RelayCommand(CanExecute = nameof(IsTable))]
+    private void GenerateTestData()
+    {
+        if (_session is not { } session || SelectedObject is not { Type: DbObjectType.Table } table) return;
+        dialogs.ShowTestData(new TestDataViewModel(session, table, dialogs,
+            (sql, database, title) => OpenSqlRequested?.Invoke(sql, database, title)));
     }
 
     private bool CanDropTable => IsTable && !IsBusy;

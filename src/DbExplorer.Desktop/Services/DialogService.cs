@@ -63,6 +63,9 @@ public interface IDialogService
     /// <summary>Find usages results, in one window that stays open beside the editor (a new search replaces the last one).</summary>
     void ShowUsages(UsagesViewModel viewModel);
 
+    /// <summary>Opens the Generate test data window for a table (non-modal) and starts reading the table.</summary>
+    void ShowTestData(TestDataViewModel viewModel);
+
     /// <summary>Asks for one line of text; null when cancelled.</summary>
     Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null);
 
@@ -293,6 +296,14 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         _usagesWindow = window;
         if (Owner is not null) window.Show(Owner);
         else window.Show();
+    }
+
+    public void ShowTestData(TestDataViewModel viewModel)
+    {
+        var window = new TestDataWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+        _ = viewModel.LoadAsync();
     }
 
     public void ShowValue(string title, string value)

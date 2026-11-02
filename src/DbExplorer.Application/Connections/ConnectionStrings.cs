@@ -176,8 +176,9 @@ public static class ConnectionStrings
         if (!string.IsNullOrEmpty(path))
         {
             var p = Decode(path.TrimEnd('/'));
-            // go-mssqldb puts the instance in the path (sqlserver://host/SQLEXPRESS?database=x).
-            if (engine == SqlServer) { if (p.Length > 0) fields.Instance = p; }
+            // go-mssqldb puts the instance in the path (sqlserver://host/SQLEXPRESS?database=x); SQLAlchemy's
+            // mssql:// and mssql+pyodbc:// put the database there, like the other engines.
+            if (engine == SqlServer && scheme.Equals("sqlserver", StringComparison.OrdinalIgnoreCase)) { if (p.Length > 0) fields.Instance = p; }
             else if (p.Length > 0) fields.Database = p;
         }
 
@@ -219,9 +220,22 @@ public static class ConnectionStrings
     /// <summary>Space-separated pairs whose keys are all libpq keywords (libpq writes them in lower case).</summary>
     private static bool IsLibpq(string t)
     {
-        if (t.Contains(';') || !LibpqPattern.IsMatch(t)) return false;
+        if (HasUnquotedSemicolon(t) || !LibpqPattern.IsMatch(t)) return false;
         try { return SplitLibpq(t).All(kv => LibpqKeywords.Contains(kv.Key)); }
         catch (FormatException) { return false; }
+    }
+
+    /// <summary>A semicolon outside libpq's '…' quotes: a password='a;b' is still one libpq value.</summary>
+    private static bool HasUnquotedSemicolon(string t)
+    {
+        var quoted = false;
+        for (var i = 0; i < t.Length; i++)
+        {
+            if (quoted && t[i] == '\\') { i++; continue; }
+            if (t[i] == '\'') quoted = !quoted;
+            else if (t[i] == ';' && !quoted) return true;
+        }
+        return false;
     }
 
     /// <summary>libpq keyword/value form: host=x port=5432 dbname=y (spaces between pairs, no semicolons).</summary>

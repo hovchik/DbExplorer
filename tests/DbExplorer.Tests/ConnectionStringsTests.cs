@@ -286,6 +286,25 @@ public class ConnectionStringsTests
     }
 
     [Fact]
+    public void Libpq_quoted_value_may_hold_a_semicolon()
+    {
+        var p = Parse("host=h dbname=d user=u password='a;b'", ConnectionStrings.SqlServer);
+        Assert.Equal(ConnectionStrings.Postgres, p.ProviderKey);
+        Assert.Equal("a;b", p.Password);
+        Assert.True(ConnectionStrings.LooksLikeConnectionString("host=h password='a;b'"));
+    }
+
+    [Theory]
+    [InlineData("mssql+pyodbc://app:pw@sql01/Orders")]
+    [InlineData("mssql://app:pw@sql01/Orders")]
+    public void Sqlalchemy_mssql_path_is_the_database(string url)
+    {
+        var p = Parse(url);
+        Assert.Equal("sql01", p.Host);
+        Assert.Equal("Orders", p.Database);
+    }
+
+    [Fact]
     public void Ambiguous_string_keeps_the_selected_engine()
     {
         var p = Parse("Server=db1;Database=x;User ID=u;Password=p", ConnectionStrings.MySql);

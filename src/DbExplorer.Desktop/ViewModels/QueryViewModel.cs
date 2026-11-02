@@ -74,6 +74,12 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     /// <summary>The editor's text and undo history; kept here so switching tabs keeps each tab's state.</summary>
     public TextDocument Document { get; } = new();
 
+    /// <summary>The tab's identity: keys its local history until it is saved to a file (kept across restarts).</summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>A run (not auto refresh) is about to start: the workspace keeps the tab's text in its local history.</summary>
+    public event Action<QueryViewModel>? RunStarting;
+
     [ObservableProperty] private string _title = "Query";
     [ObservableProperty] private string? _filePath;
     [ObservableProperty] private bool _isDirty;
@@ -521,6 +527,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             if (!ReferenceEquals(session, _session)) return;
 
             _lastRun = new RepeatableRun(sql, startOffset, targets);
+            RunStarting?.Invoke(this);
             await RunAsync(session, sql, startOffset, targets);
         }
         finally

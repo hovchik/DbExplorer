@@ -51,6 +51,9 @@ public interface IDialogService
     /// <summary>Shows a (possibly long) cell value, pretty-printed when it is JSON or XML.</summary>
     void ShowValue(string title, string value);
 
+    /// <summary>Shows a query tab's local history (kept versions, diff, restore); does not wait for it to close.</summary>
+    void ShowLocalHistory(LocalHistoryViewModel viewModel);
+
     /// <summary>Asks for one line of text; null when cancelled.</summary>
     Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null);
 
@@ -262,6 +265,13 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     public async Task CopyTextAsync(string text)
     {
         if (Owner?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+    }
+
+    public void ShowLocalHistory(LocalHistoryViewModel viewModel)
+    {
+        var window = new LocalHistoryWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 
     public void ShowValue(string title, string value)

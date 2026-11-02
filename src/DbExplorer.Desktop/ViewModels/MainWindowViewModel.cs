@@ -655,6 +655,8 @@ public partial class MainWindowViewModel : ViewModelBase
         items.Add(new PaletteItem(ShowNavigator ? "Hide the database navigator" : "Show the database navigator", "Ctrl+B",
             PaletteItemKind.Command, _ => ShowNavigator = !ShowNavigator));
         Command("Team sharing…", OpenTeamCommand, "share connections, queries and snippets through a shared folder");
+        if (Query.SelectedDocument is { } queryTab)
+            Command("Local history…", Query.ShowLocalHistoryCommand, $"earlier versions of {queryTab.Title} · Ctrl+Shift+H");
 
         if (!IsConnected && !IsBusy)
         {

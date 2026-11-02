@@ -32,14 +32,17 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     private readonly Func<QueryViewModel> _createDocument;
     private readonly ScriptStore _scripts;
     private readonly IDialogService _dialogs;
+    private readonly LocalHistoryStore _localHistory;
     private DatabaseSession? _session;
     private int _untitled;
 
-    public QueryWorkspaceViewModel(Func<QueryViewModel> createDocument, ScriptStore scripts, IDialogService dialogs)
+    public QueryWorkspaceViewModel(Func<QueryViewModel> createDocument, ScriptStore scripts, IDialogService dialogs,
+        LocalHistoryStore localHistory)
     {
         _createDocument = createDocument;
         _scripts = scripts;
         _dialogs = dialogs;
+        _localHistory = localHistory;
         NewTab();
 
         // Unsaved scratch text survives a crash: the tab list is written every 30 seconds while something changed.
@@ -82,9 +85,10 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <param name="autoTitle">Whether the tab is renamed after the queries it runs.</param>
     /// <param name="databases">The databases of a restored tab, in place of <paramref name="database"/>.</param>
     private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null, bool autoTitle = false,
-        TabDatabaseMemory? databases = null)
+        TabDatabaseMemory? databases = null, Guid? id = null)
     {
         var doc = _createDocument();
+        if (id is { } known) doc.Id = known;
         doc.Title = title;
         doc.AutoTitle = autoTitle && filePath is null;
         doc.FilePath = filePath;
@@ -100,6 +104,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
         };
         doc.RunFinished += (finished, elapsed, outcome) => RunFinished?.Invoke(finished, elapsed, outcome);
+        doc.RunStarting += started => _ = RecordAsync(started, LocalHistoryReason.Run);
         Documents.Add(doc);
         SelectedDocument = doc;
         return doc;
@@ -220,6 +225,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             return false;
 
         var index = Documents.IndexOf(doc);
+        // Its last text stays in the local history, so a tab closed by mistake can be brought back.
+        await RecordAsync(doc, LocalHistoryReason.Closed);
         await doc.EndTransactionAsync(commit: false, reason: "tab closed");
         doc.Attach(null);
         Documents.Remove(doc);
@@ -227,6 +234,40 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         else if (SelectedDocument == doc || SelectedDocument is null) SelectedDocument = Documents[Math.Clamp(index, 0, Documents.Count - 1)];
         await SaveTabsAsync();
         return true;
+    }
+
+    /// <summary>Keeps the tab's current text in its local history (best-effort, never an error dialog).</summary>
+    public async Task RecordAsync(QueryViewModel doc, LocalHistoryReason reason)
+    {
+        try
+        {
+            await _localHistory.RecordAsync(LocalHistoryStore.KeyFor(doc.Id, doc.FilePath), doc.Title, doc.FilePath, doc.Sql, reason);
+        }
+        catch
+        {
+            // The local history is a safety net; failing to write it must not get in the way of running or saving.
+        }
+    }
+
+    private async Task MoveHistoryAsync(QueryViewModel doc, string path, string name)
+    {
+        try
+        {
+            await _localHistory.MoveAsync(LocalHistoryStore.KeyFor(doc.Id, null), LocalHistoryStore.KeyFor(doc.Id, path), name, path);
+        }
+        catch
+        {
+            // Best-effort, as above.
+        }
+    }
+
+    /// <summary>Opens the local history of <paramref name="doc"/> (every run, save, open and close kept a version).</summary>
+    [RelayCommand]
+    private void ShowLocalHistory(QueryViewModel? doc)
+    {
+        doc ??= SelectedDocument;
+        if (doc is null) return;
+        _dialogs.ShowLocalHistory(new LocalHistoryViewModel(_localHistory, this, doc, _dialogs));
     }
 
     /// <summary>Opens a file in a new tab, or reuses the current tab when it is an empty, untouched scratch tab.</summary>
@@ -239,17 +280,21 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             current.AutoTitle = false;
             current.FilePath = path;
             current.SetText(sql, markClean: true);
+            await RecordAsync(current, LocalHistoryReason.Opened);
         }
-        else AddTab(name, sql, path, dirty: false);
+        else await RecordAsync(AddTab(name, sql, path, dirty: false), LocalHistoryReason.Opened);
     }
 
     public async Task SaveAsync(QueryViewModel doc, string path, string name)
     {
         await File.WriteAllTextAsync(path, doc.Sql);
+        // A tab saved to its first file takes its versions so far along; another file starts with its own.
+        if (doc.FilePath is null) await MoveHistoryAsync(doc, path, name);
         doc.FilePath = path;
         doc.Title = name;
         doc.AutoTitle = false;
         doc.IsDirty = false;
+        await RecordAsync(doc, LocalHistoryReason.Saved);
         await SaveTabsAsync();
     }
 
@@ -290,7 +335,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
             foreach (var t in tabs)
-                AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t));
+                AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t), id: t.Id);
             if (placeholder is not null)
             {
                 placeholder.Attach(null);
@@ -319,7 +364,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         {
             await _scripts.SaveTabsAsync(Documents.Select(d =>
             {
-                var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle };
+                var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id };
                 d.Databases.SaveTo(state, d.CurrentDatabase);
                 return state;
             }));

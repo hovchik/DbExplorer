@@ -34,6 +34,9 @@ public sealed class QueryTabState
 
     /// <summary>Whether the tab takes its name from the queries it runs; null in files written before this existed.</summary>
     public bool? AutoTitle { get; set; }
+
+    /// <summary>The tab's identity, which keys its local history until it is saved to a file; null in older files.</summary>
+    public Guid? Id { get; set; }
 }
 
 /// <summary>

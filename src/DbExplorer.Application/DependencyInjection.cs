@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddSingleton<DataSearchService>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
+        services.AddSingleton<LocalHistoryStore>();
         services.AddSingleton<SnippetLibrary>();
         services.AddSingleton<TeamSyncStore>();
         services.AddSingleton<TeamSync>();

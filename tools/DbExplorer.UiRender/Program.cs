@@ -130,6 +130,8 @@ namespace DbExplorer.UiRender
             _vm.SelectedProfile = pgProfile;
             await Settle();
             await Shot(_window, "main-disconnected");
+            await Step("errors", () => RenderConnectionErrorsAsync(pg));
+            _vm.SelectedProfile = pgProfile;
 
             await _vm.ConnectCommand.ExecuteAsync(null);
             await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "connect", 60_000);
@@ -145,6 +147,7 @@ namespace DbExplorer.UiRender
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
+            await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -657,6 +660,30 @@ namespace DbExplorer.UiRender
             await Shot(_window, $"activity-{suffix}");
         }
 
+        /// <summary>Disconnected while on Objects: the window moves to the Query tab, which still edits (with names from
+        /// the saved catalog) but cannot run; reconnecting goes back to Objects.</summary>
+        private async Task RenderOfflineAsync()
+        {
+            _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+            await _vm.DisconnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
+            await WaitFor(() => _vm.Query.SelectedDocument?.CompletionInfo.StartsWith("Offline", StringComparison.Ordinal) == true, "offline catalog");
+            Console.WriteLine($"Offline: tab {_vm.SelectedTab}, hint '{_vm.Query.SelectedDocument?.CompletionInfo}'");
+            _vm.Query.OpenInNewTab("-- written offline\nSELECT c.name, o.total\nFROM customers c\nJOIN orders o ON o.customer_id = c.id;", "Offline draft");
+            await Settle(4);
+            await Shot(_window, "query-offline");
+            _window.Width = 1024; _window.Height = 700;
+            await Settle(4);
+            await Shot(_window, "small-query-offline");
+            _window.Width = 1400; _window.Height = 900;
+
+            // The draft was added while offline, so connecting stays on the Query tab to run it.
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "reconnect", 60_000);
+            Console.WriteLine($"Reconnected: tab {_vm.SelectedTab}");
+        }
+
         /// <summary>A tab with a few kept versions (runs, a save, a closed tab), then its local history window.</summary>
         /// <summary>Recently closed Query tabs in the History flyout, and a tab brought back to its place.</summary>
         private async Task RenderReopenClosedTabsAsync()
@@ -845,6 +872,51 @@ namespace DbExplorer.UiRender
 
         /// <summary>The prompt before closing with an open transaction and a Query builder canvas: built from the
         /// real tab state, so it also checks what the main window collects.</summary>
+        /// <summary>
+        /// A failed connect (wrong password, then nothing listening on the port): the failure card with Edit / Retry, the
+        /// red status line, and the status history opened from it, at both sizes.
+        /// </summary>
+        private async Task RenderConnectionErrorsAsync(string[] pg)
+        {
+            var wrong = Profile("Shop (wrong password)", SqlDialect.PostgresKey, pg, ConnectionEnvironment.Development, "Local");
+            wrong.Password = "not-the-password";
+            var closed = Profile("Billing", SqlDialect.PostgresKey, pg, ConnectionEnvironment.Staging, "Clients/Acme");
+            closed.Host = "127.0.0.1";
+            closed.Port = 1;
+            _vm.Profiles.Add(wrong);
+            _vm.Profiles.Add(closed);
+
+            _vm.SelectedProfile = closed;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy, "refused connect");
+            _vm.SelectedProfile = wrong;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy && _vm.ShowConnectionFailure, "failed connect");
+            Console.WriteLine("  " + _vm.StatusText);
+            await Shot(_window, "error-login");
+
+            var status = _window.FindControl<Button>("StatusButton")!;
+            status.Flyout!.ShowAt(status);
+            await Settle(6);
+            await Shot(_window, "error-history");
+            status.Flyout.Hide();
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            _vm.SelectedProfile = closed;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsBusy, "refused connect");
+            await Settle(6);
+            await Shot(_window, "small-error-refused");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            _vm.DismissConnectionFailureCommand.Execute(null);
+            _vm.Profiles.Remove(wrong);
+            _vm.Profiles.Remove(closed);
+            await Settle();
+        }
+
         private async Task RenderLeavePromptAsync()
         {
             _vm.SelectedTab = AppTab.Query;

@@ -189,7 +189,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
             }
             catch (Exception ex)
             {
-                Message = sshResult + "✗ Database: " + ConnectionSecurity.Describe(tunnel?.Explain(ex) ?? ex);
+                Message = sshResult + "✗ Database: " + ConnectionFailure.Classify(tunnel?.Explain(ex) ?? ex, ToProfile()).Summary;
             }
         }
         finally
@@ -223,7 +223,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Message = "✗ " + ConnectionSecurity.Describe(ex);
+            Message = "✗ " + ConnectionFailure.Classify(ex, ToProfile()).Summary;
         }
         finally
         {

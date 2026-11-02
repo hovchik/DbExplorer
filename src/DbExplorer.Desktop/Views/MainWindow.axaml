@@ -8,6 +8,7 @@
         xmlns:conv="using:DbExplorer.Desktop.Converters"
         xmlns:controls="using:DbExplorer.Desktop.Controls"
         xmlns:models="using:DbExplorer.Core.Models"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
         WindowStartupLocation="CenterScreen">
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
@@ -248,6 +249,24 @@
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Padding" Value="7,0" />
     </Style>
+    <!-- Status bar: one flat button the width of the window -->
+    <Style Selector="Button.statusLine">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4,3" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.statusLine:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+    </Style>
+    <!-- The default flyout stops at 456 px, too narrow for error texts -->
+    <Style Selector="FlyoutPresenter.statusHistory">
+      <Setter Property="MaxWidth" Value="720" />
+    </Style>
+    <Style Selector="TextBlock.error, SelectableTextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
   </Window.Styles>
   <DockPanel>
     <!-- App bar: brand, then the connection group (status, picker, its actions, Team), then utilities and the
@@ -445,8 +464,81 @@
       <TextBlock Text="{Binding EnvironmentBanner}" Foreground="White" FontWeight="Bold" FontSize="13" />
     </Border>
 
-    <Border DockPanel.Dock="Bottom" Padding="8,2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
-      <TextBlock Classes="hint" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+    <!-- A failed connect: what went wrong, one line on what to do, the driver's text, and Edit / Retry -->
+    <Border DockPanel.Dock="Top" Classes="connectionFailure" Margin="8,6,8,2" Padding="12,10" CornerRadius="6"
+            BorderThickness="1" BorderBrush="{DynamicResource AppDangerBrush}" Background="{DynamicResource AppDangerHoverBrush}"
+            IsVisible="{Binding ShowConnectionFailure}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Alert}" Foreground="{DynamicResource AppDangerBrush}"
+                             Width="18" Height="18" VerticalAlignment="Top" Margin="0,1,10,0" />
+        <StackPanel Grid.Column="1" Spacing="3" DataContext="{Binding ConnectionFailure}">
+          <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+          <TextBlock Text="{Binding Advice}" TextWrapping="Wrap" IsVisible="{Binding !!Advice.Length}" />
+          <SelectableTextBlock Classes="hint" FontSize="12" Text="{Binding Detail}" TextWrapping="Wrap"
+                               MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top" Margin="12,0,0,0">
+          <Button Content="Edit connection…" Command="{Binding EditFailedConnectionCommand}"
+                  ToolTip.Tip="Open this connection's settings; it connects again when you save" />
+          <Button Classes="accent" Content="Retry" Command="{Binding RetryConnectCommand}" />
+          <Button Padding="6" Background="Transparent" BorderThickness="0" Command="{Binding DismissConnectionFailureCommand}"
+                  ToolTip.Tip="Dismiss">
+            <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" Width="14" Height="14" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Status bar: the whole line opens the last 50 messages; the full text is in the tooltip; an unseen error
+         keeps a red mark until the history is opened -->
+    <Border DockPanel.Dock="Bottom" Padding="4,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+      <Button x:Name="StatusButton" Classes="statusLine" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              ToolTip.Tip="{Binding StatusText}" Command="{Binding MarkStatusSeenCommand}">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Alert}" Foreground="{DynamicResource AppDangerBrush}"
+                               Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                               IsVisible="{Binding HasUnseenError}" />
+          <TextBlock Grid.Column="1" Classes="hint" Classes.error="{Binding StatusIsError}" Text="{Binding StatusText}"
+                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="2" Classes="hint" FontSize="11" Text="History" Margin="12,0,2,0" VerticalAlignment="Center"
+                     IsVisible="{Binding HasStatusHistory}" />
+        </Grid>
+        <Button.Flyout>
+          <Flyout Placement="TopEdgeAlignedLeft" FlyoutPresenterClasses="statusHistory">
+            <DockPanel Width="660" MaxHeight="440">
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="4,2,4,8">
+                <TextBlock FontWeight="SemiBold" Text="Recent messages" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                  <Button Content="Copy all" Command="{Binding CopyStatusHistoryCommand}" IsEnabled="{Binding HasStatusHistory}" />
+                  <Button Content="Open logs folder" Command="{Binding OpenLogsFolderCommand}"
+                          ToolTip.Tip="{Binding Source={x:Static vm:MainWindowViewModel.LogsFolder}}" />
+                  <Button Content="Clear" Command="{Binding ClearStatusHistoryCommand}" IsEnabled="{Binding HasStatusHistory}" />
+                </StackPanel>
+              </Grid>
+              <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4" Text="No messages yet."
+                         IsVisible="{Binding !HasStatusHistory}" />
+              <ListBox ItemsSource="{Binding StatusHistory}" Background="Transparent"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <TextBlock Grid.Column="0" Classes="hint" FontSize="12" Text="{Binding TimeText}" Margin="0,1,10,0"
+                                 VerticalAlignment="Top" />
+                      <SelectableTextBlock Grid.Column="1" FontSize="12" Text="{Binding Text}" TextWrapping="Wrap"
+                                           Classes.error="{Binding IsError}" />
+                      <Button Grid.Column="2" Classes="copyStatus" Margin="8,0,0,0" Padding="4" VerticalAlignment="Top"
+                              Background="Transparent" BorderThickness="0" ToolTip.Tip="Copy"
+                              Command="{Binding $parent[ListBox].DataContext.CopyStatusEntryCommand}" CommandParameter="{Binding}">
+                        <controls:StrokeIcon Data="{x:Static controls:Icons.Copy}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
     </Border>
 
     <!-- Database navigator on the left (Ctrl+B), then the tabs. The navigator column's width is set by the
@@ -467,7 +559,7 @@
         <TabItem Header="Objects" IsEnabled="{Binding IsConnected}">
           <views:ObjectsView DataContext="{Binding Objects}" />
         </TabItem>
-        <TabItem Header="Query" IsEnabled="{Binding IsConnected}">
+        <TabItem Header="Query">
           <views:QueryWorkspaceView DataContext="{Binding Query}" />
         </TabItem>
         <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">

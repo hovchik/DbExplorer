@@ -39,16 +39,17 @@ public partial class MainWindowViewModel
             if (command.CanExecute(null)) Add(category, title, () => command.Execute(null), shortcut, subtitle, keywords);
         }
 
-        // ----- Query editor (the active Query tab) -----
-        if (IsConnected && Query.SelectedDocument is { } doc)
+        // ----- Query editor (the active Query tab; usable offline too, only running needs a connection) -----
+        var queryUsable = IsConnected || !OfflineTabs.NeedsConnection(AppTab.Query);
+        if (queryUsable && Query.SelectedDocument is { } doc)
         {
             void Editor(string title, EditorAction action, string? shortcut = null, string? keywords = null) =>
                 Add("Query", title, () => RunInEditor(doc, action), shortcut, doc.Title, keywords);
 
-            Editor("Run script or selection", EditorAction.RunScript, "F5", "execute go");
-            Editor("Run statement at caret", EditorAction.RunStatement, "Ctrl+Enter", "execute current");
-            Editor("Explain (execution plan)", EditorAction.Explain, "Ctrl+L", "plan showplan");
-            Editor("Explain analyze (actual plan)", EditorAction.ExplainAnalyze, "Ctrl+Shift+L", "plan actual");
+            if (IsConnected) Editor("Run script or selection", EditorAction.RunScript, "F5", "execute go");
+            if (IsConnected) Editor("Run statement at caret", EditorAction.RunStatement, "Ctrl+Enter", "execute current");
+            if (IsConnected) Editor("Explain (execution plan)", EditorAction.Explain, "Ctrl+L", "plan showplan");
+            if (IsConnected) Editor("Explain analyze (actual plan)", EditorAction.ExplainAnalyze, "Ctrl+Shift+L", "plan actual");
             Command("Query", "Cancel the running query", doc.CancelCommand, subtitle: doc.Title, keywords: "stop abort");
             Command("Query", "Commit transaction", doc.CommitCommand, subtitle: doc.Title);
             Command("Query", "Rollback transaction", doc.RollbackCommand, subtitle: doc.Title, keywords: "undo");
@@ -77,7 +78,7 @@ public partial class MainWindowViewModel
         }
 
         // ----- Query tabs -----
-        if (IsConnected)
+        if (queryUsable)
         {
             Add("Query tabs", "New query tab", () => { SelectedTab = AppTab.Query; Query.NewTab(); }, "Ctrl+N", keywords: "new script sql editor");
             Add("Query tabs", "Open SQL file…", () => RunInWorkspace(QueryFileAction.Open), "Ctrl+O", keywords: "load script");
@@ -156,7 +157,7 @@ public partial class MainWindowViewModel
         // ----- Tabs -----
         foreach (var tab in Enum.GetValues<AppTab>())
         {
-            if (!IsConnected && tab is not (AppTab.Comparer or AppTab.ErModel)) continue;
+            if (!IsConnected && OfflineTabs.NeedsConnection(tab)) continue;
             var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
             items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code").Replace("Er model", "ER model"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
         }

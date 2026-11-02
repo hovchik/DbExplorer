@@ -148,6 +148,7 @@ namespace DbExplorer.UiRender
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
             await Step("offline", RenderOfflineAsync);
+            await Step("palette", RenderPaletteAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -797,6 +798,73 @@ namespace DbExplorer.UiRender
             await Settle(4);
             await Shot(palette, "local-history-palette");
             palette.Close();
+            await Settle();
+        }
+
+        /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it
+        /// against the real editor, and the F1 shortcut sheet.</summary>
+        private async Task RenderPaletteAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("select id,name from customers where id=1", "Palette check");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle(6);
+
+            async Task<CommandPaletteWindow> OpenPalette(System.Windows.Input.ICommand command)
+            {
+                command.Execute(null);
+                await WaitFor(() => _window.OwnedWindows.OfType<CommandPaletteWindow>().Any(), "palette", 10_000);
+                return _window.OwnedWindows.OfType<CommandPaletteWindow>().First();
+            }
+
+            // Run "Format SQL" through the palette: it must reach the editor view and change the text.
+            var palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            var pvm = (CommandPaletteViewModel)palette.DataContext!;
+            pvm.Query = "format sql";
+            await Settle(2);
+            if (pvm.Selected?.Title != "Format SQL") throw new InvalidOperationException("Format SQL not first: " + pvm.Selected?.Title);
+            pvm.Accept(PaletteModifier.None);
+            await Settle(6);
+            var formatted = doc.Document.Text;
+            Console.WriteLine("Formatted via palette: " + formatted.Replace("\n", " ⏎ "));
+            if (formatted == "select id,name from customers where id=1") throw new InvalidOperationException("palette Format did not reach the editor");
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            pvm = (CommandPaletteViewModel)palette.DataContext!;
+            pvm.Query = "theme";
+            await Settle(2);
+            pvm.Selected = pvm.Results.First(r => r.Title == "Theme: Light");
+            pvm.Accept(PaletteModifier.None);
+            await Settle(4);
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            await Settle(4);
+            await Shot(palette, "palette-recent");
+            palette.Close();
+            await Settle();
+
+            palette = await OpenPalette(_vm.OpenCommandListCommand);
+            await Settle(4);
+            await Shot(palette, "palette-commands");
+            palette.Close();
+            await Settle();
+
+            palette = await OpenPalette(_vm.OpenCommandPaletteCommand);
+            ((CommandPaletteViewModel)palette.DataContext!).Query = "ctrl+l";
+            await Settle(4);
+            await Shot(palette, "palette-keys");
+            palette.Close();
+            await Settle();
+
+            _vm.ShowShortcutsCommand.Execute(null);
+            await ShootOwned<ShortcutSheetWindow>("shortcuts", 8);
+            _vm.ShowShortcutsCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<ShortcutSheetWindow>().Any(), "sheet", 10_000);
+            var sheet = _window.OwnedWindows.OfType<ShortcutSheetWindow>().First();
+            ((ShortcutSheetViewModel)sheet.DataContext!).Filter = "run";
+            await Settle(6);
+            await Shot(sheet, "shortcuts-filtered");
+            sheet.Close();
             await Settle();
         }
 

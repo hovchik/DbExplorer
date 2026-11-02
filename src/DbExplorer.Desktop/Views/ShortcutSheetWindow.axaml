@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        x:Class="DbExplorer.Desktop.Views.ShortcutSheetWindow"
+        x:DataType="vm:ShortcutSheetViewModel"
+        Title="Keyboard shortcuts"
+        Width="900" Height="660" MinWidth="520" MinHeight="360"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="Border.keycap">
+      <Setter Property="Background" Value="{DynamicResource AppKeycapBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1,1,1,2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.keycap TextBlock">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Border.area">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,8,12,10" />
+      <Setter Property="Margin" Value="0,0,12,12" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="14">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="Keyboard shortcuts" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock Classes="hint" Text="Ctrl+K opens the command palette; type &gt; there to list every command with its keys." />
+      </StackPanel>
+      <TextBox x:Name="FilterBox" Grid.Column="1" Width="280" Text="{Binding Filter}"
+               Watermark="Filter by key or action" VerticalAlignment="Center" />
+    </Grid>
+    <TextBlock DockPanel.Dock="Top" Classes="hint" IsVisible="{Binding IsEmpty}" Margin="2,8"
+               Text="No shortcut matches the filter." />
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding Groups}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ShortcutGroup">
+            <Border Classes="area" Width="420">
+              <StackPanel>
+                <TextBlock Text="{Binding Area}" FontWeight="SemiBold" Margin="0,0,0,6" />
+                <ItemsControl ItemsSource="{Binding Items}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ShortcutInfo">
+                      <Grid ColumnDefinitions="160,*" Margin="0,2">
+                        <Border Classes="keycap">
+                          <TextBlock Text="{Binding Keys}" TextTrimming="CharacterEllipsis" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="{Binding Action}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="10,0,0,0" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

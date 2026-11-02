@@ -4,27 +4,51 @@
         x:Class="DbExplorer.Desktop.Views.CommandPaletteWindow"
         x:DataType="vm:CommandPaletteViewModel"
         Title="Go to…"
-        Width="680" Height="460"
+        Width="760" Height="480"
         SystemDecorations="BorderOnly"
         ShowInTaskbar="False"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="Border.keycap">
+      <Setter Property="Background" Value="{DynamicResource AppKeycapBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.keycap TextBlock">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="ListBox.palette ListBoxItem">
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+  </Window.Styles>
   <Border Padding="10" Background="{DynamicResource AppPopupBackgroundBrush}"
           BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1">
     <DockPanel>
       <TextBox x:Name="QueryBox" DockPanel.Dock="Top" Text="{Binding Query}" FontSize="15"
-               Watermark="Type a table, view, procedure, tab or command…" Margin="0,0,0,8" />
+               Watermark="{Binding Watermark}" Margin="0,0,0,8" />
       <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="2,8,0,0"
-                 Text="Enter: open · Shift+Enter: show in diagram (tables) · Ctrl+Enter: get data / execute · Esc: close" />
-      <ListBox x:Name="ResultsList" ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}"
+                 TextTrimming="CharacterEllipsis"
+                 Text="Enter: open · Shift+Enter: table in diagram · Ctrl+Enter: get data / execute · &gt; commands only · F1: shortcuts · Esc: close" />
+      <ListBox x:Name="ResultsList" Classes="palette" ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}"
                Background="Transparent" BorderThickness="0">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:PaletteItem">
-            <Grid ColumnDefinitions="80,*,Auto">
-              <TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"
+            <Grid ColumnDefinitions="90,Auto,*,Auto">
+              <TextBlock Grid.Column="0" Classes="hint" Text="{Binding KindLabel}" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" />
-              <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Subtitle}" Margin="12,0,0,0" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" MaxWidth="400" />
+              <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Subtitle}" Margin="12,0,0,0" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <Border Grid.Column="3" Classes="keycap" IsVisible="{Binding HasShortcut}" Margin="12,0,0,0">
+                <TextBlock Text="{Binding Shortcut}" />
+              </Border>
             </Grid>
           </DataTemplate>
         </ListBox.ItemTemplate>

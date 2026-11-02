@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Workspace;
 using DbExplorer.Desktop.ViewModels;
 
 namespace DbExplorer.Desktop.Views;
@@ -42,7 +43,63 @@ public partial class MainWindow : Window
                 _vm.PropertyChanged += OnViewModelPropertyChanged;
             }
             ApplyNavigatorWidth();
+            if (_vm is not null && !_placementApplied)
+            {
+                _placementApplied = true;
+                ApplySavedPlacement(_vm.SavedWorkspace.Window);
+            }
         };
+        PositionChanged += (_, _) => ScheduleTrackPlacement();
+        Resized += (_, _) => ScheduleTrackPlacement();
+        Closing += (_, _) => TrackPlacement();
+    }
+
+    // ---- Window placement: saved on close, restored (fitted to today's monitors) at the next start ----
+
+    private bool _placementApplied;
+    private bool _trackPending;
+    private WindowPlacement? _normalBounds;
+    private bool _maximizedBeforeMinimize;
+
+    private void ApplySavedPlacement(WindowPlacement? saved)
+    {
+        if (Screens is not { } screens) return;
+        var areas = screens.All
+            .Select(s => new ScreenArea(s.WorkingArea.X, s.WorkingArea.Y, s.WorkingArea.Width, s.WorkingArea.Height, s.Scaling, s.IsPrimary))
+            .ToList();
+        if (WindowPlacementFitter.Fit(saved, areas) is not { } fit) return;
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = new PixelPoint(fit.X, fit.Y);
+        Width = fit.Width;
+        Height = fit.Height;
+        _normalBounds = fit with { Maximized = false };
+        // Placed on its monitor first, so maximizing fills that monitor and un-maximizing returns to these bounds.
+        if (fit.Maximized) WindowState = WindowState.Maximized;
+    }
+
+    /// <summary>Moves and resizes come in bursts, and a maximize reports its new position before the new state:
+    /// read the bounds once things settle.</summary>
+    private void ScheduleTrackPlacement()
+    {
+        if (_trackPending) return;
+        _trackPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _trackPending = false;
+            TrackPlacement();
+        }, DispatcherPriority.Background);
+    }
+
+    private void TrackPlacement()
+    {
+        if (_vm is null) return;
+        if (WindowState == WindowState.Normal && ClientSize.Width > 0 && ClientSize.Height > 0)
+            _normalBounds = new WindowPlacement(Position.X, Position.Y, Math.Round(ClientSize.Width), Math.Round(ClientSize.Height), false);
+        if (_normalBounds is null) return;
+        var maximized = WindowState is WindowState.Maximized or WindowState.FullScreen ||
+                        (WindowState == WindowState.Minimized && _maximizedBeforeMinimize);
+        _vm.WindowPlacement = _normalBounds with { Maximized = maximized };
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -150,6 +207,9 @@ public partial class MainWindow : Window
         if (change.Property != WindowStateProperty) return;
 
         var state = change.GetNewValue<WindowState>();
+        if (state == WindowState.Minimized)
+            _maximizedBeforeMinimize = change.GetOldValue<WindowState>() is WindowState.Maximized or WindowState.FullScreen;
+        ScheduleTrackPlacement();
         if (App.Watchdog is { } watchdog) watchdog.Context = state.ToString().ToLowerInvariant();
         if (change.GetOldValue<WindowState>() == WindowState.Minimized && state != WindowState.Minimized)
         {

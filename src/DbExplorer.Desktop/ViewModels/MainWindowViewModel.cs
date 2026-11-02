@@ -6,6 +6,7 @@ using DbExplorer.Application;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Sessions;
+using DbExplorer.Application.Workspace;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
@@ -20,6 +21,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly IDialogService _dialogs;
     private readonly AppSettingsService _settings;
     private readonly ISessionAware[] _tabs;
+    private readonly WorkspaceStore _workspace;
 
     public MainWindowViewModel(
         ConnectionStore store,
@@ -41,8 +43,12 @@ public partial class MainWindowViewModel : ViewModelBase
         ComparerViewModel comparer,
         LabViewModel lab,
         SecurityViewModel security,
-        NavigatorViewModel navigator)
+        NavigatorViewModel navigator,
+        WorkspaceStore workspace)
     {
+        _workspace = workspace;
+        SavedWorkspace = workspace.Load();
+        if (Enum.TryParse<AppTab>(SavedWorkspace.MainTab, out var savedTab) && Enum.IsDefined(savedTab)) _selectedTab = savedTab;
         _store = store;
         _sessions = sessions;
         _registry = registry;
@@ -306,22 +312,62 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public async Task InitializeAsync()
     {
+        StartupConnectionAction action;
+        string? note;
         try
         {
             await Query.RestoreTabsAsync();
+            if (SavedWorkspace.QueryTabIndex is { } index && index >= 0 && index < Query.Documents.Count)
+                Query.SelectedDocument = Query.Documents[index];
             foreach (var p in ConnectionFolders.Order(await _store.LoadAsync())) Profiles.Add(p);
-            SelectedProfile = Profiles.FirstOrDefault();
+            (action, var saved, note) = StartupConnection.Decide(SavedWorkspace, Profiles, _settings.ReconnectOnStart);
+            SelectedProfile = saved ?? Profiles.FirstOrDefault();
         }
         catch (Exception ex)
         {
             StatusText = "Could not load saved connections: " + ex.Message;
+            return;
+        }
+
+        if (note is not null) StatusText = note;
+        if (action == StartupConnectionAction.Connect && ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+    }
+
+    // ----- Workspace: window, main tab, active query tab and connection, restored at the next start -----
+
+    /// <summary>What was saved when the app last closed (read once at start).</summary>
+    public WorkspaceState SavedWorkspace { get; }
+
+    /// <summary>The window's current normal bounds, kept up to date by the window and saved on close.</summary>
+    public WindowPlacement? WindowPlacement { get; set; }
+
+    /// <summary>Theme menu: open the last connection again at start.</summary>
+    public bool ReconnectOnStart
+    {
+        get => _settings.ReconnectOnStart;
+        set
+        {
+            if (value == _settings.ReconnectOnStart) return;
+            _settings.SetReconnectOnStart(value);
+            OnPropertyChanged();
         }
     }
+
+    /// <summary>The state to write on close; read before the session is closed so it knows whether one was open.</summary>
+    public WorkspaceState CaptureWorkspace() => new()
+    {
+        Window = WindowPlacement ?? SavedWorkspace.Window,
+        MainTab = SelectedTab.ToString(),
+        QueryTabIndex = Query.SelectedDocument is { } doc && Query.Documents.IndexOf(doc) is >= 0 and var i ? i : null,
+        ConnectionId = Session?.Profile.Id ?? SelectedProfile?.Id,
+        WasConnected = Session is not null
+    };
 
     /// <summary>Every step runs even when an earlier one fails (e.g. the server went away), so tabs are saved and
     /// open transactions are rolled back as far as possible.</summary>
     public async Task ShutdownAsync()
     {
+        await Step(() => { _workspace.Save(CaptureWorkspace()); return Task.CompletedTask; });
         await Step(Query.SaveTabsAsync);
         await Step(() => { ErModel.FlushAutosave(); return Task.CompletedTask; });
         await Step(Query.RollbackOpenTransactionsAsync);

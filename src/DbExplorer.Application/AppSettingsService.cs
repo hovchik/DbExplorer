@@ -37,6 +37,7 @@ public sealed class AppSettingsService
         SqlInspections = !stored.SqlInspectionsOff;
         SoftwareRendering = stored.SoftwareRendering;
         ShowNavigator = !stored.NavigatorHidden;
+        ReconnectOnStart = !stored.ReconnectOnStartOff;
         NavigatorWidth = ClampNavigatorWidth(stored.NavigatorWidth ?? DefaultNavigatorWidth);
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
@@ -71,6 +72,17 @@ public sealed class AppSettingsService
 
     /// <summary>The navigator's width in pixels, as the user last dragged it.</summary>
     public double NavigatorWidth { get; private set; }
+
+    /// <summary>Whether a connection that was open when DbExplorer closed is opened again at the next start (production
+    /// connections are only selected, never opened by themselves).</summary>
+    public bool ReconnectOnStart { get; private set; }
+
+    public void SetReconnectOnStart(bool on)
+    {
+        if (ReconnectOnStart == on) return;
+        ReconnectOnStart = on;
+        Save();
+    }
 
     public void SetShowNavigator(bool show)
     {
@@ -174,6 +186,7 @@ public sealed class AppSettingsService
                 Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
                 SoftwareRendering = SoftwareRendering,
                 NavigatorHidden = !ShowNavigator,
+                ReconnectOnStartOff = !ReconnectOnStart,
                 NavigatorWidth = Math.Abs(NavigatorWidth - DefaultNavigatorWidth) < 1 ? null : NavigatorWidth,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
             };
@@ -200,6 +213,9 @@ public sealed class AppSettingsService
         public bool NavigatorHidden { get; set; }
 
         public double? NavigatorWidth { get; set; }
+
+        /// <summary>Stored as "off" so reconnecting starts on.</summary>
+        public bool ReconnectOnStartOff { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

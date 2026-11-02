@@ -39,6 +39,7 @@ public sealed class AppSettingsService
         ShowNavigator = !stored.NavigatorHidden;
         ReconnectOnStart = !stored.ReconnectOnStartOff;
         NavigatorWidth = ClampNavigatorWidth(stored.NavigatorWidth ?? DefaultNavigatorWidth);
+        _recentCommands = (stored.RecentCommands ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().Take(MaxRecentCommands).ToList();
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
             .OfType<ExperimentalFeature>().ToHashSet();
@@ -81,6 +82,22 @@ public sealed class AppSettingsService
     {
         if (ReconnectOnStart == on) return;
         ReconnectOnStart = on;
+        Save();
+    }
+
+    public const int MaxRecentCommands = 8;
+    private List<string> _recentCommands;
+
+    /// <summary>Command palette commands, most recently used first.</summary>
+    public IReadOnlyList<string> RecentCommands => _recentCommands;
+
+    public void AddRecentCommand(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return;
+        if (_recentCommands.Count > 0 && _recentCommands[0] == id) return;
+        _recentCommands.Remove(id);
+        _recentCommands.Insert(0, id);
+        if (_recentCommands.Count > MaxRecentCommands) _recentCommands.RemoveRange(MaxRecentCommands, _recentCommands.Count - MaxRecentCommands);
         Save();
     }
 
@@ -188,7 +205,8 @@ public sealed class AppSettingsService
                 NavigatorHidden = !ShowNavigator,
                 ReconnectOnStartOff = !ReconnectOnStart,
                 NavigatorWidth = Math.Abs(NavigatorWidth - DefaultNavigatorWidth) < 1 ? null : NavigatorWidth,
-                DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList()
+                DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList(),
+                RecentCommands = _recentCommands.Count == 0 ? null : _recentCommands.ToList()
             };
             AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
         }
@@ -219,5 +237,8 @@ public sealed class AppSettingsService
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }
+
+        /// <summary>Command palette commands, most recent first.</summary>
+        public List<string>? RecentCommands { get; set; }
     }
 }

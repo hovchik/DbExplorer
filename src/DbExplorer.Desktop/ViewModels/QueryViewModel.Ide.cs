@@ -42,6 +42,13 @@ public partial class QueryViewModel
     /// <summary>Asks the workspace to open text in a new tab (definition of an object, …).</summary>
     public event Action<string, string>? OpenRequested;
 
+    /// <summary>The command palette asks the editor view to run, format, find… (see <see cref="EditorAction"/>).</summary>
+    public event Action<EditorAction>? EditorActionRequested;
+
+    public bool HasEditorView => EditorActionRequested is not null;
+
+    public void RequestEditorAction(EditorAction action) => EditorActionRequested?.Invoke(action);
+
     partial void OnHasOpenTransactionChanged(bool value)
     {
         OnPropertyChanged(nameof(TransactionInfo));

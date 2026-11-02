@@ -20,6 +20,7 @@ public partial class QueryWorkspaceView : UserControl
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        DataContextChanged += (_, _) => BindWorkspace();
         DocTabs.AddHandler(PointerPressedEvent, OnTabPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         DocTabs.AddHandler(PointerMovedEvent, OnTabPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         DocTabs.AddHandler(PointerReleasedEvent, OnTabPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -30,6 +31,22 @@ public partial class QueryWorkspaceView : UserControl
     }
 
     private QueryWorkspaceViewModel? Vm => DataContext as QueryWorkspaceViewModel;
+
+    private QueryWorkspaceViewModel? _bound;
+
+    private void BindWorkspace()
+    {
+        if (_bound is not null) _bound.FileActionRequested -= OnFileActionRequested;
+        _bound = Vm;
+        if (_bound is not null) _bound.FileActionRequested += OnFileActionRequested;
+    }
+
+    private Task OnFileActionRequested(QueryFileAction action) => action switch
+    {
+        QueryFileAction.Open => OpenAsync(),
+        QueryFileAction.Save => SaveAsync(saveAs: false),
+        _ => SaveAsync(saveAs: true)
+    };
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {

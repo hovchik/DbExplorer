@@ -13,7 +13,11 @@ public partial class CommandPaletteWindow : Window
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
-        Opened += (_, _) => QueryBox.Focus();
+        Opened += (_, _) =>
+        {
+            QueryBox.Focus();
+            QueryBox.CaretIndex = QueryBox.Text?.Length ?? 0;
+        };
         Deactivated += (_, _) => SafeClose();
         ResultsList.DoubleTapped += (_, _) => (DataContext as CommandPaletteViewModel)?.Accept(PaletteModifier.None);
         ResultsList.SelectionChanged += (_, _) =>
@@ -38,6 +42,11 @@ public partial class CommandPaletteWindow : Window
         if (DataContext is not CommandPaletteViewModel vm) return;
         switch (e.Key)
         {
+            case Key.F1:
+                SafeClose();
+                vm.ShowShortcuts?.Invoke();
+                e.Handled = true;
+                break;
             case Key.Escape:
                 SafeClose();
                 e.Handled = true;

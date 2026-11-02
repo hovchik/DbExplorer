@@ -218,7 +218,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
                 break;
             case NavigatorConnectionAction.Switch when IsConnected && !IsBusy && Session?.Profile.Id != profile.Id:
-                if (DisconnectCommand.CanExecute(null)) await DisconnectCommand.ExecuteAsync(null);
+                if (!await ConfirmLeaveAsync(LeaveReason.Switch)) return;
+                await DisconnectCoreAsync();
                 if (IsConnected) return;
                 SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
                 if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
@@ -609,11 +610,51 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanUseSession))]
     private async Task DisconnectAsync()
     {
+        if (!await ConfirmLeaveAsync(LeaveReason.Disconnect)) return;
+        await DisconnectCoreAsync();
+    }
+
+    private async Task DisconnectCoreAsync()
+    {
         if (Session is not { } s) return;
         Session = null;
         await s.DisposeAsync();
         StatusText = "Disconnected";
     }
+
+    // ----- Before the connection goes away: say what is rolled back or discarded, and let the user stay -----
+
+    /// <summary>What is lost if the connection goes away now for <paramref name="reason"/>; empty when nothing is.</summary>
+    public IReadOnlyList<string> DescribeUnsavedWork(LeaveReason reason)
+    {
+        if (Session is null) return [];
+        var state = new UnsavedWorkState
+        {
+            QueryTabs = Query.Documents
+                .Select(d => new QueryTabWork(d.Title, d.HasOpenTransaction, ResultEditing.HasEdits(d.ResultSets), d.IsRunning))
+                .ToList(),
+            SecurityPending = Security.Pending.Count,
+            TableDesign = TableDesigner.UnsavedDesign,
+            QueryBuilderTables = QueryBuilder.Tables.Count,
+            DataWindows = _dialogs.DataWindowsWithUncommittedEdits()
+        };
+        return UnsavedWork.Describe(state, reason);
+    }
+
+    /// <summary>True when nothing would be lost or the user chose to go ahead anyway; asks at most once per quit.</summary>
+    public async Task<bool> ConfirmLeaveAsync(LeaveReason reason)
+    {
+        if (reason == LeaveReason.Quit && QuitConfirmed) return true;
+        var lines = DescribeUnsavedWork(reason);
+        if (lines.Count > 0 && Session is { } s &&
+            !await _dialogs.ConfirmAsync(UnsavedWork.Message(reason, s.Profile.DisplayName, lines), UnsavedWork.ConfirmText(reason)))
+            return false;
+        if (reason == LeaveReason.Quit) QuitConfirmed = true;
+        return true;
+    }
+
+    /// <summary>The user already agreed to close (or there was nothing to lose): later close requests do not ask again.</summary>
+    public bool QuitConfirmed { get; private set; }
 
     [RelayCommand(CanExecute = nameof(CanUseSession))]
     private async Task RefreshMetadataAsync()

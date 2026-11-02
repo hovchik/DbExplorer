@@ -73,6 +73,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     public bool HasForeignKeys => ForeignKeys.Count > 0;
     public bool HasIndexes => Indexes.Count > 0;
     public bool IsAltering => _original is not null;
+
+    /// <summary>What the edits not executed yet are for: the table's name, or "a new table"; null without edits.</summary>
+    public string? UnsavedDesign => !_edited ? null
+        : !string.IsNullOrWhiteSpace(TableName) ? TableName.Trim()
+        : _original is not null ? _original.Name : "a new table";
     public string ExecuteLabel => IsAltering ? "Apply changes…" : "Execute…";
 
     /// <summary>Raised to open SQL in a new query tab, against a database.</summary>

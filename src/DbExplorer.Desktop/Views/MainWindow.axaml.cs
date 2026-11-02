@@ -201,6 +201,34 @@ public partial class MainWindow : Window
         menu.ShowAt(_allTabsButton);
     }
 
+    private bool _askingToClose;
+
+    /// <summary>
+    /// Closing the window with an open transaction, uncommitted grid edits, a running query or other work that only
+    /// lives on the connection asks first and lists what would be lost. Once the user agrees, the shutdown in
+    /// <see cref="App"/> does not ask again.
+    /// </summary>
+    protected override async void OnClosing(WindowClosingEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel || _vm is not { QuitConfirmed: false } vm ||
+            e.CloseReason is not (WindowCloseReason.WindowClosing or WindowCloseReason.ApplicationShutdown) ||
+            vm.DescribeUnsavedWork(LeaveReason.Quit).Count == 0)
+            return;
+
+        e.Cancel = true;
+        if (_askingToClose) return;
+        _askingToClose = true;
+        try
+        {
+            if (await vm.ConfirmLeaveAsync(LeaveReason.Quit)) Close();
+        }
+        finally
+        {
+            _askingToClose = false;
+        }
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);

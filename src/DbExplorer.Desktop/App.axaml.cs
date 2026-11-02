@@ -113,6 +113,12 @@ public partial class App : Avalonia.Application
             if (shutdownStarted) return;
             shutdownStarted = true;
             e.Cancel = true;
+            // Quitting from outside the window (e.g. the macOS menu) asks about unsaved work like closing it does.
+            if (!vm.QuitConfirmed && !await vm.ConfirmLeaveAsync(LeaveReason.Quit))
+            {
+                shutdownStarted = false;
+                return;
+            }
             try
             {
                 // Rolling back open transactions talks to the server; an unreachable one must not keep the window open.

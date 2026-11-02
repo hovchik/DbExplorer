@@ -139,6 +139,7 @@ namespace DbExplorer.UiRender
             await Step("toolbar", RenderToolbarStatesAsync);
             await Step("querytabs", RenderManyQueryTabsAsync);
             await Step("dialogs", RenderDialogsAsync);
+            await Step("leave", RenderLeavePromptAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -586,6 +587,33 @@ namespace DbExplorer.UiRender
         }
 
         // ------------------------------------------------------------------ helpers
+
+        /// <summary>The prompt before closing with an open transaction and a Query builder canvas: built from the
+        /// real tab state, so it also checks what the main window collects.</summary>
+        private async Task RenderLeavePromptAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("UPDATE orders SET note = note WHERE id = 1;", "Orders fix");
+            var doc = _vm.Query.SelectedDocument!;
+            doc.AutoCommit = false;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.HasOpenTransaction, "open transaction");
+            _vm.QueryBuilder.AddTable(Table("orders"), 40, 40);
+            _vm.QueryBuilder.AddTable(Table("customers"), 300, 40);
+
+            foreach (var reason in Enum.GetValues<LeaveReason>())
+                Console.WriteLine($"{reason}: {string.Join(" | ", _vm.DescribeUnsavedWork(reason))}");
+            var lines = _vm.DescribeUnsavedWork(LeaveReason.Quit);
+            if (lines.Count != 2) throw new InvalidOperationException($"expected 2 lines, got {lines.Count}");
+            await ShowAndShoot(new ConfirmWindow(UnsavedWork.Message(LeaveReason.Quit, _vm.Session!.Profile.DisplayName, lines),
+                UnsavedWork.ConfirmText(LeaveReason.Quit)), "leave-quit");
+            await ShowAndShoot(new ConfirmWindow(UnsavedWork.Message(LeaveReason.Disconnect, _vm.Session!.Profile.DisplayName,
+                    [.. lines, "Security: 2 unapplied changes are discarded", "Data window for public.orders: uncommitted edits are discarded"]),
+                UnsavedWork.ConfirmText(LeaveReason.Disconnect)), "leave-disconnect");
+
+            await doc.EndTransactionAsync(commit: false, reason: "render done");
+        }
 
         private async Task ShowAndShoot(Window dialog, string name, Action<Window>? afterShow = null)
         {

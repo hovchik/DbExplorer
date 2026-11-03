@@ -152,6 +152,7 @@ namespace DbExplorer.UiRender
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
             await Step("preferences", RenderPreferencesAsync);
+            await Step("docs", RenderDocumentationAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -259,6 +260,28 @@ namespace DbExplorer.UiRender
             _window.Width = 1400;
             _window.Height = 900;
             _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+        }
+
+        /// <summary>Export documentation: the navigator menu on a schema row, then the dialog it opens.</summary>
+        private async Task RenderDocumentationAsync()
+        {
+            var nav = _vm.Navigator;
+            _vm.ShowNavigator = true;
+            _vm.SelectedTab = AppTab.Objects;
+            await nav.RevealAsync(Table("orders"));
+            for (var n = nav.SelectedNode; n is not null; n = n.Parent)
+                if (n.Kind == NavigatorNodeKind.Schema) { nav.SelectedNode = n; break; }
+            await Settle(2);
+            var tree = _window.GetVisualDescendants().OfType<TreeView>().First(t => t.Name == "Tree");
+            tree.ContextMenu!.Open(tree);
+            await Settle(4);
+            await Shot(_window, "navigator-schema-menu");
+            tree.ContextMenu.Close();
+
+            nav.ExportDocumentationCommand.Execute(null);
+            await ShootOwned<ExportDocumentationWindow>("export-documentation", 12);
+            nav.SelectedNode = null;
             await Settle();
         }
 

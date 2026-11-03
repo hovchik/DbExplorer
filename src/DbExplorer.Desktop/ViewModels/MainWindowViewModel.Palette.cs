@@ -125,6 +125,8 @@ public partial class MainWindowViewModel
         Command("Connection", "Delete connection…", DeleteConnectionCommand, subtitle: SelectedProfile?.ToString(), keywords: "remove");
         Command("Connection", "Export connections…", ExportConnectionsCommand, subtitle: "with or without passwords", keywords: "backup share file");
         Command("Connection", "Import connections…", ImportConnectionsCommand, keywords: "load file");
+        Command("Connection", "Export database documentation…", ExportDocumentationCommand,
+            subtitle: "tables, columns, keys, comments and diagram as HTML or Markdown", keywords: "docs data dictionary schema report wiki");
         Command("Connection", "Team sharing…", OpenTeamCommand, subtitle: "share connections, queries and snippets through a shared folder", keywords: "sync");
         if (!IsBusy)
         {

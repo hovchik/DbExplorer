@@ -42,6 +42,13 @@ public sealed record ClosedTabItem(ClosedQueryTab Closed)
     public string ToolTip => Closed.Tab.FilePath ?? Title;
 }
 
+/// <summary>A file in the Recent list.</summary>
+public sealed record RecentFileItem(string Path)
+{
+    public string Name => System.IO.Path.GetFileName(Path);
+    public string Folder => System.IO.Path.GetDirectoryName(Path) ?? "";
+}
+
 /// <summary>
 /// The Query tab as a small SQL IDE: several query tabs (each with its own editor, undo history and results),
 /// .sql files opened and saved, tabs restored on the next start, and the run history.
@@ -53,6 +60,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     private readonly IDialogService _dialogs;
     private readonly LocalHistoryStore _localHistory;
     private readonly MetadataCache _catalogCache;
+    private readonly RecentFiles _recentFileStore;
     private DatabaseSession? _session;
     private OfflineCatalog? _offline;
     private int _offlineVersion;
@@ -60,8 +68,9 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     private int _untitled;
 
     public QueryWorkspaceViewModel(Func<QueryViewModel> createDocument, ScriptStore scripts, IDialogService dialogs,
-        LocalHistoryStore localHistory, MetadataCache catalogCache)
+        LocalHistoryStore localHistory, MetadataCache catalogCache, RecentFiles recentFiles)
     {
+        _recentFileStore = recentFiles;
         _catalogCache = catalogCache;
         _createDocument = createDocument;
         _scripts = scripts;
@@ -107,6 +116,18 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     public bool HasRecentlyClosed => RecentlyClosed.Count > 0;
 
     private ClosedTabs _closed = new();
+
+    /// <summary>The files opened or saved most recently, newest first (Open ▾ and the command palette).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRecentFiles))]
+    [NotifyPropertyChangedFor(nameof(RecentHeader))]
+    private IReadOnlyList<RecentFileItem> _recentFiles = [];
+
+    public bool HasRecentFiles => RecentFiles.Count > 0;
+
+    public string RecentHeader => HasRecentFiles
+        ? "Recent files"
+        : "No recent files yet. Files you open or save show up here; you can also drop .sql files on the window.";
     private IReadOnlyList<HistoryItem> _allHistory = [];
 
     public void Attach(DatabaseSession? session)
@@ -372,6 +393,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         var id = t.Id is { } known && Documents.All(d => d.Id != known) ? known : (Guid?)null;
         var doc = AddTab(t.Title, sql, t.FilePath, dirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title),
             databases: TabDatabaseMemory.From(t), id: id);
+        RestoreFileState(doc, t);
         if (placeholder is not null)
         {
             placeholder.Attach(null);
@@ -442,32 +464,139 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         _dialogs.ShowLocalHistory(new LocalHistoryViewModel(_localHistory, this, doc, _dialogs));
     }
 
-    /// <summary>Opens a file in a new tab, or reuses the current tab when it is an empty, untouched scratch tab.</summary>
+    /// <summary>Opens a file in a new tab, or reuses the current tab when it is an empty, untouched scratch tab. A file
+    /// that is open already is just shown. The encoding it was stored in is kept for saving.</summary>
     public async Task OpenFileAsync(string path, string name)
     {
-        var sql = await File.ReadAllTextAsync(path);
-        if (SelectedDocument is { FilePath: null } current && string.IsNullOrWhiteSpace(current.Sql))
+        if (Documents.FirstOrDefault(d => ClosedTabs.SamePath(d.FilePath, path)) is { } open)
         {
-            current.Title = name;
-            current.AutoTitle = false;
-            current.FilePath = path;
-            current.SetText(sql, markClean: true);
-            await RecordAsync(current, LocalHistoryReason.Opened);
+            SelectedDocument = open;
+            await RememberRecentAsync(path);
+            await open.CheckDiskAsync();
+            return;
         }
-        else await RecordAsync(AddTab(name, sql, path, dirty: false), LocalHistoryReason.Opened);
+        var file = await SqlFile.ReadAsync(path);
+        QueryViewModel doc;
+        if (SelectedDocument is { FilePath: null } current && string.IsNullOrWhiteSpace(current.Sql) && !current.IsRunning)
+        {
+            doc = current;
+            doc.Title = name;
+            doc.AutoTitle = false;
+            doc.FilePath = path;
+            doc.SetText(file.Text, markClean: true);
+        }
+        else doc = AddTab(name, file.Text, path, dirty: false);
+        doc.FileEncoding = file.Encoding;
+        doc.FileStamp = file.Stamp;
+        await RecordAsync(doc, LocalHistoryReason.Opened);
+        await RememberRecentAsync(path);
+        await SaveTabsAsync();
     }
 
-    public async Task SaveAsync(QueryViewModel doc, string path, string name)
+    /// <summary>Opens <paramref name="path"/> (from Explorer, a drop or the Recent list) under its file name.</summary>
+    public Task OpenPathAsync(string path) => OpenFileAsync(Path.GetFullPath(path), Path.GetFileName(path));
+
+    /// <summary>Opens a file from the Recent list; one that is gone is dropped from the list.</summary>
+    [RelayCommand]
+    private async Task OpenRecentAsync(RecentFileItem? item)
     {
-        await File.WriteAllTextAsync(path, doc.Sql);
+        if (item is null) return;
+        try
+        {
+            await OpenPathAsync(item.Path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqlFileException)
+        {
+            if (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                await ChangeRecentAsync(r => r.RemoveAsync(item.Path));
+                if (SelectedDocument is { } doc) doc.Status = $"{item.Name} is not there any more ({item.Path}); it was taken off the Recent list.";
+            }
+            else if (SelectedDocument is { } doc) doc.Status = $"Could not open {item.Name}: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private Task ClearRecentFilesAsync() => ChangeRecentAsync(r => r.ClearAsync());
+
+    private Task RememberRecentAsync(string path) => ChangeRecentAsync(r => r.AddAsync(path));
+
+    private async Task ChangeRecentAsync(Func<RecentFiles, Task<IReadOnlyList<string>>> change)
+    {
+        try
+        {
+            RecentFiles = (await change(_recentFileStore)).Select(p => new RecentFileItem(p)).ToList();
+        }
+        catch
+        {
+            // The list is a convenience; failing to write it must not stop an open or a save.
+        }
+    }
+
+    /// <summary>Saves the tab to <paramref name="path"/> in the encoding its file had (UTF-8 for a new file). When the
+    /// file was changed by another program since this tab read it, asks before overwriting that change.</summary>
+    /// <returns>False when the user chose not to overwrite.</returns>
+    public async Task<bool> SaveAsync(QueryViewModel doc, string path, string name)
+    {
+        if (ClosedTabs.SamePath(doc.FilePath, path) && doc.FileStamp is { } known && FileStamp.Of(path) is { } now && now != known &&
+            !await _dialogs.ConfirmAsync(
+                $"{Path.GetFileName(path)} was changed by another program since you opened it. Save over those changes?",
+                "Overwrite"))
+            return false;
+
+        var previousEncoding = doc.FileEncoding;
+        var written = await SqlFile.WriteAsync(path, doc.Sql, previousEncoding);
         // A tab saved to its first file takes its versions so far along; another file starts with its own.
         if (doc.FilePath is null) await MoveHistoryAsync(doc, path, name);
         doc.FilePath = path;
         doc.Title = name;
         doc.AutoTitle = false;
         doc.IsDirty = false;
+        doc.FileEncoding = written.Encoding;
+        doc.FileStamp = written.Stamp;
+        doc.DiskNotice = "";
+        doc.CanReloadFromDisk = false;
+        doc.Status = written.EncodingChanged
+            ? $"Saved to {path} as UTF-8 with BOM: the text has characters that {SqlFileEncodings.Label(previousEncoding)} cannot hold."
+            : $"Saved to {path}";
         await RecordAsync(doc, LocalHistoryReason.Saved);
+        await RememberRecentAsync(path);
         await SaveTabsAsync();
+        return true;
+    }
+
+    /// <summary>Shows the tab's file selected in Explorer (Finder, or the folder on Linux).</summary>
+    [RelayCommand]
+    private void ShowInFolder(QueryViewModel? doc)
+    {
+        doc ??= SelectedDocument;
+        if (doc?.FilePath is not { } path) return;
+        try
+        {
+            var start = OperatingSystem.IsWindows()
+                ? new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
+                : OperatingSystem.IsMacOS()
+                    ? new System.Diagnostics.ProcessStartInfo("open") { ArgumentList = { "-R", path } }
+                    : new System.Diagnostics.ProcessStartInfo("xdg-open") { ArgumentList = { Path.GetDirectoryName(path) ?? path } };
+            start.UseShellExecute = false;
+            System.Diagnostics.Process.Start(start)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            doc.Status = "Could not show the folder: " + ex.Message;
+        }
+    }
+
+    /// <summary>Checks every tab's file against the disk (the window came back to the front).</summary>
+    public async Task CheckFilesOnDiskAsync()
+    {
+        foreach (var doc in Documents.Where(d => d.FilePath is not null).ToList())
+            await doc.CheckDiskAsync();
+    }
+
+    partial void OnSelectedDocumentChanged(QueryViewModel? value)
+    {
+        if (value is { FilePath: not null }) _ = value.CheckDiskAsync();
     }
 
     [RelayCommand]
@@ -501,6 +630,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <summary>Restores the tabs of the previous run (best-effort).</summary>
     public async Task RestoreTabsAsync()
     {
+        await ChangeRecentAsync(async r => await r.LoadAsync());
         try
         {
             _closed = new ClosedTabs(await _scripts.LoadClosedTabsAsync());
@@ -516,7 +646,10 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (tabs.Count == 0) return;
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
             foreach (var t in tabs)
-                AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t), id: t.Id);
+            {
+                var doc = AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t), id: t.Id);
+                RestoreFileState(doc, t);
+            }
             if (placeholder is not null)
             {
                 placeholder.Attach(null);
@@ -531,6 +664,19 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         }
     }
 
+    /// <summary>The encoding and stamp a restored or reopened tab had; the next check against the disk then reloads a
+    /// file that changed while the app was closed (or says so when the tab has edits).</summary>
+    private static void RestoreFileState(QueryViewModel doc, QueryTabState t)
+    {
+        if (t.FilePath is null) return;
+        // Tabs saved before encodings were kept: the encoding the file has on disk now.
+        doc.FileEncoding = t.FileEncoding is null ? SqlFile.TryDetectEncoding(t.FilePath) : SqlFileEncodings.Normalize(t.FileEncoding);
+        doc.FileStamp = t.FileWriteUtc is { } written && t.FileLength is { } length
+            ? new FileStamp(DateTime.SpecifyKind(written, DateTimeKind.Utc), length)
+            // Written before stamps were kept: take the file as it is now as the known state.
+            : FileStamp.Of(t.FilePath);
+    }
+
     /// <summary>On shutdown: nothing is committed implicitly.</summary>
     public async Task RollbackOpenTransactionsAsync()
     {
@@ -540,7 +686,11 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
 
     private static QueryTabState StateOf(QueryViewModel d)
     {
-        var state = new QueryTabState { Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id };
+        var state = new QueryTabState
+        {
+            Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id,
+            FileEncoding = d.FilePath is null ? null : SqlFileEncodings.Normalize(d.FileEncoding), FileWriteUtc = d.FileStamp?.LastWriteUtc, FileLength = d.FileStamp?.Length
+        };
         d.Databases.SaveTo(state, d.CurrentDatabase);
         return state;
     }

@@ -94,6 +94,99 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
 
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(Header));
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Header));
+    partial void OnFilePathChanged(string? value) => OnPropertyChanged(nameof(FileToolTip));
+
+    // ----- The tab's file on disk: its encoding, and whether another program changed it -----
+
+    /// <summary>The encoding the file was read in and is saved back in (<see cref="SqlFileEncodings"/>); null for UTF-8.</summary>
+    public string? FileEncoding
+    {
+        get => _fileEncoding;
+        set
+        {
+            if (_fileEncoding == value) return;
+            _fileEncoding = value;
+            OnPropertyChanged(nameof(FileToolTip));
+        }
+    }
+    private string? _fileEncoding;
+
+    /// <summary>The file's stamp when it was last read or written here; a different one on disk means another program changed it.</summary>
+    public FileStamp? FileStamp { get; set; }
+
+    /// <summary>"C:\scripts\orders.sql · UTF-16 LE", the tab header's tooltip.</summary>
+    public string FileToolTip => FilePath is null ? Title : $"{FilePath} · {SqlFileEncodings.Label(FileEncoding)}";
+
+    /// <summary>The bar above the editor when the file changed on disk while the tab has edits, or was deleted; empty otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDiskNotice))]
+    private string _diskNotice = "";
+
+    /// <summary>The notice offers Reload (the file changed); a deleted file only needs a Save.</summary>
+    [ObservableProperty] private bool _canReloadFromDisk;
+
+    public bool HasDiskNotice => DiskNotice.Length > 0;
+
+    /// <summary>Compares the file on disk with what this tab last read or wrote. A tab without edits takes the new text
+    /// (as one undoable edit); a tab with edits shows the notice and keeps them. True when the text was reloaded.</summary>
+    public async Task<bool> CheckDiskAsync()
+    {
+        if (FilePath is not { } path || FileStamp is not { } known) return false;
+        var now = DbExplorer.Application.Query.FileStamp.Of(path);
+        if (now is null)
+        {
+            if (File.Exists(path)) return false; // there but unreadable for a moment (being written): next time
+            DiskNotice = $"{Path.GetFileName(path)} was deleted or moved. Save writes it again.";
+            CanReloadFromDisk = false;
+            return false;
+        }
+        if (now == known)
+        {
+            if (!CanReloadFromDisk) DiskNotice = "";
+            return false;
+        }
+        if (IsDirty)
+        {
+            DiskNotice = $"{Path.GetFileName(path)} was changed by another program. Reload it and lose your edits, or keep yours (Save then overwrites it).";
+            CanReloadFromDisk = true;
+            return false;
+        }
+        return await ReloadAsync();
+    }
+
+    [RelayCommand]
+    private Task ReloadFromDiskAsync() => ReloadAsync();
+
+    /// <summary>Keeps the tab's edits; the change on disk is not mentioned again until the file changes once more.</summary>
+    [RelayCommand]
+    private void KeepMine()
+    {
+        if (FilePath is { } path) FileStamp = DbExplorer.Application.Query.FileStamp.Of(path) ?? FileStamp;
+        DiskNotice = "";
+        CanReloadFromDisk = false;
+    }
+
+    private async Task<bool> ReloadAsync()
+    {
+        if (FilePath is not { } path) return false;
+        try
+        {
+            var file = await SqlFile.ReadAsync(path);
+            if (file.Text != Sql) SetText(file.Text, markClean: true);
+            IsDirty = false;
+            FileEncoding = file.Encoding;
+            FileStamp = file.Stamp;
+            DiskNotice = "";
+            CanReloadFromDisk = false;
+            Status = $"Reloaded {Path.GetFileName(path)}: it was changed by another program (Ctrl+Z brings the previous text back).";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqlFileException)
+        {
+            Status = $"Could not reload {Path.GetFileName(path)}: {ex.Message}";
+            return false;
+        }
+    }
 
     /// <summary>Provider of the connected session ("SqlServer"/"Postgres"), for dialect-aware editor features.</summary>
     public string? ProviderKey => _session?.Provider.ProviderKey ?? _offline?.ProviderKey;

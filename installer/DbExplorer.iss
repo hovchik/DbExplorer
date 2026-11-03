@@ -7,6 +7,7 @@
 ;   - installs a self-contained build (no .NET to install), for the current user without an administrator
 ;     prompt, or for everyone in Program Files if they pick that (or pass /ALLUSERS)
 ;   - Start menu shortcut, optional desktop shortcut
+;   - DB Explorer in Explorer's "Open with" list for .sql files, and optionally as their default app
 ;   - opens the app at the end
 ; The user's connections, settings, metadata cache and query tabs (%LOCALAPPDATA%\DbExplorer) are never
 ; touched, so upgrades and uninstalls keep them.
@@ -59,6 +60,8 @@ UninstallDisplayName={#AppName}
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+; Tells Explorer to pick up the .sql registration below without a sign-out.
+ChangesAssociations=yes
 OutputDir=out
 OutputBaseFilename=DbExplorer-Setup-{#AppVersion}
 
@@ -67,6 +70,24 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Off by default: SSMS or another editor may already own .sql files. Windows 10/11 can still keep the app the user
+; picked in "Open with > Always", and then this only adds DB Explorer to that list.
+Name: "sqldefault"; Description: "Open .sql files with DB Explorer by default"; GroupDescription: "File types:"; Flags: unchecked
+
+[Registry]
+; HKA: the current user's classes for a per-user install, the machine's for an all-users one.
+; A ProgID of our own; uninstall removes it whole.
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sql"; ValueType: string; ValueName: ""; ValueData: "SQL script"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sql\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sql\shell\open"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sql\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+; Always: DB Explorer appears in "Open with" for .sql files, without taking them over.
+Root: HKA; Subkey: "Software\Classes\.sql\OpenWithProgids"; ValueType: string; ValueName: "DbExplorer.sql"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".sql"; ValueData: ""; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+; Only with the task: .sql files open in DB Explorer on a double-click.
+Root: HKA; Subkey: "Software\Classes\.sql"; ValueType: string; ValueName: ""; ValueData: "DbExplorer.sql"; Tasks: sqldefault; Flags: uninsdeletevalue
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs

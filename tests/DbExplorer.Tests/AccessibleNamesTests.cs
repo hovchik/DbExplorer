@@ -173,6 +173,23 @@ public class AccessibleNamesTests
     }
 
     [AvaloniaFact]
+    public void Input_follows_a_caption_bound_after_load()
+    {
+        var caption = new TextBlock();
+        var source = new CaptionSource();
+        caption.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(CaptionSource.Label)) { Source = source });
+        var user = new TextBox();
+        var (window, _) = Show(user, new StackPanel { Children = { caption, user } });
+
+        Assert.Same(caption, AutomationProperties.GetLabeledBy(user));
+        caption.Text = "Login";
+        Assert.Equal("Login", Name(user));
+        window.Close();
+    }
+
+    private sealed class CaptionSource { public string Label => ""; }
+
+    [AvaloniaFact]
     public void Input_is_labelled_by_the_caption_above_it()
     {
         var box = new ComboBox();
@@ -230,9 +247,11 @@ public class AccessibleNamesTests
                     if (c.TemplatedParent is not null) continue; // parts of a control template, e.g. a combo box's toggle
                     // Content bound to a view model that isn't there: the render harness checks these with real data.
                     if (c is ContentControl { Content: null } && ToolTip.GetTip(c) is null) continue;
+                    // Labelled by a caption bound to the missing view model: it has words once the data is there.
+                    if (AutomationProperties.GetLabeledBy(c) is TextBlock { Text: null or "" }) continue;
                     var name = Name(c);
                     if (!AccessibleNames.HasWords(name))
-                        missing.Add($"{type.Name}: {c.GetType().Name} '{(c as ContentControl)?.Content}' name='{name}'");
+                        missing.Add($"{type.Name}: {c.GetType().Name} '{(c as ContentControl)?.Content}' name='{name}' x:Name='{c.Name}' watermark='{(c as TextBox)?.Watermark}' in {c.Parent?.GetType().Name} after '{(c.Parent as Panel)?.Children.TakeWhile(x => x != c).OfType<TextBlock>().LastOrDefault()?.Text}'");
                 }
             }
             catch

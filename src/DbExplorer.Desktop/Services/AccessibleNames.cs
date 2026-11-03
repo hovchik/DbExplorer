@@ -259,7 +259,13 @@ public static partial class AccessibleNames
             Label { IsVisible: true, Content: string s } => s,
             _ => null
         };
-        return HasWords(text) ? (candidate!, Collapse(text)!.TrimEnd(':', ' ')) : null;
+        if (HasWords(text)) return (candidate!, Collapse(text)!.TrimEnd(':', ' '));
+        // A caption bound to a view model ("{Binding UserLabel}") may still be empty when the input loads; labelled
+        // by reference, the screen reader reads whatever it says by the time the input gets focus.
+        if (candidate is TextBlock { IsVisible: true } bound && string.IsNullOrEmpty(bound.Text) 
+            && (bound.IsSet(TextBlock.TextProperty) || BindingOperations.GetBindingExpressionBase(bound, TextBlock.TextProperty) is not null))
+            return (bound, "");
+        return null;
     }
 
     [GeneratedRegex(@"(:\s|\s\(|\.\s|\s·\s|;\s|\s—\s|\s–\s)")]

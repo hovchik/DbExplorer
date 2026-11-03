@@ -60,6 +60,8 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FF9AA0A6</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFC62828</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#1AC62828</SolidColorBrush>
+          <!-- Behind what a search found (Search names & code results) -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#66F2C03C</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -108,6 +110,8 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FF80868B</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFF27878</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#26F27878</SolidColorBrush>
+          <!-- Behind what a search found (Search names & code results) -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#59C99A1E</SolidColorBrush>
         </ResourceDictionary>
         <!-- High contrast (Preferences, or Windows' contrast themes with the System theme): black, white and bright
              colours, yellow accent with black text. Keys not listed here fall back to Dark. -->
@@ -157,6 +161,8 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FFC8C8C8</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFFF6E6E</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#40FF6E6E</SolidColorBrush>
+          <!-- Behind what a search found (Search names & code results) -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#FF1A5FB4</SolidColorBrush>
           <SolidColorBrush x:Key="AppAccentForegroundBrush">#FF000000</SolidColorBrush>
           <SolidColorBrush x:Key="AccentButtonBackground">#FFFFD700</SolidColorBrush>
           <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver">#FFFFE34D</SolidColorBrush>

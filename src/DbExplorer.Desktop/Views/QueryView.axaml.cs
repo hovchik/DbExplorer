@@ -115,7 +115,7 @@ public partial class QueryView : UserControl
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
-        DataContextChanged += (_, _) => BindDocument();
+        DataContextChanged += (_, _) => OnTabShown();
 
         _analysisTimer.Tick += (_, _) => { _analysisTimer.Stop(); UpdateCaretMarks(); UpdateSignatureHelp(); };
         _foldingTimer.Tick += (_, _) => { _foldingTimer.Stop(); UpdateFoldings(); };
@@ -124,6 +124,22 @@ public partial class QueryView : UserControl
         ApplyHighlighting();
         InstallVim();
         UpdateEditorHint();
+    }
+
+    /// <summary>
+    /// Runs while the tab strip adds, removes or selects a tab. An exception escaping from here would stop the strip half
+    /// way (a closed tab's header stays behind as an empty slot), so it is logged instead.
+    /// </summary>
+    private void OnTabShown()
+    {
+        try
+        {
+            BindDocument();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("query tab switch", ex);
+        }
     }
 
     /// <summary>Each tab owns its document (text + undo history); the view is reused when tabs switch.</summary>
@@ -144,7 +160,7 @@ public partial class QueryView : UserControl
         _vm = DataContext as QueryViewModel;
         if (_vm is not null)
         {
-            if (!ReferenceEquals(Editor.Document, _vm.Document)) Editor.Document = _vm.Document;
+            if (!ReferenceEquals(Editor.Document, _vm.Document)) SwapDocument(_vm.Document);
             _vm.ErrorLocated += OnErrorLocated;
             _vm.ErrorCleared += OnErrorCleared;
             _vm.CompletionValuesArrived += OnCompletionValuesArrived;
@@ -160,8 +176,7 @@ public partial class QueryView : UserControl
         ResetVim();
         _decorations.Error = null;
         _decorations.Executed = null;
-        if (_folding is not null) FoldingManager.Uninstall(_folding);
-        _folding = FoldingManager.Install(Editor.TextArea);
+        _folding ??= FoldingManager.Install(Editor.TextArea);
         UpdateFoldings();
         UpdateCaretMarks();
         UpdateCaretInfo();
@@ -169,6 +184,31 @@ public partial class QueryView : UserControl
         ShowInspections([]);
         RestartInspections();
         Dispatcher.UIThread.Post(ApplyPendingCaret, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Shows another tab's text. Folding belongs to one document: its line builder throws "Invalid document" for any
+    /// other. Setting the document moves the caret, and whatever asks where the caret is drawn at that moment (Windows'
+    /// input method does, while the editor has focus) builds a line at once. With the old folding still installed that
+    /// threw, the rest of the switch never ran, and the editor stayed broken: every redraw failed, the text of earlier
+    /// tabs stayed on screen, and a tab closed afterwards left an empty slot in the strip. So folding goes first and comes
+    /// back for the new document even if something during the swap fails.
+    /// </summary>
+    private void SwapDocument(TextDocument document)
+    {
+        if (_folding is not null)
+        {
+            FoldingManager.Uninstall(_folding);
+            _folding = null;
+        }
+        try
+        {
+            Editor.Document = document;
+        }
+        finally
+        {
+            _folding = FoldingManager.Install(Editor.TextArea);
+        }
     }
 
     private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)

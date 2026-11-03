@@ -20,6 +20,10 @@ public sealed class WorkspaceState
 
     /// <summary>Whether that connection was open when the app closed (it is then opened again at start).</summary>
     public bool WasConnected { get; set; }
+
+    /// <summary>The other connections that were open as well (in the order they were opened); they are opened again
+    /// at start under the same rules, before the active one, which stays active.</summary>
+    public List<Guid>? OtherOpenConnectionIds { get; set; }
 }
 
 /// <summary>Window bounds: position in physical screen pixels (as the OS reports it), size in device-independent

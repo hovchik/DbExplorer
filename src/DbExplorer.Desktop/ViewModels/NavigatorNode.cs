@@ -61,6 +61,13 @@ public sealed partial class NavigatorNode : ObservableObject
     public bool IsEmphasized { get; init; }
 
     public ConnectionProfile? Profile { get; init; }
+
+    /// <summary>On a connection row: the open connection it browses (null while it is closed). Rows below it read
+    /// theirs through <see cref="Parent"/>.</summary>
+    public DbExplorer.Application.Sessions.DatabaseSession? Session { get; init; }
+
+    /// <summary>On an open connection row while several are open: the colour its Query tabs are marked with.</summary>
+    public Avalonia.Media.IBrush? MarkBrush { get; init; }
     public string? Database { get; init; }
     public DbObject? Object { get; init; }
 

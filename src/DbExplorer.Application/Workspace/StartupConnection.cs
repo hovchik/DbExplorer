@@ -34,4 +34,19 @@ public static class StartupConnection
 
         return (StartupConnectionAction.Connect, profile, null);
     }
+
+    /// <summary>
+    /// The other connections that were open at the last close and can be opened again without asking anything: not
+    /// production, password saved, still in the list. Empty when the active one is not reopened either.
+    /// </summary>
+    public static IReadOnlyList<ConnectionProfile> Others(WorkspaceState state, IReadOnlyList<ConnectionProfile> profiles, bool reconnectOnStart)
+    {
+        if (!reconnectOnStart || !state.WasConnected || state.OtherOpenConnectionIds is not { Count: > 0 } ids) return [];
+        return ids.Distinct()
+            .Where(id => id != state.ConnectionId)
+            .Select(id => profiles.FirstOrDefault(p => p.Id == id))
+            .OfType<ConnectionProfile>()
+            .Where(p => !p.IsProduction && (p.IntegratedSecurity || !string.IsNullOrEmpty(p.Password)) && !p.Ssh.NeedsPassword)
+            .ToList();
+    }
 }

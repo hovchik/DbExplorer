@@ -32,11 +32,43 @@
 	     the editor, and rarely changed options (run on multiple databases) live in Tools ▾ -->
 	<Grid Grid.Row="0" Grid.ColumnSpan="2">
 	<WrapPanel Classes="toolbar">
+	  <!-- The connection this tab runs on: tabs can be on different connections at the same time. Shown once tabs are
+	       on more than one connection (or this one cannot run), so a single connection keeps the toolbar on one row. -->
+	  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,6,4"
+				  ToolTip.Tip="Connection this tab runs on, whichever connection the other tabs show. Tabs can run on different open connections at the same time; picking one that is not open shows Connect above the editor.">
+		<StackPanel.IsVisible>
+		  <MultiBinding Converter="{x:Static BoolConverters.Or}">
+			<Binding Path="ShowConnectionMark" />
+			<Binding Path="!IsConnected" />
+		  </MultiBinding>
+		</StackPanel.IsVisible>
+		<ComboBox AutomationProperties.Name="Tab connection" x:Name="ConnectionPicker" MinWidth="110" MaxWidth="200" ItemsSource="{Binding ConnectionChoices}"
+				  SelectedItem="{Binding SelectedConnection}" IsEnabled="{Binding CanChangeConnection}"
+				  PlaceholderText="(first opened)" IsTextSearchEnabled="True">
+		  <ComboBox.ItemTemplate>
+			<DataTemplate x:DataType="vm:ConnectionChoice">
+			  <StackPanel Orientation="Horizontal" Spacing="7" ToolTip.Tip="{Binding ToolTip}">
+				<Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{Binding MarkBrush}" IsVisible="{Binding IsOpen}" />
+				<Ellipse Width="8" Height="8" VerticalAlignment="Center" StrokeThickness="1.2" Stroke="{DynamicResource AppHintForegroundBrush}"
+						 IsVisible="{Binding !IsOpen}" />
+				<TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="200" />
+				<TextBlock Classes="hint" Text="{Binding State}" FontSize="11" VerticalAlignment="Center" />
+			  </StackPanel>
+			</DataTemplate>
+		  </ComboBox.ItemTemplate>
+		  <!-- Closed, just the name (the tab header already has the colour dot): the toolbar stays short -->
+		  <ComboBox.SelectionBoxItemTemplate>
+			<DataTemplate x:DataType="vm:ConnectionChoice">
+			  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="160" />
+			</DataTemplate>
+		  </ComboBox.SelectionBoxItemTemplate>
+		</ComboBox>
+	  </StackPanel>
 	  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,8,4"
 				  ToolTip.Tip="Database the statements run in. The editor suggests only its tables, views, functions and columns. Type to filter the list.">
 		<controls:StrokeIcon Data="{x:Static controls:Icons.Database}" Width="18" Height="18" VerticalAlignment="Center"
 							 Foreground="{DynamicResource AppHintForegroundBrush}" />
-		<controls:DatabasePicker IsEnabled="{Binding CanChangeDatabase}" MinWidth="160" MaxWidth="320"
+		<controls:DatabasePicker IsEnabled="{Binding CanChangeDatabase}" MinWidth="140" MaxWidth="320"
 								 ItemsSource="{Binding AvailableDatabases}" SelectedItem="{Binding CurrentDatabase}"
 								 PlaceholderText="(connection default)" />
 		<TextBlock Text="{Binding DatabaseWarning}" Foreground="#FFD08A00" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
@@ -221,14 +253,19 @@
 		<Button DockPanel.Dock="Right" Classes="accent" MinHeight="26" Padding="10,2"
 				Command="{Binding ConnectCommand}"
 				IsVisible="{Binding ConnectLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-				ToolTip.Tip="Connect to the connection picked in the toolbar">
+				ToolTip.Tip="Open this tab's connection, next to any that are open already">
 		  <!-- A TextBlock, not a string: "_" in connection names would otherwise be read as an access key -->
 		  <TextBlock Text="{Binding ConnectLabel}" MaxWidth="320" TextTrimming="CharacterEllipsis" />
 		</Button>
+		<Button DockPanel.Dock="Right" MinHeight="26" Padding="10,2" Margin="0,0,6,0"
+				Command="{Binding UseActiveCommand}" AutomationProperties.Name="{Binding UseActiveLabel}"
+				IsVisible="{Binding UseActiveLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+				ToolTip.Tip="Run this tab on the connection that is open and active instead">
+		  <TextBlock Text="{Binding UseActiveLabel}" MaxWidth="260" TextTrimming="CharacterEllipsis" />
+		</Button>
 		<controls:StrokeIcon DockPanel.Dock="Left" Data="{x:Static controls:Icons.Database}" Width="16" Height="16" Margin="0,0,8,0"
 							 VerticalAlignment="Center" Foreground="{DynamicResource AppHintForegroundBrush}" />
-		<TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0"
-				   Text="Not connected. You can write, open and save scripts here; connect to run them." />
+		<TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0" Text="{Binding OfflineText}" />
 	  </DockPanel>
 	</Border>
 	<!-- The tab's file was changed by another program while the tab has edits, or was deleted -->

@@ -146,11 +146,14 @@ public partial class MainWindowViewModel
             foreach (var profile in Profiles.ToList())
             {
                 if (Session?.Profile.Id == profile.Id) continue;
-                // Same path as the navigator: a switch asks first when it would lose unsaved work.
-                var action = IsConnected ? NavigatorConnectionAction.Switch : NavigatorConnectionAction.Connect;
-                Add("Connection", $"{(IsConnected ? "Switch to" : "Connect to")} {profile}",
+                // Same path as the navigator: an open one becomes active (asking first when the main tabs would lose
+                // unsaved work); any other opens next to the ones already open.
+                var open = OpenConnections.IsOpen(profile.Id);
+                var action = open ? NavigatorConnectionAction.Activate : NavigatorConnectionAction.Connect;
+                Add("Connection", $"{(open ? "Switch to" : "Connect to")} {profile}",
                     () => _ = OnNavigatorConnectionActionAsync(action, profile),
-                    subtitle: profile.Host, keywords: "connect switch", id: "connect:" + profile.Id);
+                    subtitle: open ? "open · show it in the Objects, Diagram and other tabs" : profile.Host,
+                    keywords: "connect switch open active", id: "connect:" + profile.Id);
             }
         }
 

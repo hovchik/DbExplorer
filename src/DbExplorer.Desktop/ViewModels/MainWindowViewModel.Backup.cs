@@ -22,11 +22,12 @@ public partial class MainWindowViewModel
         database ??= string.IsNullOrEmpty(session.Profile.Database) ? Query.SelectedDocument?.CurrentDatabase : session.Profile.Database;
         _dialogs.ShowBackupRestore(new BackupRestoreViewModel(session, _dialogs, _settings, database, restoreTarget, restore, target =>
         {
-            if (!ReferenceEquals(session, Session)) return;
-            // A new database shows up in every picker; a restored one has a new catalog.
+            // Still open (it may no longer be the active one): a new database shows up in every picker of that
+            // connection; a restored one has a new catalog.
+            if (!OpenConnections.All.Contains(session)) return;
             session.InvalidateDatabases();
-            StatusText = $"Restored {target}. Refreshing the catalog…";
-            if (RefreshMetadataCommand.CanExecute(null)) _ = RefreshMetadataCommand.ExecuteAsync(null);
+            StatusText = $"Restored {target}. Refreshing the catalog of {session.Profile.DisplayName}…";
+            if (!IsBusy) _ = RefreshSessionAsync(session);
         }));
     }
 }

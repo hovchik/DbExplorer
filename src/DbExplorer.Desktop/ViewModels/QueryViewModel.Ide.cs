@@ -53,6 +53,7 @@ public partial class QueryViewModel
     {
         OnPropertyChanged(nameof(TransactionInfo));
         OnPropertyChanged(nameof(CanChangeDatabase));
+        OnPropertyChanged(nameof(CanChangeConnection));
         CommitCommand.NotifyCanExecuteChanged();
         RollbackCommand.NotifyCanExecuteChanged();
         NotifyLabCommands();

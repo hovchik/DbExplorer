@@ -166,9 +166,9 @@ public partial class MainWindowViewModel
     [RelayCommand]
     private async Task RetryConnectAsync()
     {
-        if (SelectFailedProfile() is null) return;
+        if (SelectFailedProfile() is not { } profile) return;
         ConnectionFailure = null;
-        if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+        await ConnectProfileAsync(profile);
     }
 
     /// <summary>Edit from the failure card: open the connection's settings, then try again if they were saved.</summary>
@@ -179,11 +179,11 @@ public partial class MainWindowViewModel
         await EditProfileAsync(profile);
         // Saved: the list holds a new object for it, so connect again straight away. Cancelled: keep the card so
         // Retry is still there.
-        if (Profiles.FirstOrDefault(p => p.Id == profile.Id) is { } edited && !ReferenceEquals(edited, profile) && !IsConnected)
+        if (Profiles.FirstOrDefault(p => p.Id == profile.Id) is { } edited && !ReferenceEquals(edited, profile) && !OpenConnections.IsOpen(edited.Id))
         {
             SelectedProfile = edited;
             ConnectionFailure = null;
-            if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+            await ConnectProfileAsync(edited);
         }
     }
 
@@ -192,7 +192,7 @@ public partial class MainWindowViewModel
     {
         if (_failedProfileId is { } id && Profiles.FirstOrDefault(p => p.Id == id) is { } profile)
         {
-            if (!IsConnected) SelectedProfile = profile;
+            SelectedProfile = profile;
             return profile;
         }
         // The connection was deleted (or a Team pull dropped it) after it failed: the card no longer describes

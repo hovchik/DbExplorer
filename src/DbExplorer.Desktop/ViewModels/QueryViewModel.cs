@@ -543,6 +543,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             _runStopped?.TrySetResult();
             _runStopped = null;
         }
+        OnPropertyChanged(nameof(CanChangeConnection));
         ExecuteCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         ExplainCommand.NotifyCanExecuteChanged();

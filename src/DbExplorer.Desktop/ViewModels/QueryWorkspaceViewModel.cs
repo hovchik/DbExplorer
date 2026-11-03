@@ -61,15 +61,21 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     private readonly LocalHistoryStore _localHistory;
     private readonly MetadataCache _catalogCache;
     private readonly RecentFiles _recentFileStore;
-    private DatabaseSession? _session;
+    private readonly OpenConnections _open;
+
+    /// <summary>The active connection (the one the other main tabs show); tabs not bound yet take it.</summary>
+    private DatabaseSession? _active;
     private OfflineCatalog? _offline;
     private int _offlineVersion;
     private System.Windows.Input.ICommand? _connectCommand;
     private int _untitled;
 
     public QueryWorkspaceViewModel(Func<QueryViewModel> createDocument, ScriptStore scripts, IDialogService dialogs,
-        LocalHistoryStore localHistory, MetadataCache catalogCache, RecentFiles recentFiles)
+        LocalHistoryStore localHistory, MetadataCache catalogCache, RecentFiles recentFiles, OpenConnections open)
     {
+        _open = open;
+        // A connection opened or closed elsewhere (toolbar, navigator, a tab's Connect): tabs bound to it follow.
+        _open.Changed += (_, _) => Reconcile();
         _recentFileStore = recentFiles;
         _catalogCache = catalogCache;
         _createDocument = createDocument;
@@ -130,11 +136,174 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         : "No recent files yet. Files you open or save show up here; you can also drop .sql files on the window.";
     private IReadOnlyList<HistoryItem> _allHistory = [];
 
+    /// <summary>The active connection changed. Tabs bound to another open connection keep running there; tabs not
+    /// bound yet take the new active one.</summary>
     public void Attach(DatabaseSession? session)
     {
-        _session = session;
-        foreach (var d in Documents) d.Attach(session);
-        UpdateConnectLabels();
+        _active = session;
+        Reconcile();
+    }
+
+    // ----- Several connections: each tab is bound to one saved connection -----
+
+    private ObservableCollection<ConnectionProfile>? _profiles;
+
+    /// <summary>The saved connections, for the tabs' connection picker (kept in step with the toolbar's list).</summary>
+    public ObservableCollection<ConnectionProfile>? Profiles
+    {
+        get => _profiles;
+        set
+        {
+            if (_profiles is not null) _profiles.CollectionChanged -= OnProfilesChanged;
+            _profiles = value;
+            if (_profiles is not null) _profiles.CollectionChanged += OnProfilesChanged;
+            RefreshConnections();
+        }
+    }
+
+    private void OnProfilesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => RefreshConnections();
+
+    /// <summary>A tab's "Connect to …": open that saved connection (the window asks for a password when needed).</summary>
+    public event Func<ConnectionProfile, Task>? ConnectProfileRequested;
+
+    /// <summary>The open connection for a tab bound to <paramref name="id"/>; the active one for a tab not bound yet.</summary>
+    private DatabaseSession? SessionFor(Guid? id)
+    {
+        if (id is not { } bound) return _active;
+        if (_open.Find(bound) is { } open) return open;
+        // The active connection was handed over without the registry (it is always registered in the app).
+        return _active is { } a && a.Profile.Id == bound && !_open.All.Contains(a) ? a : null;
+    }
+
+    private bool IsOpen(Guid id) => SessionFor(id) is not null;
+
+    private ConnectionProfile? ProfileOf(Guid id) =>
+        _open.Find(id)?.Profile ?? (_active?.Profile.Id == id ? _active.Profile : null) ?? _profiles?.FirstOrDefault(p => p.Id == id);
+
+    /// <summary>Attaches every tab to the connection it should be on now, then refreshes pickers and labels.</summary>
+    private void Reconcile()
+    {
+        foreach (var d in Documents) Bind(d);
+        RefreshConnections();
+    }
+
+    private void Bind(QueryViewModel doc)
+    {
+        var target = SessionFor(doc.ConnectionId);
+        // The first connection a tab is attached to is the one it stays with.
+        if (target is not null && doc.ConnectionId is null) doc.ConnectionId = target.Profile.Id;
+        if (!ReferenceEquals(doc.AttachedSession, target)) doc.Attach(target);
+    }
+
+    /// <summary>The picker list, colour marks, offline catalogs and Connect labels of every tab.</summary>
+    private void RefreshConnections()
+    {
+        var choices = BuildChoices();
+        var bound = Documents.Select(d => d.ConnectionId).Where(id => id is not null).Distinct().Count();
+        var showMarks = _open.Count > 1 || bound > 1;
+        foreach (var d in Documents)
+        {
+            d.ShowConnection(choices, showMarks);
+            UpdateOffline(d);
+        }
+        OnPropertyChanged(nameof(ConnectLabel));
+    }
+
+    private List<ConnectionChoice> BuildChoices()
+    {
+        var profiles = (_profiles ?? []).ToList();
+        // Open connections are listed even when the saved list does not have them (yet).
+        foreach (var s in _open.All.Append(_active).OfType<DatabaseSession>())
+            if (profiles.All(p => p.Id != s.Profile.Id)) profiles.Add(s.Profile);
+        return profiles.Select(p =>
+        {
+            var session = SessionFor(p.Id);
+            var mark = _open.IndexOf(p.Id);
+            return new ConnectionChoice(session?.Profile ?? p, session is not null, session is not null && ReferenceEquals(session, _active),
+                mark >= 0 ? mark : 0);
+        }).ToList();
+    }
+
+    private void UpdateOffline(QueryViewModel doc)
+    {
+        if (doc.AttachedSession is not null)
+        {
+            doc.ConnectLabel = "";
+            doc.UseActiveLabel = "";
+            doc.OfflineText = QueryViewModel.NotConnectedText;
+            return;
+        }
+        if (doc.ConnectionId is { } id && ProfileOf(id) is { } profile)
+        {
+            doc.SetOfflineCatalog(OfflineCatalogOf(profile));
+            doc.ConnectLabel = $"Connect to {profile.DisplayName}";
+            doc.UseActiveLabel = _active is { } active ? $"Use {active.Profile.DisplayName} instead" : "";
+            doc.OfflineText = $"{profile.DisplayName} is not open. You can write, open and save scripts here; connect to run them.";
+            return;
+        }
+        doc.SetOfflineCatalog(_offline);
+        doc.ConnectLabel = ConnectLabel;
+        doc.UseActiveLabel = "";
+        doc.OfflineText = QueryViewModel.NotConnectedText;
+    }
+
+    /// <summary>Catalogs of closed connections tabs are bound to, read once from the local cache for suggestions.</summary>
+    private readonly Dictionary<Guid, OfflineCatalog> _offlineCatalogs = [];
+    private readonly HashSet<Guid> _offlineLoading = [];
+
+    private OfflineCatalog? OfflineCatalogOf(ConnectionProfile profile)
+    {
+        if (_offlineCatalogs.TryGetValue(profile.Id, out var known)) return known;
+        if (_offlineLoading.Add(profile.Id)) _ = LoadOfflineCatalogAsync(profile);
+        return new OfflineCatalog(profile.ProviderKey, profile.DisplayName, null);
+    }
+
+    private async Task LoadOfflineCatalogAsync(ConnectionProfile profile)
+    {
+        MetadataSnapshot? snapshot = null;
+        try
+        {
+            snapshot = await _catalogCache.TryLoadAsync(MetadataCache.CacheKey(profile));
+        }
+        catch
+        {
+            // A missing or damaged cache only means fewer suggestions.
+        }
+        _offlineCatalogs[profile.Id] = new OfflineCatalog(profile.ProviderKey, profile.DisplayName, snapshot);
+        _offlineLoading.Remove(profile.Id);
+        foreach (var d in Documents.Where(d => d.ConnectionId == profile.Id && d.AttachedSession is null)) UpdateOffline(d);
+    }
+
+    /// <summary>Moves a tab to another saved connection (its picker): attached at once when that one is open, otherwise it
+    /// waits with "Connect to …". The database it used there before comes back (<see cref="QueryViewModel.Databases"/>).</summary>
+    public void BindTab(QueryViewModel doc, ConnectionProfile profile)
+    {
+        if (!doc.CanChangeConnection) return;
+        doc.ConnectionId = profile.Id;
+        Bind(doc);
+        RefreshConnections();
+        if (doc.AttachedSession is null) doc.Status = $"{profile.DisplayName} is not open: connect to run this tab there.";
+    }
+
+    private void WireConnection(QueryViewModel doc)
+    {
+        doc.ConnectionPicked += BindTab;
+        doc.ConnectCommand = new RelayCommand(() =>
+        {
+            if (doc.ConnectionId is { } id && ProfileOf(id) is { } profile && ConnectProfileRequested is { } connect) _ = connect(profile);
+            else if (ConnectCommand?.CanExecute(null) == true) ConnectCommand.Execute(null);
+        });
+        doc.UseActiveCommand = new RelayCommand(() =>
+        {
+            if (_active is { } active) BindTab(doc, active.Profile);
+        });
+    }
+
+    /// <summary>The window closes every connection (shutdown): tabs keep their binding and show "Connect to …".</summary>
+    public void DetachAll()
+    {
+        _active = null;
+        foreach (var d in Documents) d.Attach(null);
     }
 
     // ----- Offline: the tabs open, edit and save scripts with nothing connected; only running needs a server -----
@@ -146,20 +315,15 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         set
         {
             _connectCommand = value;
-            foreach (var d in Documents) d.ConnectCommand = value;
         }
     }
 
     /// <summary>"Connect to Shop" on that bar; empty while connected or when no connection is picked.</summary>
-    public string ConnectLabel => _session is null && _offline is { } o ? $"Connect to {o.ConnectionName}" : "";
+    public string ConnectLabel => _active is null && _offline is { } o ? $"Connect to {o.ConnectionName}" : "";
 
     /// <summary>While nothing is connected: the editor suggests the keywords of <paramref name="profile"/>'s engine and,
     /// when it was opened before, the names of its saved catalog (read from the local cache, never from the server).</summary>
-    private void UpdateConnectLabels()
-    {
-        OnPropertyChanged(nameof(ConnectLabel));
-        foreach (var d in Documents) d.ConnectLabel = ConnectLabel;
-    }
+    private void UpdateConnectLabels() => RefreshConnections();
 
     public async Task SetOfflineProfileAsync(ConnectionProfile? profile)
     {
@@ -178,11 +342,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         }
         if (version != _offlineVersion) return;
         _offline = profile is null ? null : new OfflineCatalog(profile.ProviderKey, profile.DisplayName, snapshot);
-        foreach (var d in Documents) d.SetOfflineCatalog(_offline);
         UpdateConnectLabels();
     }
 
     public QueryViewModel NewTab() => AddTab($"Query {++_untitled}", "", filePath: null, dirty: false, autoTitle: true);
+
+    /// <summary>Where a new tab runs: the selected tab's connection while it is open, else the active one.</summary>
+    private Guid? NewTabConnection() =>
+        QueryTabConnection.ForNewTab(SelectedDocument?.ConnectionId, IsOpen, _active?.Profile.Id);
 
     [RelayCommand]
     private void NewQuery() => NewTab();
@@ -190,10 +357,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <param name="database">Database the tab starts in; by default the ones of the tab it is opened from.</param>
     /// <param name="autoTitle">Whether the tab is renamed after the queries it runs.</param>
     /// <param name="databases">The databases of a restored tab, in place of <paramref name="database"/>.</param>
+    /// <param name="connection">The saved connection the tab is bound to; by default the selected tab's (when open) or
+    /// the active one (see <see cref="NewTabConnection"/>).</param>
+    /// <param name="restored">A restored or reopened tab keeps <paramref name="connection"/> as saved, even null.</param>
     private QueryViewModel AddTab(string title, string sql, string? filePath, bool dirty, string? database = null, bool autoTitle = false,
-        TabDatabaseMemory? databases = null, Guid? id = null)
+        TabDatabaseMemory? databases = null, Guid? id = null, Guid? connection = null, bool restored = false)
     {
         var doc = _createDocument();
+        doc.ConnectionId = connection ?? (restored ? null : NewTabConnection());
         if (id is { } known) doc.Id = known;
         doc.Title = title;
         doc.AutoTitle = autoTitle && filePath is null;
@@ -202,21 +373,22 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         doc.Databases = databases
                         ?? (database is not null ? new TabDatabaseMemory { Pending = database } : SelectedDocument?.Databases.Clone())
                         ?? new TabDatabaseMemory();
-        doc.SetOfflineCatalog(_offline);
-        doc.ConnectCommand = ConnectCommand;
-        doc.ConnectLabel = ConnectLabel;
-        doc.Attach(_session);
+        WireConnection(doc);
+        var target = SessionFor(doc.ConnectionId);
+        if (target is not null) doc.ConnectionId ??= target.Profile.Id;
+        doc.Attach(target);
         doc.OpenRequested += (docTitle, text) => OpenInNewTab(text, docTitle);
         doc.OpenAtRequested += (docTitle, text, offset) => OpenInNewTab(text, docTitle, caretOffset: offset);
         doc.OpenAndRunRequested += (docTitle, text, db) =>
         {
-            var opened = AddTab(docTitle, text, null, dirty: false, NullIfEmpty(db));
+            var opened = AddTab(docTitle, text, null, dirty: false, NullIfEmpty(db), connection: doc.ConnectionId);
             if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
         };
         doc.RunFinished += (finished, elapsed, outcome) => RunFinished?.Invoke(finished, elapsed, outcome);
         doc.RunStarting += started => _ = RecordAsync(started, LocalHistoryReason.Run);
         Documents.Add(doc);
         SelectedDocument = doc;
+        RefreshConnections();
         return doc;
     }
 
@@ -224,11 +396,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <param name="connectionDefault">With no <paramref name="database"/>: start in the connection's default database
     /// instead of the selected tab's.</param>
     /// <param name="caretOffset">Where the caret goes in the new tab (a usage in a view's source).</param>
+    /// <param name="connection">The saved connection the script is for; by default the active one (the Objects tab, the
+    /// Diagram and the other main tabs all work on it).</param>
     public void OpenInNewTab(string sql, string? title = null, string? database = null, bool autoTitle = false, bool connectionDefault = false,
-        int? caretOffset = null)
+        int? caretOffset = null, Guid? connection = null)
     {
         var doc = AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), autoTitle || title is null,
-            connectionDefault && string.IsNullOrEmpty(database) ? new TabDatabaseMemory() : null);
+            connectionDefault && string.IsNullOrEmpty(database) ? new TabDatabaseMemory() : null,
+            connection: connection ?? _active?.Profile.Id);
         doc.PendingCaretOffset = caretOffset;
     }
 
@@ -303,7 +478,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         doc ??= SelectedDocument;
         if (doc is null) return;
-        AddTab(doc.Title + " (copy)", doc.Sql, filePath: null, dirty: false, databases: doc.Databases.Clone());
+        AddTab(doc.Title + " (copy)", doc.Sql, filePath: null, dirty: false, databases: doc.Databases.Clone(), connection: doc.ConnectionId,
+            restored: true);
     }
 
     /// <summary>Gives the tab a name of the user's choice; it is then no longer renamed after the queries it runs.</summary>
@@ -348,6 +524,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         Documents.Remove(doc);
         if (Documents.Count == 0) NewTab();
         else if (SelectedDocument == doc || SelectedDocument is null) SelectedDocument = Documents[Math.Clamp(index, 0, Documents.Count - 1)];
+        RefreshConnections();
         await SaveTabsAsync();
         return true;
     }
@@ -392,7 +569,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         var placeholder = Documents.Count == 1 && Documents[0] is { FilePath: null } only && string.IsNullOrEmpty(only.Sql) ? Documents[0] : null;
         var id = t.Id is { } known && Documents.All(d => d.Id != known) ? known : (Guid?)null;
         var doc = AddTab(t.Title, sql, t.FilePath, dirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title),
-            databases: TabDatabaseMemory.From(t), id: id);
+            databases: TabDatabaseMemory.From(t), id: id, connection: t.ConnectionId, restored: true);
         RestoreFileState(doc, t);
         if (placeholder is not null)
         {
@@ -647,7 +824,8 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             var placeholder = Documents.Count == 1 && string.IsNullOrEmpty(Documents[0].Sql) ? Documents[0] : null;
             foreach (var t in tabs)
             {
-                var doc = AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t), id: t.Id);
+                var doc = AddTab(t.Title, t.Sql, t.FilePath, t.IsDirty, autoTitle: t.AutoTitle ?? IsUntitledName(t.Title), databases: TabDatabaseMemory.From(t), id: t.Id,
+                    connection: t.ConnectionId, restored: true);
                 RestoreFileState(doc, t);
             }
             if (placeholder is not null)
@@ -688,7 +866,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     {
         var state = new QueryTabState
         {
-            Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id,
+            Title = d.Title, Sql = d.Sql, FilePath = d.FilePath, IsDirty = d.IsDirty, AutoTitle = d.AutoTitle, Id = d.Id, ConnectionId = d.ConnectionId,
             FileEncoding = d.FilePath is null ? null : SqlFileEncodings.Normalize(d.FileEncoding), FileWriteUtc = d.FileStamp?.LastWriteUtc, FileLength = d.FileStamp?.Length
         };
         d.Databases.SaveTo(state, d.CurrentDatabase);

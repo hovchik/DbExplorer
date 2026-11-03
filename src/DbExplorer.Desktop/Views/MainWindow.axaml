@@ -294,7 +294,7 @@
               <Ellipse Classes="status idle" ToolTip.Tip="Not connected">
                 <Ellipse.IsVisible>
                   <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="!IsConnected" />
+                    <Binding Path="!SelectedIsOpen" />
                     <Binding Path="!IsBusy" />
                   </MultiBinding>
                 </Ellipse.IsVisible>
@@ -303,7 +303,7 @@
               <Ellipse Classes="status connected" ToolTip.Tip="Connected">
                 <Ellipse.IsVisible>
                   <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="IsConnected" />
+                    <Binding Path="SelectedIsOpen" />
                     <Binding Path="!IsBusy" />
                   </MultiBinding>
                 </Ellipse.IsVisible>
@@ -315,11 +315,10 @@
                       SelectedItem="{Binding SelectedProfile}"
                       PlaceholderText="Select a connection…"
                       IsTextSearchEnabled="True"
-                      IsEnabled="{Binding !IsConnected}"
-                      ToolTip.Tip="Connection (locked while connected; you can still add, edit, duplicate and import connections)">
+                      ToolTip.Tip="Connection. Several can be open at once: Connect opens the picked one next to the open ones, and picking an open one shows it in the Objects, Diagram and other tabs. Each Query tab keeps its own connection.">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" VerticalAlignment="Center">
                     <!-- The name keeps its width and the folder before it trims first when the bar is narrow.
                          TextSearch still uses ToString(). -->
                     <DockPanel Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -330,6 +329,21 @@
                     </DockPanel>
                     <controls:StrokeIcon Grid.Column="1" Data="{x:Static controls:Icons.Lock}" Width="12" Height="12"
                                          Margin="6,0,0,0" IsVisible="{Binding ReadOnly}" ToolTip.Tip="Read-only connection" />
+                    <!-- Open while several are: the colour its Query tabs and navigator row are marked with -->
+                    <Ellipse Grid.Column="3" Width="8" Height="8" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip.Tip="Open">
+                      <Ellipse.Fill>
+                        <MultiBinding Converter="{x:Static conv:OpenMarkConverter.Brush}">
+                          <Binding Path="Id" />
+                          <Binding Path="$parent[Window].DataContext.OpenMarks" />
+                        </MultiBinding>
+                      </Ellipse.Fill>
+                      <Ellipse.IsVisible>
+                        <MultiBinding Converter="{x:Static conv:OpenMarkConverter.IsOpen}">
+                          <Binding Path="Id" />
+                          <Binding Path="$parent[Window].DataContext.OpenMarks" />
+                        </MultiBinding>
+                      </Ellipse.IsVisible>
+                    </Ellipse>
                     <controls:EnvironmentBadge Grid.Column="2" Environment="{Binding Environment}" Margin="8,0,0,0" />
                   </Grid>
                 </DataTemplate>
@@ -337,6 +351,12 @@
             </ComboBox>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="0,0,3,0">
+              <!-- Several connections open: how many (the tooltip names them) -->
+              <Border Classes="count" Margin="4,0,2,0" VerticalAlignment="Center" IsVisible="{Binding ShowOpenCount}"
+                      AutomationProperties.Name="{Binding OpenCountTip}"
+                      ToolTip.Tip="{Binding OpenCountTip}">
+                <TextBlock Text="{Binding OpenCount, StringFormat='{}{0} open'}" />
+              </Border>
               <Border Classes="divider" Margin="2,0,4,0" />
               <Button Classes="tool" ToolTip.Tip="New connection…" Command="{Binding NewConnectionCommand}">
                 <controls:StrokeIcon Data="{x:Static controls:Icons.Plus}" />
@@ -432,15 +452,15 @@
             </Button>
 
             <Border Classes="divider" Margin="6,0" />
-            <Button Classes="primary disconnect" IsVisible="{Binding IsConnected}" Command="{Binding DisconnectCommand}"
-                    ToolTip.Tip="Close the connection">
+            <Button Classes="primary disconnect" IsVisible="{Binding SelectedIsOpen}" Command="{Binding DisconnectCommand}"
+                    ToolTip.Tip="Close this connection (any other open connections stay open)">
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <controls:StrokeIcon Data="{x:Static controls:Icons.Power}" />
                 <TextBlock Text="Disconnect" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-            <Button Classes="primary accent" IsVisible="{Binding !IsConnected}" Command="{Binding ConnectCommand}"
-                    ToolTip.Tip="Connect to the selected database">
+            <Button Classes="primary accent" IsVisible="{Binding !SelectedIsOpen}" Command="{Binding ConnectCommand}"
+                    ToolTip.Tip="Connect to the selected database (next to any connections already open)">
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <controls:StrokeIcon Data="{x:Static controls:Icons.Plug}" />
                 <TextBlock Text="Connect" VerticalAlignment="Center" />

@@ -733,6 +733,15 @@ namespace DbExplorer.UiRender
             await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count == 2, "status counts");
             await Shot(_window, "pins-before");
 
+            // Ctrl+T: the second result as aligned text, then back to the grid.
+            doc.SelectedResult = doc.ResultSets[1];
+            doc.ResultsAsText = true;
+            await Settle(4);
+            await Shot(_window, "results-as-text");
+            doc.ResultsAsText = false;
+            doc.SelectedResult = doc.ResultSets[0];
+            await Settle(2);
+
             doc.PinResultCommand.Execute(doc.ResultSets[0]);
             await Settle(4);
             await Shot(_window, "pins-pinned");
@@ -1157,7 +1166,7 @@ namespace DbExplorer.UiRender
             await Settle();
             // Earlier steps leave tables on the Query builder canvas; Disconnect would ask about them and wait forever here.
             if (_vm.QueryBuilder.ClearCommand.CanExecute(null)) _vm.QueryBuilder.ClearCommand.Execute(null);
-            await _vm.DisconnectCommand.ExecuteAsync(null);
+            await DisconnectAnsweringPromptsAsync();
             await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
             await WaitFor(() => _vm.Query.SelectedDocument?.CompletionInfo.StartsWith("Offline", StringComparison.Ordinal) == true, "offline catalog");
             Console.WriteLine($"Offline: tab {_vm.SelectedTab}, hint '{_vm.Query.SelectedDocument?.CompletionInfo}'");
@@ -1957,6 +1966,34 @@ namespace DbExplorer.UiRender
                 Dispatcher.UIThread.RunJobs();
                 AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             }
+        }
+
+        /// <summary>
+        /// Disconnect, answering the "you will lose…" prompt if one opens. Earlier steps leave work behind (a table
+        /// design, grid edits, an open transaction, depending on which steps ran), and a modal dialog nobody answers made
+        /// a full run stall here; the run now logs what was pending and goes ahead, as a user choosing Disconnect would.
+        /// </summary>
+        private async Task DisconnectAnsweringPromptsAsync()
+        {
+            foreach (var line in _vm.DescribeUnsavedWork(LeaveReason.Disconnect)) Console.WriteLine($"  pending before disconnect: {line}");
+            var disconnect = _vm.DisconnectCommand.ExecuteAsync(null);
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (!disconnect.IsCompleted && DateTime.UtcNow < deadline)
+            {
+                if (_window.OwnedWindows.OfType<ConfirmWindow>().FirstOrDefault() is { } prompt)
+                {
+                    Console.WriteLine("  answered the disconnect prompt");
+                    prompt.Close(true);
+                }
+                await Settle(1);
+            }
+            if (!disconnect.IsCompleted)
+            {
+                Console.WriteLine("  (disconnect did not finish; open windows: " +
+                                  string.Join(", ", _window.OwnedWindows.Select(w => w.GetType().Name)) + ")");
+                foreach (var w in _window.OwnedWindows.ToList()) w.Close();
+            }
+            await disconnect.WaitAsync(TimeSpan.FromSeconds(10)).ContinueWith(_ => { });
         }
 
         private static async Task WaitFor(Func<bool> condition, string what, int timeoutMs = 20_000)

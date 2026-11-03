@@ -49,16 +49,16 @@
         <WrapPanel Classes="line" IsVisible="{Binding HasFile}" Margin="64,0,0,0">
           <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsText}">
             <TextBlock Text="Delimiter" VerticalAlignment="Center" />
-            <ComboBox Width="150" ItemsSource="{Binding Delimiters}" SelectedItem="{Binding Delimiter}" />
+            <ComboBox AutomationProperties.Name="Delimiter" Width="150" ItemsSource="{Binding Delimiters}" SelectedItem="{Binding Delimiter}" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsText}">
             <TextBlock Text="Encoding" VerticalAlignment="Center" />
-            <ComboBox Width="190" ItemsSource="{Binding Encodings}" SelectedItem="{Binding Encoding}"
+            <ComboBox AutomationProperties.Name="Encoding" Width="190" ItemsSource="{Binding Encodings}" SelectedItem="{Binding Encoding}"
                       ToolTip.Tip="Detected from the file. Pick another one if letters such as ä or é look wrong in the preview." />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsExcel}">
             <TextBlock Text="Sheet" VerticalAlignment="Center" />
-            <ComboBox MinWidth="160" ItemsSource="{Binding Sheets}" SelectedItem="{Binding Sheet}" />
+            <ComboBox AutomationProperties.Name="Sheet" MinWidth="160" ItemsSource="{Binding Sheets}" SelectedItem="{Binding Sheet}" />
           </StackPanel>
           <CheckBox Content="First row holds column names" IsChecked="{Binding HasHeader}" />
           <StackPanel Orientation="Horizontal" Spacing="6">
@@ -131,7 +131,7 @@
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="6">
           <TextBlock Text="Decimal" VerticalAlignment="Center" />
-          <ComboBox Width="130" ItemsSource="{Binding DecimalSeparators}" SelectedItem="{Binding DecimalSeparator}"
+          <ComboBox AutomationProperties.Name="Decimal separator" Width="130" ItemsSource="{Binding DecimalSeparators}" SelectedItem="{Binding DecimalSeparator}"
                     ToolTip.Tip="Guessed from the file. With a comma, a point or a space groups thousands (1.234,5)." />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -165,12 +165,12 @@
                     <TextBlock Text="{Binding SourceName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourceName}" />
                     <TextBlock Classes="hint" FontSize="11" Text="{Binding Sample}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Sample}" />
                   </StackPanel>
-                  <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Targets}" SelectedItem="{Binding Target}"
+                  <ComboBox AutomationProperties.Name="Target column" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Targets}" SelectedItem="{Binding Target}"
                             IsVisible="{Binding !$parent[ItemsControl].DataContext.IsNewTable}" />
                   <Grid Grid.Column="1" ColumnDefinitions="Auto,*,*" IsVisible="{Binding $parent[ItemsControl].DataContext.IsNewTable}">
                     <CheckBox Grid.Column="0" IsChecked="{Binding Include}" MinWidth="0" Margin="0,0,4,0" ToolTip.Tip="Create and fill this column" />
                     <TextBox Grid.Column="1" Text="{Binding NewName}" Watermark="name" IsEnabled="{Binding Include}" />
-                    <AutoCompleteBox Grid.Column="2" Text="{Binding NewType, Mode=TwoWay}" ItemsSource="{Binding Types}" Watermark="type"
+                    <AutoCompleteBox AutomationProperties.Name="Column type" Grid.Column="2" Text="{Binding NewType, Mode=TwoWay}" ItemsSource="{Binding Types}" Watermark="type"
                                      FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" IsEnabled="{Binding Include}"
                                      ToolTip.Tip="Any type the server knows, with its size: varchar(100), numeric(12,2)…" />
                   </Grid>

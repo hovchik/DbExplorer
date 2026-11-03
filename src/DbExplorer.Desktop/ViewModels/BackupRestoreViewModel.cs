@@ -192,7 +192,13 @@ public sealed partial class BackupRestoreViewModel : ViewModelBase
     {
         if (_engine is null)
         {
-            Support = new BackupSupport { Problem = $"Backups are not available for {_session.Factory.DisplayName} connections." };
+            Support = new BackupSupport
+            {
+                Problem = $"Backups are not available for {_session.Factory.DisplayName} connections.",
+                Setup = _session.Factory.IsFileBased
+                    ? "The whole database is the one file: copy it while nothing writes to it, or run VACUUM INTO 'copy.db' in a Query tab for a consistent copy while it is in use."
+                    : null
+            };
             return;
         }
         try

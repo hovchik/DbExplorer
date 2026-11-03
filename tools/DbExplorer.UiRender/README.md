@@ -8,6 +8,8 @@ It boots the real `App` (same services as `App.OnFrameworkInitializationComplete
 `AppPaths` root so the user's connections and settings are never touched), connects to a PostgreSQL
 database, drives every tab and opens every dialog, and writes `<name>-light.png` / `<name>-dark.png`
 plus `avalonia-log.txt` (every binding/layout warning Avalonia logged) to `.ui-renders/` at the repo root.
+It also writes `accessibility-names.txt` (the name a screen reader reads for every visible button and input, per
+view) and `accessibility-missing.txt` (the ones it would read as just "button" or "edit"; should stay empty).
 
 ```sh
 # a sample database the tabs can show (tables with foreign keys, a view, a function, a procedure, roles)
@@ -24,6 +26,6 @@ Environment variables:
 | `DBX_RENDER_PG` | `host;port;user;password;database` of the PostgreSQL sample | `localhost;5432;postgres;postgres;uirender_shop` |
 | `DBX_RENDER_MSSQL` | same for SQL Server; when set, the engine-specific tabs are rendered on it too | unset |
 | `DBX_RENDER_MYSQL` | same for MySQL / MariaDB | unset |
-| `DBX_RENDER_ONLY` | comma-separated steps to run: `errors`, `navigator`, `tabs`, `small`, `toolbar`, `querytabs`, `pins`, `dialogs`, `leave`, `localhistory`, `reopen`, `sqlfiles`, `offline`, `palette`, `usages`, `import`, `preferences`, `docs`, `testdata`, `migration`, `keys`, `fullresult`, `updates`, `charts`, `backup`, `jobs`, `multi`, `sqlserver`, `mysql` | all |
+| `DBX_RENDER_ONLY` | comma-separated steps to run: `errors`, `navigator`, `tabs`, `small`, `toolbar`, `querytabs`, `pins`, `dialogs`, `leave`, `localhistory`, `reopen`, `sqlfiles`, `offline`, `palette`, `usages`, `import`, `preferences`, `docs`, `testdata`, `migration`, `keys`, `fullresult`, `updates`, `charts`, `backup`, `jobs`, `multi`, `inline`, `sqlserver`, `mysql`, `sqlite` (seeds `samples/shop.db` under the output folder; needs no server) | all |
 
 The frames are deterministic apart from timestamps, so two runs can be diffed to review a UI change.

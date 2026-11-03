@@ -35,7 +35,7 @@
     </Grid>
 
     <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4">
-      <ListBox x:Name="RowList" Classes="usages" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
+      <ListBox AutomationProperties.Name="Usages" x:Name="RowList" Classes="usages" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
                Background="Transparent" DoubleTapped="OnRowDoubleTapped" KeyDown="OnRowKeyDown">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:UsageRow">

@@ -362,6 +362,8 @@ public static class MigrationScriptBuilder
         sb.Append("-- Review it before running: nothing has been run. Generated ").Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm")).Append(".\n");
         if (provider == SqlDialect.PostgresKey && steps.Count > 0)
             sb.Append("-- PostgreSQL can run it all or nothing: wrap it in BEGIN; … COMMIT;\n");
+        if (provider == SqlDialect.SqliteKey && steps.Count > 0)
+            sb.Append("-- SQLite can run it all or nothing: wrap it in BEGIN; … COMMIT;. Its ALTER TABLE only renames, adds and drops columns.\n");
         if (provider == SqlDialect.MySqlKey && steps.Count > 0)
             sb.Append("-- MySQL commits each schema change as it runs: a failure halfway leaves the earlier steps applied.\n");
         foreach (var w in result.Warnings) sb.Append("-- Check: ").Append(w).Append('\n');

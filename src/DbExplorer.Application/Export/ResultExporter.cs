@@ -10,7 +10,8 @@ public enum SqlDialect
 {
     SqlServer,
     Postgres,
-    MySql
+    MySql,
+    Sqlite
 }
 
 public enum ExportFormat
@@ -41,6 +42,7 @@ public static partial class ResultExporter
     public static SqlDialect DialectFor(string providerKey) =>
         string.Equals(providerKey, "Postgres", StringComparison.OrdinalIgnoreCase) ? SqlDialect.Postgres
         : string.Equals(providerKey, "MySql", StringComparison.OrdinalIgnoreCase) ? SqlDialect.MySql
+        : string.Equals(providerKey, "Sqlite", StringComparison.OrdinalIgnoreCase) ? SqlDialect.Sqlite
         : SqlDialect.SqlServer;
 
     /// <summary>
@@ -144,13 +146,13 @@ public static partial class ResultExporter
         return value switch
         {
             null or DBNull => "NULL",
-            bool b => dialect == SqlDialect.SqlServer ? (b ? "1" : "0") : (b ? "TRUE" : "FALSE"),
+            bool b => dialect is SqlDialect.SqlServer or SqlDialect.Sqlite ? (b ? "1" : "0") : (b ? "TRUE" : "FALSE"),
             byte or sbyte or short or ushort or int or uint or long or ulong or decimal
                 => Convert.ToString(value, CultureInfo.InvariantCulture)!,
             double d => double.IsFinite(d) ? d.ToString("R", CultureInfo.InvariantCulture) : Str(d.ToString(CultureInfo.InvariantCulture)),
             float f => float.IsFinite(f) ? f.ToString("R", CultureInfo.InvariantCulture) : Str(f.ToString(CultureInfo.InvariantCulture)),
             byte[] bytes => dialect == SqlDialect.SqlServer ? "0x" + Convert.ToHexString(bytes)
-                : dialect == SqlDialect.MySql ? "X'" + Convert.ToHexString(bytes) + "'"
+                : dialect is SqlDialect.MySql or SqlDialect.Sqlite ? "X'" + Convert.ToHexString(bytes) + "'"
                 : "'\\x" + Convert.ToHexString(bytes) + "'::bytea",
             _ => Str(FormatInvariant(value))
         };

@@ -49,7 +49,7 @@
   <DockPanel>
     <!-- Header: filter (Ctrl+Shift+F in the tree focuses it) plus collapse and refresh -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="6,6,4,4">
-      <TextBox x:Name="FilterBox" Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter objects…"
+      <TextBox AutomationProperties.Name="Filter navigator" x:Name="FilterBox" Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter objects…"
                ToolTip.Tip="Show only the tables, views, routines… whose name contains this text, in every database opened so far. Esc clears it."
                KeyDown="OnFilterKeyDown">
         <TextBox.InnerLeftContent>
@@ -72,7 +72,7 @@
     <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="10,0,8,4" Text="{Binding FilterSummary}" TextWrapping="Wrap"
                IsVisible="{Binding FilterSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-    <TreeView x:Name="Tree" ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+    <TreeView AutomationProperties.Name="Database navigator" x:Name="Tree" ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
               ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="2,0,4,4"
               KeyDown="OnTreeKeyDown" ContextRequested="OnTreeContextRequested">
       <TreeView.ItemTemplate>

@@ -353,6 +353,7 @@
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="0,0,3,0">
               <!-- Several connections open: how many (the tooltip names them) -->
               <Border Classes="count" Margin="4,0,2,0" VerticalAlignment="Center" IsVisible="{Binding ShowOpenCount}"
+                      AutomationProperties.Name="{Binding OpenCountTip}"
                       ToolTip.Tip="{Binding OpenCountTip}">
                 <TextBlock Text="{Binding OpenCount, StringFormat='{}{0} open'}" />
               </Border>
@@ -532,6 +533,7 @@
          keeps a red mark until the history is opened -->
     <Border DockPanel.Dock="Bottom" Padding="4,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
       <Button x:Name="StatusButton" Classes="statusLine" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              AutomationProperties.Name="{Binding StatusText}" AutomationProperties.LiveSetting="Polite"
               ToolTip.Tip="{Binding StatusText}" Command="{Binding MarkStatusSeenCommand}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Alert}" Foreground="{DynamicResource AppDangerBrush}"
@@ -556,7 +558,7 @@
               </Grid>
               <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4" Text="No messages yet."
                          IsVisible="{Binding !HasStatusHistory}" />
-              <ListBox ItemsSource="{Binding StatusHistory}" Background="Transparent"
+              <ListBox AutomationProperties.Name="Status history" ItemsSource="{Binding StatusHistory}" Background="Transparent"
                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListBox.ItemTemplate>
                   <DataTemplate>

@@ -41,7 +41,7 @@
       <TextBlock Text="Read tables from" />
       <controls:DatabasePicker Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding SourceDatabase}"
                                ToolTip.Tip="Database to read tables from. Type to filter the list." />
-      <ComboBox Width="150" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SourceSchema}" />
+      <ComboBox AutomationProperties.Name="Source schema" Width="150" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SourceSchema}" />
       <Button Content="Read tables" Command="{Binding ReadFromDatabaseCommand}"
               ToolTip.Tip="Replace the model with these tables as they are now, to model changes to them" />
       <Border Width="16" />
@@ -84,7 +84,7 @@
                       ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
               <Button Content="Copy script" Command="{Binding CopyScriptCommand}" />
             </WrapPanel>
-            <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+            <TextBox AutomationProperties.Name="Generated script" Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                      MinHeight="160" MaxHeight="360" />
           </DockPanel>
         </Border>
@@ -135,9 +135,9 @@
                                          ItemsSource="{Binding $parent[UserControl].DataContext.TypeNames}"
                                          FilterMode="StartsWith" MinimumPrefixLength="0" />
                         <TextBox Grid.Column="2" Text="{Binding Size}" Watermark="size" />
-                        <CheckBox Grid.Column="3" IsChecked="{Binding IsNullable}" IsEnabled="{Binding !IsPrimaryKey}" />
-                        <CheckBox Grid.Column="4" IsChecked="{Binding IsPrimaryKey}" />
-                        <CheckBox Grid.Column="5" IsChecked="{Binding IsIdentity}" />
+                        <CheckBox AutomationProperties.Name="Allows null" Grid.Column="3" IsChecked="{Binding IsNullable}" IsEnabled="{Binding !IsPrimaryKey}" />
+                        <CheckBox AutomationProperties.Name="Primary key" Grid.Column="4" IsChecked="{Binding IsPrimaryKey}" />
+                        <CheckBox AutomationProperties.Name="Identity" Grid.Column="5" IsChecked="{Binding IsIdentity}" />
                         <TextBox Grid.Column="6" Text="{Binding Default}" Watermark="default" />
                         <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="2">
                           <Button Classes="icon" Content="↑" ToolTip.Tip="Move up" CommandParameter="{Binding}"
@@ -169,11 +169,11 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ForeignKeyRow">
                       <Grid ColumnDefinitions="130,170,130,100,Auto" Margin="0,0,0,4">
-                        <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ColumnChoices}" SelectedItem="{Binding Column}"
+                        <ComboBox AutomationProperties.Name="Column" Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ColumnChoices}" SelectedItem="{Binding Column}"
                                   PlaceholderText="Column" />
                         <AutoCompleteBox Grid.Column="1" ItemsSource="{Binding TableChoices}" Text="{Binding ReferencedTable, Mode=TwoWay}"
                                          FilterMode="Contains" MinimumPrefixLength="0" Watermark="schema.table" />
-                        <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ReferencedColumnChoices}"
+                        <ComboBox AutomationProperties.Name="Referenced column" Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ReferencedColumnChoices}"
                                   SelectedItem="{Binding ReferencedColumn}" PlaceholderText="Key column" />
                         <TextBox Grid.Column="3" Text="{Binding Name}" Watermark="automatic" />
                         <Button Grid.Column="4" Classes="icon" Content="✕" ToolTip.Tip="Remove foreign key" CommandParameter="{Binding}"
@@ -198,7 +198,7 @@
                     <DataTemplate x:DataType="vm:IndexRow">
                       <Grid ColumnDefinitions="300,56,150,Auto" Margin="0,0,0,4">
                         <TextBox Grid.Column="0" Text="{Binding Columns}" Watermark="CustomerId, CreatedAt" />
-                        <CheckBox Grid.Column="1" IsChecked="{Binding IsUnique}" />
+                        <CheckBox AutomationProperties.Name="Unique" Grid.Column="1" IsChecked="{Binding IsUnique}" />
                         <TextBox Grid.Column="2" Text="{Binding Name}" Watermark="automatic" />
                         <Button Grid.Column="3" Classes="icon" Content="✕" ToolTip.Tip="Remove index" CommandParameter="{Binding}"
                                 Command="{Binding $parent[UserControl].DataContext.RemoveIndexCommand}" />

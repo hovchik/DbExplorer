@@ -12,6 +12,10 @@ public static class SecurityCatalogLoader
         "The Security tab does not cover MySQL / MariaDB accounts yet. In a Query tab, SELECT user, host FROM mysql.user " +
         "lists them, SHOW GRANTS FOR 'name'@'host' shows their privileges, and CREATE USER / GRANT / REVOKE change them.";
 
+    public const string SqliteNotSupported =
+        "SQLite has no logins, users, roles or permissions: whoever can open the file can read it, and whoever can write " +
+        "the file can change it. Control access with the file's own permissions, or open the connection read-only.";
+
     private const int MaxRows = 50_000;
     private static readonly DataSearchOptions Options = new(MaxRows, QueryTimeoutSeconds: 30, LockTimeoutMs: 3000);
 
@@ -20,6 +24,7 @@ public static class SecurityCatalogLoader
     public static async Task<SecurityCatalog> LoadAsync(IDatabaseProvider provider, string? database, CancellationToken ct = default)
     {
         if (provider.ProviderKey == SqlDialect.MySqlKey) throw new NotSupportedException(MySqlNotSupported);
+        if (provider.ProviderKey == SqlDialect.SqliteKey) throw new NotSupportedException(SqliteNotSupported);
         var db = string.IsNullOrWhiteSpace(database) ? null : database;
         var warnings = new List<string>();
 

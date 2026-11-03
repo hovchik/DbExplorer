@@ -53,7 +53,7 @@
 
     <!-- Section list: a click scrolls to the section -->
     <Border DockPanel.Dock="Left" Width="170" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" Padding="8,12">
-      <ListBox x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
+      <ListBox AutomationProperties.Name="Sections" x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
         <ListBoxItem Content="Appearance" Tag="AppearanceSection" />
         <ListBoxItem Content="SQL editor" Tag="EditorSection" />
         <ListBoxItem Content="New Query tabs" Tag="QueryTabsSection" />
@@ -97,6 +97,9 @@
             <CheckBox Content="Show SQL warnings while typing" IsChecked="{Binding SqlInspections}" />
             <TextBlock Classes="hint indented" TextWrapping="Wrap"
                        Text="Unknown names, ambiguous columns and GROUP BY mistakes, checked against the cached catalog, never on the server. Alt+Enter offers fixes, F8 goes to the next one." />
+            <CheckBox Content="Show results under the statement that produced them" IsChecked="{Binding InlineResults}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="The first 10 rows of each result appear in the editor, right below the statement, until you run it again or close them. The grid below still shows every result." />
           </StackPanel>
         </Border>
 

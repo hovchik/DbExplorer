@@ -42,11 +42,18 @@ public static class ColumnTypes
         "mediumtext", "longtext", "date", "datetime", "timestamp", "time", "json", "varbinary", "blob", "longblob"
     ];
 
+    /// <summary>SQLite's four storage classes first, then names it maps onto them that keep a column's intent readable.</summary>
+    private static readonly string[] Sqlite =
+    [
+        "integer", "text", "real", "numeric", "blob", "boolean", "date", "datetime", "varchar"
+    ];
+
     /// <summary>The types offered in the designer's type list, most used first.</summary>
     public static IReadOnlyList<string> For(string providerKey) => providerKey switch
     {
         SqlDialect.SqlServerKey => SqlServer,
         SqlDialect.MySqlKey => MySql,
+        SqlDialect.SqliteKey => Sqlite,
         _ => Postgres
     };
 
@@ -98,6 +105,19 @@ public static class ColumnTypes
     /// <summary>The engine's everyday type for a family: int / integer, datetime2 / timestamptz, bit / boolean …</summary>
     public static (string Type, string? Size) Preferred(string providerKey, TypeFamily family)
     {
+        // SQLite ignores lengths and stores dates, times, UUIDs and JSON as text.
+        if (providerKey == SqlDialect.SqliteKey)
+            return family switch
+            {
+                TypeFamily.Integer => ("integer", null),
+                TypeFamily.Decimal => ("numeric", null),
+                TypeFamily.Float => ("real", null),
+                TypeFamily.Boolean => ("boolean", null),
+                TypeFamily.Date => ("date", null),
+                TypeFamily.DateTime => ("datetime", null),
+                TypeFamily.Binary => ("blob", null),
+                _ => ("text", null)
+            };
         if (providerKey == SqlDialect.MySqlKey)
             return family switch
             {
@@ -138,6 +158,7 @@ public static class ColumnTypes
         SqlDialect.SqlServerKey => baseType switch { "datetime" or "smalldatetime" => "GETDATE()", "datetimeoffset" => "SYSDATETIMEOFFSET()", "date" => "CAST(GETDATE() AS date)", _ => "SYSUTCDATETIME()" },
         // A date column needs an expression default, which MySQL only takes in brackets.
         SqlDialect.MySqlKey => baseType == "date" ? "(CURRENT_DATE)" : "CURRENT_TIMESTAMP",
+        SqlDialect.SqliteKey => baseType == "date" ? "CURRENT_DATE" : "CURRENT_TIMESTAMP",
         _ => baseType == "date" ? "CURRENT_DATE" : "now()"
     };
     /// <summary>A type written the same way whatever spelling was used, to tell a real type change from a respelling:

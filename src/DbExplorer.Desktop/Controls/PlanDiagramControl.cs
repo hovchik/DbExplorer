@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -30,6 +31,12 @@ public sealed class PlanDiagramControl : Control
     {
         AffectsMeasure<PlanDiagramControl>(LayoutProperty, ZoomProperty);
         AffectsRender<PlanDiagramControl>(LayoutProperty, ZoomProperty, SelectedNodeProperty);
+        // Drawn, not built from controls, so screen readers get the name, the keys and the selected operator from here.
+        AutomationProperties.NameProperty.OverrideDefaultValue<PlanDiagramControl>("Execution plan");
+        AutomationProperties.HelpTextProperty.OverrideDefaultValue<PlanDiagramControl>(
+            "Arrow keys select operators: left the operator this one feeds, right its first input, up and down the neighbouring inputs");
+        SelectedNodeProperty.Changed.AddClassHandler<PlanDiagramControl>((c, _) =>
+            AutomationProperties.SetItemStatus(c, c.SelectedNode is { } n ? $"{n.Operator}{(n.Object is { Length: > 0 } o ? " on " + o : "")}" : null));
     }
 
     public PlanDiagramControl()
@@ -170,6 +177,7 @@ public sealed class PlanDiagramControl : Control
                 context.DrawGeometry(brush, null, head);
 
                 // How many rows flow along the arrow, next to the input.
+                if (!child.ShowsRows) continue;
                 var label = PlanFormat.Count(child.RowsOut);
                 DrawText(context, label, new Point(start.X - 8 - Measure(label, 10.5), start.Y - 16), selected ? accent : hint, 10.5, FontWeight.Normal, 80);
             }

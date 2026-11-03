@@ -211,6 +211,7 @@ public sealed class SqlInspector
         "Postgres" => Same(schema, "public"),
         // MySQL's schema is the database: unqualified names resolve in the one database the catalog was loaded for.
         "MySql" => _databases.Count == 1 && _databases.Contains(schema),
+        "Sqlite" => Same(schema, "main"),
         _ => Same(schema, "dbo") || Same(schema, "public")
     };
 

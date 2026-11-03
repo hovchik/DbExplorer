@@ -36,7 +36,7 @@
     <Grid ColumnDefinitions="300,6,*">
       <DockPanel Grid.Column="0">
         <CheckBox DockPanel.Dock="Top" Content="Hide related tables with no rows" IsChecked="{Binding HideEmpty}" Margin="0,0,0,4" />
-        <ListBox ItemsSource="{Binding VisibleResults}" SelectedItem="{Binding SelectedResult}">
+        <ListBox AutomationProperties.Name="Related rows" ItemsSource="{Binding VisibleResults}" SelectedItem="{Binding SelectedResult}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:RelatedResult">
               <StackPanel Spacing="1" ToolTip.Tip="{Binding Title}">

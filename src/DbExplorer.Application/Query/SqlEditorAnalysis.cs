@@ -228,6 +228,8 @@ public static class QueryPlanTools
     /// </summary>
     public static string BuildExplainScript(string sql, string providerKey, bool analyze)
     {
+        if (providerKey == SqlDialect.SqliteKey) return Plans.PlanReader.BuildScript(sql, providerKey, analyze);
+
         if (providerKey == SqlDialect.MySqlKey)
         {
             // The classic table: one row per table read. Nothing runs, even for Explain Analyze (the drawn plan measures).

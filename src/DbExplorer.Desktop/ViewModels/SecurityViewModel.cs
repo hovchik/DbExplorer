@@ -167,9 +167,9 @@ public partial class SecurityViewModel(SessionService sessions, IDialogService d
     {
         if (_session is not { } session) return;
         var version = ++_loadVersion;
-        if (session.Provider.ProviderKey == SqlDialect.MySqlKey)
+        if (session.Provider.ProviderKey is SqlDialect.MySqlKey or SqlDialect.SqliteKey)
         {
-            Status = SecurityCatalogLoader.MySqlNotSupported;
+            Status = session.Provider.ProviderKey == SqlDialect.SqliteKey ? SecurityCatalogLoader.SqliteNotSupported : SecurityCatalogLoader.MySqlNotSupported;
             IsBusy = false;
             return;
         }

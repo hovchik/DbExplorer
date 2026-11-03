@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -15,6 +16,12 @@ namespace DbExplorer.Desktop.Controls;
 /// </summary>
 public sealed class ErModelControl : ErDiagramControl
 {
+    static ErModelControl()
+    {
+        AutomationProperties.NameProperty.OverrideDefaultValue<ErModelControl>("ER model");
+        AutomationProperties.HelpTextProperty.OverrideDefaultValue<ErModelControl>("Delete removes the selected table from the model");
+    }
+
     private enum DragKind { None, Move, Link }
 
     private DragKind _drag;

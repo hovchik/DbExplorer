@@ -9,7 +9,7 @@
     <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
       <controls:DatabasePicker Width="150" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
                 IsVisible="{Binding HasMultipleDatabases}" ToolTip.Tip="Database. Type to filter the list." />
-      <ComboBox Width="150" ItemsSource="{Binding Scopes}" SelectedItem="{Binding Scope}">
+      <ComboBox AutomationProperties.Name="Diagram scope" Width="150" ItemsSource="{Binding Scopes}" SelectedItem="{Binding Scope}">
         <ComboBox.ItemTemplate>
           <DataTemplate>
             <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
@@ -30,7 +30,7 @@
       <NumericUpDown Width="100" Minimum="0" Maximum="6" Increment="1" FormatString="0"
                      Value="{Binding Depth}" IsVisible="{Binding IsAroundTable}"
                      ToolTip.Tip="Foreign-key hops from the focus table" />
-      <ComboBox Width="170" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SelectedSchema}"
+      <ComboBox AutomationProperties.Name="Schema" Width="170" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SelectedSchema}"
                 IsVisible="{Binding IsWholeSchema}" />
       <ComboBox Width="140" ItemsSource="{Binding ColumnModes}" SelectedItem="{Binding ColumnMode}" ToolTip.Tip="Columns shown in each table">
         <ComboBox.ItemTemplate>
@@ -79,7 +79,7 @@
             <Button Content="None" Command="{Binding IncludeNoneCommand}" IsVisible="{Binding HasSuggestions}" Margin="0,0,0,4" />
           </WrapPanel>
 
-          <ListBox ItemsSource="{Binding Suggestions}" SelectedItem="{Binding SelectedSuggestion}"
+          <ListBox AutomationProperties.Name="Suggested foreign keys" ItemsSource="{Binding Suggestions}" SelectedItem="{Binding SelectedSuggestion}"
                    Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <ListBox.Styles>
               <Style Selector="ListBoxItem">

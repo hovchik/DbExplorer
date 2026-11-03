@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -26,6 +27,11 @@ public class ErDiagramControl : Control
     {
         AffectsMeasure<ErDiagramControl>(DiagramProperty, ZoomProperty);
         AffectsRender<ErDiagramControl>(DiagramProperty, ZoomProperty, SelectedTableProperty);
+        // Drawn, not built from controls, so screen readers get the name and the selected table from here.
+        AutomationProperties.NameProperty.OverrideDefaultValue<ErDiagramControl>("Schema diagram");
+        SelectedTableProperty.Changed.AddClassHandler<ErDiagramControl>((c, _) =>
+            AutomationProperties.SetItemStatus(c, c.SelectedTable is { } t
+                ? (string.IsNullOrEmpty(t.Object.Schema) ? t.Object.Name : $"{t.Object.Schema}.{t.Object.Name}") : null));
     }
 
     public ErDiagramControl()

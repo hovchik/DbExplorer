@@ -76,6 +76,10 @@ public partial class MainWindowViewModel
             Editor("Reset editor and results split", EditorAction.ResetLayout, keywords: "layout");
             Add("Query", _settings.SqlInspections ? "Turn SQL warnings off" : "Turn SQL warnings on",
                 () => _settings.SetSqlInspections(!_settings.SqlInspections), keywords: "inspections lint problems", id: "toggle-sql-warnings");
+            Add("Query", _settings.InlineResults ? "Stop showing results under statements" : "Show results under statements",
+                () => _settings.SetInlineResults(!_settings.InlineResults), keywords: "inline results editor rows", id: "toggle-inline-results");
+            if (doc.InlineResults.Count > 0)
+                Add("Query", "Clear results in the editor", doc.ClearInlineResults, subtitle: doc.Title, keywords: "inline results close", id: "clear-inline-results");
             if (doc.IsAssistantAvailable)
                 Command("Query", doc.IsAssistantOpen ? "Hide AI assistant" : "Show AI assistant", doc.ToggleAssistantCommand, keywords: "ai claude chat");
             Command("Query", "AI assistant settings…", doc.OpenAssistantSettingsCommand, keywords: "ai claude api key");

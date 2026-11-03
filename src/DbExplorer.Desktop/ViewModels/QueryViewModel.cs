@@ -268,6 +268,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Status = "";
         AutoRefresh = false;
         _lastRun = null;
+        _inlineRun = null;
+        ClearInlineResults();
         ResetExperiments();
         RunOnMultipleDatabases = false;
         SetDatabases([]);
@@ -650,6 +652,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             if (!await ConfirmDiscardEditsAsync()) return;
             ErrorCleared?.Invoke();
 
+            var editorText = sql;
             sql = await FillParametersAsync(sql, session.Provider.ProviderKey);
             if (sql is null) { Status = "Not run (parameters were not given)."; return; }
 
@@ -663,6 +666,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             if (!ReferenceEquals(session, _session)) return;
 
             _lastRun = new RepeatableRun(sql, startOffset, targets);
+            if (targets.Count == 0) PrepareInline(sql, editorText, startOffset);
+            else _inlineRun = null;
             RunStarting?.Invoke(this);
             await RunAsync(session, sql, startOffset, targets);
         }
@@ -702,6 +707,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             outcome = RunOutcome.Cancelled;
             if (!ReferenceEquals(session, _session)) return false; // the tab was closed or moved to another connection
+            DropInline(sql);
             Status = "Cancelled." + (HasOpenTransaction ? " The transaction is still open: Commit or Rollback." : "");
             return false;
         }
@@ -714,6 +720,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         {
             Status = "Error: " + ex.Message + (HasOpenTransaction ? " · transaction still open" : "");
             Messages.Add(ex.Message);
+            DropInline(sql);
             RememberError(sql, ex.Message);
             if (ex is SqlExecutionException { Line: { } line } located) ErrorLocated?.Invoke(startOffset, line, located.Column);
             await SafeAppendHistoryAsync(sql, succeeded: false, error: ex.Message);
@@ -762,6 +769,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             .Select((v, i) => WithRerun(session, sql, v, i))
             .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
+        PlaceInline(sql, ResultSets);
 
         foreach (var m in result.Messages) Messages.Add(m);
         var truncated = result.ResultSets.Where(r => r.IsTruncated).ToList();

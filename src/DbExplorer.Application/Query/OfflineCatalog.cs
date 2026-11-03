@@ -9,7 +9,7 @@ namespace DbExplorer.Application.Query;
 /// dialect's keywords, DDL templates and identifier quoting) and, when that connection was opened before, the
 /// catalog saved in the metadata cache, so table and column names are still suggested. Nothing here touches a server.
 /// </summary>
-/// <param name="ProviderKey">"SqlServer", "Postgres" or "MySql".</param>
+/// <param name="ProviderKey">"SqlServer", "Postgres", "MySql" or "Sqlite".</param>
 /// <param name="ConnectionName">The connection's display name, for the hint under the editor.</param>
 /// <param name="Snapshot">The saved catalog, or null when the connection was never opened on this machine.</param>
 public sealed record OfflineCatalog(string ProviderKey, string ConnectionName, MetadataSnapshot? Snapshot)

@@ -16,28 +16,36 @@ public abstract class SqlDialect
     public const string SqlServerKey = "SqlServer";
     public const string PostgresKey = "Postgres";
     public const string MySqlKey = "MySql";
+    public const string SqliteKey = "Sqlite";
 
     public static readonly SqlDialect SqlServer = new SqlServerDialect();
     public static readonly SqlDialect Postgres = new PostgresDialect();
     public static readonly SqlDialect MySql = new MySqlDialect();
+    public static readonly SqlDialect Sqlite = new SqliteDialect();
 
     public static SqlDialect For(string providerKey) => providerKey switch
     {
         SqlServerKey => SqlServer,
         MySqlKey => MySql,
+        SqliteKey => Sqlite,
         _ => Postgres
     };
 
-    /// <summary>"SQL Server", "PostgreSQL" or "MySQL", for messages.</summary>
+    /// <summary>"SQL Server", "PostgreSQL", "MySQL" or "SQLite", for messages.</summary>
     public static string EngineName(string providerKey) => providerKey switch
     {
         SqlServerKey => "SQL Server",
         MySqlKey => "MySQL",
+        SqliteKey => "SQLite",
         _ => "PostgreSQL"
     };
 
-    /// <summary>A MySQL schema is the database itself: objects always live in the schema named after their database.</summary>
-    public static bool SchemaIsDatabase(string providerKey) => providerKey == MySqlKey;
+    /// <summary>A MySQL schema is the database itself: objects always live in the schema named after their database.
+    /// The same holds for SQLite, where the file is the database "main" and its only schema.</summary>
+    public static bool SchemaIsDatabase(string providerKey) => providerKey is MySqlKey or SqliteKey;
+
+    /// <summary>SQLite: a file, not a server. No sessions, locks, routines, logins or statistics.</summary>
+    public static bool IsFileEngine(string? providerKey) => providerKey == SqliteKey;
 
     public abstract string ProviderKey { get; }
 
@@ -46,7 +54,7 @@ public abstract class SqlDialect
 
     public abstract string Quote(string identifier);
 
-    public string Table(string schema, string name) => Quote(schema) + "." + Quote(name);
+    public virtual string Table(string schema, string name) => Quote(schema) + "." + Quote(name);
 
     /// <summary>Creates an empty database with the server's defaults (must run outside a transaction).</summary>
     public string CreateDatabase(string name) => $"CREATE DATABASE {Quote(name)};";
@@ -445,6 +453,104 @@ public abstract class SqlDialect
         }
 
         // The server parses BEGIN … END bodies itself, so a definition runs as one statement.
+        public override string AsStatement(string definition)
+        {
+            var trimmed = definition.TrimEnd();
+            return trimmed.EndsWith(';') ? trimmed : trimmed + ";";
+        }
+    }
+
+    /// <summary>
+    /// SQLite: double-quoted names, LIMIT, transactional DDL, no schemas besides the file's own "main" (so a table is
+    /// written by its name alone: CREATE INDEX … ON and REFERENCES refuse a schema), no TRUNCATE, and dynamic typing,
+    /// where dates and times are stored as ISO text.
+    /// </summary>
+    private sealed class SqliteDialect : SqlDialect
+    {
+        private static readonly Regex CreateKind = new(@"\GCREATE\s+(?:TEMP(?:ORARY)?\s+)?(?<kind>VIEW|TRIGGER)\s+(?:IF\s+NOT\s+EXISTS\s+)?" +
+            @"(?<name>(?:""(?:[^""]|"""")*""|`[^`]*`|\[[^\]]*\]|[\w$]+)(?:\s*\.\s*(?:""(?:[^""]|"""")*""|`[^`]*`|\[[^\]]*\]|[\w$]+))?)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        public override string ProviderKey => SqliteKey;
+        public override int MaxIdentifierLength => 128;
+        public override string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"") + "\"";
+
+        public override string Table(string schema, string name) =>
+            string.IsNullOrEmpty(schema) || string.Equals(schema, "main", StringComparison.OrdinalIgnoreCase)
+                ? Quote(name)
+                : Quote(schema) + "." + Quote(name);
+
+        public override string EndOfStep => "\n";
+        public override string BeginTransaction => "BEGIN;\n";
+        public override string CommitTransaction => "COMMIT;\n";
+
+        public override string SelectTop(string columns, string from, string? where, string? orderBy, int limit) =>
+            $"SELECT {columns} FROM {from}" +
+            (string.IsNullOrWhiteSpace(where) ? "" : $" WHERE {where}") +
+            (string.IsNullOrWhiteSpace(orderBy) ? "" : $" ORDER BY {orderBy}") + $" LIMIT {limit};";
+
+        public override string CountRows(string from, string? where) =>
+            $"SELECT COUNT(*) FROM {from}" + (string.IsNullOrWhiteSpace(where) ? "" : $" WHERE {where}") + ";";
+
+        // One file, one schema: there is nothing to create.
+        public override string CreateSchemaIfMissing(string schema) => "";
+        public override string CopyTableAs(string sourceTable, string schema, string newName) =>
+            $"CREATE TABLE {Table(schema, newName)} AS SELECT * FROM {sourceTable};";
+        public override string DropTable(string table) => $"DROP TABLE {table};";
+        // No TRUNCATE: an unfiltered DELETE is SQLite's fast path for emptying a table.
+        public override string Truncate(string table) => $"DELETE FROM {table};";
+        public override string AddColumn(string table, string column, string type, string? defaultExpression = null) =>
+            $"ALTER TABLE {table} ADD COLUMN {Quote(column)} {type} NULL{(defaultExpression is null ? "" : " DEFAULT " + defaultExpression)};";
+        // AUTOINCREMENT only goes with a column-level INTEGER PRIMARY KEY, which TableScriptBuilder writes itself.
+        public override string IdentityClause => "";
+        public override string InsertIdentityOverride => "";
+        public override (string Before, string After) IdentityInsertScope(string table) => ("", "");
+        // Explicit rowids above the current maximum move the counter on by themselves.
+        public override string ResetSequence(string schema, string name, string column) => "";
+        public override string SelectExpression(DbColumn column) => Quote(column.Name);
+        public override bool IsReadOnlyColumn(DbColumn column) => column.IsComputed;
+
+        public override string Literal(object? value, string? targetBaseType = null)
+        {
+            var target = targetBaseType?.ToLowerInvariant();
+            return value switch
+            {
+                null or DBNull => "NULL",
+                bool b => b ? "1" : "0",
+                string s => Text(s),
+                char c => Text(c.ToString()),
+                byte[] bytes => "X'" + Hex(bytes) + "'",
+                Guid g => "'" + g.ToString("D") + "'",
+                double d when double.IsNaN(d) => "NULL",
+                double d when double.IsInfinity(d) => d > 0 ? "9e999" : "-9e999",
+                float f when float.IsNaN(f) => "NULL",
+                float f when float.IsInfinity(f) => f > 0 ? "9e999" : "-9e999",
+                double d => Invariant(d, "R"),
+                float f => Invariant(f, "R"),
+                decimal m => Invariant(m),
+                sbyte or byte or short or ushort or int or uint or long or ulong => Invariant((IFormattable)value),
+                DateTime dt => "'" + (target == "date" ? Invariant(dt, "yyyy-MM-dd") : Invariant(dt, "yyyy-MM-dd HH:mm:ss.FFFFFFF").TrimEnd('.')) + "'",
+                DateTimeOffset dto => "'" + Invariant(dto, "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz") + "'",
+                DateOnly d => "'" + Invariant(d, "yyyy-MM-dd") + "'",
+                TimeOnly t => "'" + Invariant(t, "HH:mm:ss.FFFFFFF").TrimEnd('.') + "'",
+                TimeSpan ts => "'" + FormatTimeSpan(ts) + "'",
+                IEnumerable items => Text(PostgresArrayText(items)),
+                _ => Text(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "")
+            };
+        }
+
+        private static string Text(string s) => "'" + s.Replace("'", "''") + "'";
+
+        /// <summary>SQLite has no CREATE OR REPLACE: a view or trigger is dropped first.</summary>
+        public override string ToReplaceDefinition(string definition, DbObjectType type)
+        {
+            var start = FirstTokenIndex(definition);
+            var match = CreateKind.Match(definition, start);
+            return match.Success
+                ? $"DROP {match.Groups["kind"].Value.ToUpperInvariant()} IF EXISTS {match.Groups["name"].Value};\n{definition}"
+                : definition;
+        }
+
         public override string AsStatement(string definition)
         {
             var trimmed = definition.TrimEnd();

@@ -11,6 +11,7 @@ using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
 using DbExplorer.Providers.MySql;
+using DbExplorer.Providers.Sqlite;
 using DbExplorer.Providers.Postgres;
 using DbExplorer.Providers.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,11 @@ namespace DbExplorer.Desktop;
 // Fully qualified: "Application" alone would resolve to the DbExplorer.Application namespace.
 public partial class App : Avalonia.Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        AccessibleNames.Install(); // screen-reader names for icon buttons and unlabelled inputs
+    }
 
     /// <summary>Watches the UI thread while the desktop app runs (null in tests and the render harness).</summary>
     internal static ResponsivenessWatchdog? Watchdog { get; private set; }
@@ -39,7 +44,8 @@ public partial class App : Avalonia.Application
             .AddDbExplorerApplication()
             .AddSqlServerProvider()
             .AddPostgresProvider()
-            .AddMySqlProvider();      // <- new engines are registered here
+            .AddMySqlProvider()
+            .AddSqliteProvider();     // <- new engines are registered here
 
         services.AddSingleton<ISshHostKeyPrompt, SshHostKeyPrompt>();
         services.AddSingleton<IReleaseSource>(_ => new GitHubReleaseSource(

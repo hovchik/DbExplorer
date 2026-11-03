@@ -495,7 +495,13 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     {
         if (_restoring || _suspend) return;
         var state = BuilderState.Capture(this);
-        if (_undo.TryPeek(out var top) && top.Key == state.Key) return;
+        if (_undo.TryPeek(out var top) && top.Key == state.Key)
+        {
+            // Nothing new to record, but a change outside the group still ends it (an aggregate sets its default
+            // alias under the alias's key; the alias typed next must be a step of its own).
+            _lastCoalesce = coalesce;
+            return;
+        }
         if (coalesce is not null && coalesce == _lastCoalesce && _undo.Count > 1) _undo.Pop();
         _undo.Push(state);
         _lastCoalesce = coalesce;

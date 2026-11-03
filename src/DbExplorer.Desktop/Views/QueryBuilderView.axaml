@@ -331,12 +331,18 @@
             </TabItem>
             <!-- The SQL moves here when the window is too narrow to show it beside the canvas -->
             <TabItem x:Name="SqlTab" Header="SQL" IsVisible="False">
+              <DockPanel>
+              <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasWarnings}" Margin="0,0,0,6" Padding="8,6" CornerRadius="6"
+                      BorderThickness="1" BorderBrush="#E87A00">
+                <TextBlock Text="{Binding Warnings}" Foreground="#E87A00" TextWrapping="Wrap" />
+              </Border>
               <Border Margin="0,6,0,6" CornerRadius="6" ClipToBounds="True">
                 <ae:TextEditor x:Name="SqlTabEditor" IsReadOnly="True" ShowLineNumbers="False" WordWrap="True"
                                FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
                                Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
                                HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="10,6,0,0" />
               </Border>
+              </DockPanel>
             </TabItem>
           </TabControl>
         </Border>

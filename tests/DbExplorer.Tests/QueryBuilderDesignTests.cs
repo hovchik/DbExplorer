@@ -127,6 +127,23 @@ public class QueryBuilderDesignTests
     }
 
     [Fact]
+    public void An_alias_typed_after_choosing_an_aggregate_undoes_on_its_own()
+    {
+        var vm = Builder();
+        var orders = vm.AddTable(Table("sales", "Orders"), null)!;
+        vm.ToggleColumn(orders, "OrderId");
+        var column = vm.Columns.Single();
+
+        column.Aggregate = ColumnAggregate.Count;
+        Assert.Equal("count_OrderId", column.OutputAlias);
+        column.OutputAlias = "orders";
+
+        vm.Undo();
+        Assert.Equal(ColumnAggregate.Count, vm.Columns.Single().Aggregate);
+        Assert.Equal("count_OrderId", vm.Columns.Single().OutputAlias);
+    }
+
+    [Fact]
     public void Clear_can_be_undone()
     {
         var vm = Builder();

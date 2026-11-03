@@ -36,6 +36,7 @@ public sealed class AppSettingsService
         EditorFontSize = ClampFontSize(stored.EditorFontSize ?? DefaultEditorFontSize);
         EditorWordWrap = stored.EditorWordWrap;
         SqlInspections = !stored.SqlInspectionsOff;
+        InlineResults = !stored.InlineResultsOff;
         SoftwareRendering = SoftwareRenderingAtStart = stored.SoftwareRendering;
         ShowNavigator = !stored.NavigatorHidden;
         ReconnectOnStart = !stored.ReconnectOnStartOff;
@@ -65,6 +66,10 @@ public sealed class AppSettingsService
     /// <summary>Whether the SQL editors underline unknown tables and columns, ambiguous names and GROUP BY mistakes while
     /// typing (checked against the cached catalog, never on the server).</summary>
     public bool SqlInspections { get; private set; }
+
+    /// <summary>Whether a Query tab also shows the first rows of each result right under the statement that produced it,
+    /// in the editor (the grid below still gets every result).</summary>
+    public bool InlineResults { get; private set; }
 
     /// <summary>Whether the window is drawn by the CPU instead of the graphics card (read at start-up, so a change
     /// applies after a restart). A way out when the GPU path stops repainting, for example after a long minimize.</summary>
@@ -145,10 +150,11 @@ public sealed class AppSettingsService
     public void ResetPreferences()
     {
         SetTheme(AppThemeMode.System);
-        var editorChanged = !EditorFontSize.Equals(DefaultEditorFontSize) || EditorWordWrap || !SqlInspections;
+        var editorChanged = !EditorFontSize.Equals(DefaultEditorFontSize) || EditorWordWrap || !SqlInspections || !InlineResults;
         EditorFontSize = DefaultEditorFontSize;
         EditorWordWrap = false;
         SqlInspections = true;
+        InlineResults = true;
         if (editorChanged) EditorChanged?.Invoke();
         DefaultRowLimit = DefaultRowLimitValue;
         DefaultAutoCommit = true;
@@ -245,6 +251,14 @@ public sealed class AppSettingsService
         Save();
     }
 
+    public void SetInlineResults(bool on)
+    {
+        if (InlineResults == on) return;
+        InlineResults = on;
+        EditorChanged?.Invoke();
+        Save();
+    }
+
     public void SetSoftwareRendering(bool on)
     {
         if (SoftwareRendering == on) return;
@@ -275,6 +289,7 @@ public sealed class AppSettingsService
             var stored = new StoredSettings
             {
                 Theme = Theme, EditorFontSize = EditorFontSize, EditorWordWrap = EditorWordWrap, SqlInspectionsOff = !SqlInspections,
+                InlineResultsOff = !InlineResults,
                 SoftwareRendering = SoftwareRendering,
                 NavigatorHidden = !ShowNavigator,
                 ReconnectOnStartOff = !ReconnectOnStart,
@@ -301,6 +316,9 @@ public sealed class AppSettingsService
 
         /// <summary>Stored as "off" so the warnings start on.</summary>
         public bool SqlInspectionsOff { get; set; }
+
+        /// <summary>Stored as "off" so results under statements start on.</summary>
+        public bool InlineResultsOff { get; set; }
 
         public bool SoftwareRendering { get; set; }
 

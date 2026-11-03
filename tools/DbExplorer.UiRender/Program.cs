@@ -159,6 +159,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("inline", RenderInlineResultsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -570,6 +571,46 @@ namespace DbExplorer.UiRender
             await Shot(_window, "fullresult-unavailable");
             if (doc.HasOpenTransaction) await doc.RollbackCommand.ExecuteAsync(null);
             doc.AutoCommit = true;
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
+        }
+
+        /// <summary>Results under their statements in the editor: a script of quick checks run once, then one statement
+        /// run again, at both window sizes.</summary>
+        private async Task RenderInlineResultsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            const string script =
+                "-- Quick checks before the release\n" +
+                "SELECT count(*) AS orders, count(DISTINCT customer_id) AS customers FROM orders;\n\n" +
+                "SELECT status, count(*) AS orders\nFROM orders\nGROUP BY status\nORDER BY status;\n\n" +
+                "SET search_path TO public;\n\n" +
+                "SELECT id, customer_id, status, note FROM orders ORDER BY id;\n\n" +
+                "SELECT id, name, email FROM customers WHERE email IS NULL;\n";
+            _vm.Query.OpenInNewTab(script, "Release checks");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.InlineResults.Count == 4, "inline results");
+            doc.RequestEditorAction(EditorAction.MaximizeEditor);
+            await Settle(8);
+            await Shot(_window, "inline-results");
+
+            // One statement again: its card is replaced, the others stay.
+            var statement = "SELECT status, count(*) AS orders\nFROM orders\nGROUP BY status\nORDER BY status;";
+            await doc.ExecuteCommand.ExecuteAsync(new QueryRun(statement, doc.Document.Text.IndexOf(statement, StringComparison.Ordinal)));
+            await WaitFor(() => !doc.IsRunning, "one statement");
+            await Settle(8);
+            await Shot(_window, "inline-statement");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(8);
+            await Shot(_window, "small-inline");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            doc.RequestEditorAction(EditorAction.ResetLayout);
             _vm.Query.Documents.Remove(doc);
             await Settle(4);
         }

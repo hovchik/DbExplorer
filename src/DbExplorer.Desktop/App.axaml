@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:DbExplorer.Desktop.Services"
              x:Class="DbExplorer.Desktop.App"
              RequestedThemeVariant="Default">
   <Application.Resources>
@@ -7,6 +8,7 @@
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
           <SolidColorBrush x:Key="AppBorderBrush">#33000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppAccentForegroundBrush">#FFFFFFFF</SolidColorBrush>
           <!-- The grip drawn in the middle of every grid splitter, so panes look resizable before hovering -->
           <SolidColorBrush x:Key="AppSplitterGripBrush">#40000000</SolidColorBrush>
           <SolidColorBrush x:Key="AppSubtleBackgroundBrush">#0A000000</SolidColorBrush>
@@ -61,6 +63,7 @@
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
+          <SolidColorBrush x:Key="AppAccentForegroundBrush">#FFFFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppSplitterGripBrush">#55FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppSubtleBackgroundBrush">#14FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppPopupBackgroundBrush">#FF1E1E1E</SolidColorBrush>
@@ -105,6 +108,76 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FF80868B</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFF27878</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#26F27878</SolidColorBrush>
+        </ResourceDictionary>
+        <!-- High contrast (Preferences, or Windows' contrast themes with the System theme): black, white and bright
+             colours, yellow accent with black text. Keys not listed here fall back to Dark. -->
+        <ResourceDictionary x:Key="{x:Static services:AppThemes.HighContrast}">
+          <SolidColorBrush x:Key="AppBorderBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppSplitterGripBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppSubtleBackgroundBrush">#FF101010</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBackgroundBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPopupBorderBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCodeBackgroundBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppForegroundBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppHintForegroundBrush">#FFE6E6E6</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellTextBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNumberBrush">#FF00FFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDateBrush">#FFFF8CFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBooleanBrush">#FFFFD700</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellGuidBrush">#FF7CFC00</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellBinaryBrush">#FFFFC080</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNullBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridAltRowBrush">#1FFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppGridHeaderBrush">#33FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellEditedBrush">#80705A00</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellNewBrush">#80005A00</SolidColorBrush>
+          <SolidColorBrush x:Key="AppCellDeletedBrush">#80800000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectTableBrush">#FFFFA040</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectViewBrush">#FF60FF60</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectMaterializedViewBrush">#FF40FFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectForeignTableBrush">#FFE0C0A8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectProcedureBrush">#FF80C8FF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectFunctionBrush">#FFE88CFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectTriggerBrush">#FFFF6E6E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSequenceBrush">#FFFFE040</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectSynonymBrush">#FFFF8CC8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppObjectOtherBrush">#FFE6E6E6</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPlanHotBrush">#FFFF6E6E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPlanWarmBrush">#FFFFB040</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPlanCoolBrush">#FFC8D8E8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppPlanWarningBrush">#FFFFD700</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarBackgroundBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppBarGroupBorderBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolHoverBrush">#4DFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppToolPressedBrush">#80FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="AppKeycapBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusConnectedBrush">#FF00FF7F</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusBusyBrush">#FFFFD700</SolidColorBrush>
+          <SolidColorBrush x:Key="AppStatusIdleBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerBrush">#FFFF6E6E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppDangerHoverBrush">#40FF6E6E</SolidColorBrush>
+          <SolidColorBrush x:Key="AppAccentForegroundBrush">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonBackground">#FFFFD700</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver">#FFFFE34D</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonBackgroundPressed">#FFE6C200</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonBackgroundDisabled">#FF3A3A3A</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonForeground">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonForegroundPointerOver">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonForegroundPressed">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonForegroundDisabled">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="AccentButtonBorderBrush">#FFFFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="ButtonBorderBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="TextControlBorderBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="ComboBoxBorderBrush">#FFC8C8C8</SolidColorBrush>
+          <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked">#FFFFD700</SolidColorBrush>
+          <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked">#FF000000</SolidColorBrush>
+          <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill">#FFFFD700</SolidColorBrush>
+          <Color x:Key="SystemAccentColor">#FFFFD700</Color>
+          <Color x:Key="SystemAccentColorDark1">#FFFFD700</Color>
+          <Color x:Key="SystemAccentColorLight1">#FFFFE34D</Color>
+          <Color x:Key="SystemAccentColorLight2">#FFFFEC80</Color>
+          <Color x:Key="SystemAccentColorLight3">#FFFFF4B3</Color>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>
@@ -179,7 +252,7 @@
     </Style>
     <Style Selector="Button.accent">
       <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <!-- Small secondary buttons (grid toolbars, inline actions) -->

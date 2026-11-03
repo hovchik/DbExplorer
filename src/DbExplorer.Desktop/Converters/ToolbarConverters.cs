@@ -14,6 +14,7 @@ public sealed class ThemeModeToIconConverter : IValueConverter
     {
         AppThemeMode.Light => Icons.Sun,
         AppThemeMode.Dark => Icons.Moon,
+        AppThemeMode.HighContrast => Icons.Bolt,
         _ => Icons.Monitor
     };
 

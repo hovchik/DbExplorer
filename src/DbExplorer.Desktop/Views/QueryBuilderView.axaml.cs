@@ -1,3 +1,4 @@
+using DbExplorer.Desktop.Services;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
@@ -31,7 +32,7 @@ public partial class QueryBuilderView : UserControl
     }
 
     private void ApplyHighlighting() =>
-        SqlEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: ActualThemeVariant == ThemeVariant.Dark);
+        SqlEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: AppThemes.IsDark(ActualThemeVariant));
 
     // The editor's text is not bindable, so it follows the view model's Sql by hand.
     private void BindSql()

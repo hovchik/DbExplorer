@@ -1937,10 +1937,16 @@ namespace DbExplorer.UiRender
         }
 
         /// <summary>Captures <paramref name="window"/> in the light and the dark theme.</summary>
+        private static readonly HashSet<string> ContrastShots =
+            ["main-disconnected", "objects", "query", "pins-before", "results-as-text", "diagram", "plan", "small-objects"];
+
         private async Task Shot(TopLevel window, string name)
         {
             Accessibility.Audit(window, name);
-            foreach (var (variant, suffix) in new[] { (ThemeVariant.Light, "light"), (ThemeVariant.Dark, "dark") })
+            var variants = new List<(ThemeVariant, string)> { (ThemeVariant.Light, "light"), (ThemeVariant.Dark, "dark") };
+            // A few views also in high contrast, to check it without tripling the run.
+            if (ContrastShots.Contains(name)) variants.Add((AppThemes.HighContrast, "contrast"));
+            foreach (var (variant, suffix) in variants)
             {
                 Avalonia.Application.Current!.RequestedThemeVariant = variant;
                 await Settle(4);

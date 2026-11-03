@@ -84,7 +84,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Border.appbar Border.count > TextBlock">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
       <Setter Property="FontSize" Value="10.5" />
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="HorizontalAlignment" Value="Center" />
@@ -179,10 +179,10 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="Border.appbar Button.primary.accent TextBlock">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
     </Style>
     <Style Selector="Border.appbar Button.primary.accent">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
     </Style>
     <Style Selector="Border.appbar Button.disconnect">
       <Setter Property="Background" Value="Transparent" />
@@ -438,6 +438,13 @@
                     <MenuItem.Icon>
                       <controls:StrokeIcon Data="{x:Static controls:Icons.Check}" Width="14" Height="14"
                                            IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=Dark}" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="High contrast" Command="{Binding SetThemeCommand}" CommandParameter="{x:Static models:AppThemeMode.HighContrast}"
+                            ToolTip.Tip="Black, white and bright colours. System also switches to it when Windows uses a contrast theme.">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Check}" Width="14" Height="14"
+                                           IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=HighContrast}" />
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />

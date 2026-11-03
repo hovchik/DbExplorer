@@ -1,3 +1,4 @@
+using DbExplorer.Desktop.Services;
 using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -25,7 +26,7 @@ public partial class ObjectsView : UserControl
     }
 
     private void ApplyHighlighting() =>
-        DefinitionEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: ActualThemeVariant == ThemeVariant.Dark);
+        DefinitionEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: AppThemes.IsDark(ActualThemeVariant));
 
     // The editor's text is not bindable, so it follows the view model's Definition by hand.
     private void BindDefinition()

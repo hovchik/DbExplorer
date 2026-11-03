@@ -208,7 +208,7 @@ public partial class QueryView : UserControl
     private void OnClearInlineResults(object? sender, RoutedEventArgs e) => _vm?.ClearInlineResults();
 
     private void ApplyHighlighting() =>
-        Editor.SyntaxHighlighting = SqlHighlighting.Get(dark: ActualThemeVariant == ThemeVariant.Dark);
+        Editor.SyntaxHighlighting = SqlHighlighting.Get(dark: AppThemes.IsDark(ActualThemeVariant));
 
     private void Redraw() => Editor.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
 

@@ -94,6 +94,7 @@ public partial class ObjectsViewModel(
         ShowInDiagramCommand.NotifyCanExecuteChanged();
         ModifyCommand.NotifyCanExecuteChanged();
         DeleteRowsCommand.NotifyCanExecuteChanged();
+        GenerateTestDataCommand.NotifyCanExecuteChanged();
         DropTableCommand.NotifyCanExecuteChanged();
         FindUsagesCommand.NotifyCanExecuteChanged();
         ColumnProfiles = [];
@@ -263,6 +264,16 @@ public partial class ObjectsViewModel(
             NullIfEmpty(table.Database), "Delete " + table.Name);
     }
 
+    /// <summary>Opens the test data generator for the table. Nothing is written until the user confirms an insert there
+    /// (typing PRODUCTION on a production connection); read-only connections can only preview and open the script.</summary>
+    [RelayCommand(CanExecute = nameof(IsTable))]
+    private void GenerateTestData()
+    {
+        if (_session is not { } session || SelectedObject is not { Type: DbObjectType.Table } table) return;
+        dialogs.ShowTestData(new TestDataViewModel(session, table, dialogs,
+            (sql, database, title) => OpenSqlRequested?.Invoke(sql, database, title)));
+    }
+
     private bool CanDropTable => IsTable && !IsBusy;
 
     /// <summary>Shows the DROP TABLE, asks (typing PRODUCTION on a production connection), runs it, then re-reads the
@@ -359,6 +370,23 @@ public partial class ObjectsViewModel(
     }
 
     public bool CanGetData => SelectedObject?.IsTableLike == true;
+
+    /// <summary>Import a CSV, TSV or Excel file into the selected table, or into a new table when no table is selected.</summary>
+    [RelayCommand]
+    private void ImportData() => ShowImport(SelectedObject is { Type: DbObjectType.Table } table ? table : null);
+
+    /// <summary>Import into a new table, whatever is selected (the window can still switch to an existing one).</summary>
+    [RelayCommand]
+    private void ImportNewTable() => ShowImport(null);
+
+    private void ShowImport(DbObject? table)
+    {
+        if (_session is not { } session) return;
+        dialogs.ShowImportData(new ImportDataViewModel(session, sessions, dialogs, table)
+        {
+            OpenSql = (sql, database, title) => OpenSqlRequested?.Invoke(sql, database, title)
+        });
+    }
 
     [RelayCommand(CanExecute = nameof(CanGetData))]
     private async Task GetDataAsync()

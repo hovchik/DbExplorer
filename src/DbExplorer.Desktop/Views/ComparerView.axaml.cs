@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 
 namespace DbExplorer.Desktop.Views;
@@ -12,6 +14,12 @@ public partial class ComparerView : UserControl
     public ComparerView()
     {
         InitializeComponent();
+        Keymap.Bind(this, () => DataContext is not ComparerViewModel vm ? [] :
+        [
+            (ShortcutCommands.NextDifference, vm.NextDifferenceCommand),
+            (ShortcutCommands.PreviousDifference, vm.PreviousDifferenceCommand),
+            (ShortcutCommands.CancelComparison, vm.CancelCommand)
+        ]);
     }
 
     /// <summary>Opens the drop-down as soon as the box is focused, so the full object list can be
@@ -50,6 +58,33 @@ public partial class ComparerView : UserControl
         catch (Exception ex)
         {
             vm.CopyStatus = "Could not copy the script: " + ex.Message;
+        }
+    }
+
+    private async void OnSaveMigrationScript(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ComparerViewModel vm || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        try
+        {
+            var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save migration script",
+                SuggestedFileName = vm.MigrationFileStem + ".sql",
+                DefaultExtension = "sql",
+                ShowOverwritePrompt = true,
+                FileTypeChoices = [new FilePickerFileType("SQL script") { Patterns = ["*.sql"] }]
+            });
+            if (file is null) return;
+
+            await using var stream = await file.OpenWriteAsync();
+            stream.SetLength(0);
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            await writer.WriteAsync(vm.MigrationScript);
+            vm.MigrationStatus = $"Script saved to {file.Name}.";
+        }
+        catch (Exception ex)
+        {
+            vm.MigrationStatus = "Could not save the script: " + ex.Message;
         }
     }
 

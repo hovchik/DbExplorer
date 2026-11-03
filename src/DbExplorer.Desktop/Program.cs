@@ -17,6 +17,15 @@ internal static class Program
             e.SetObserved();
         };
 
+        // Files from Explorer (Open, Open with, a double-click on a .sql file) go to the window already running.
+        var files = DbExplorer.Application.Query.FileArguments.Parse(args, Environment.CurrentDirectory);
+        var channel = new FileOpenChannel(FileOpenChannel.DefaultName(DbExplorer.Application.AppPaths.DefaultRoot));
+        if (!channel.TryBecomePrimary() && files.Count > 0 &&
+            channel.TrySendAsync(files, TimeSpan.FromSeconds(5)).GetAwaiter().GetResult())
+            return;
+        App.StartupFiles = files;
+        App.OpenChannel = channel;
+
         try
         {
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -25,6 +34,10 @@ internal static class Program
         {
             ErrorLog.Write("fatal", ex);
             throw;
+        }
+        finally
+        {
+            channel.Dispose();
         }
     }
 

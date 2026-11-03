@@ -1,0 +1,175 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        x:Class="DbExplorer.Desktop.Views.PreferencesWindow"
+        x:DataType="vm:PreferencesViewModel"
+        Title="Preferences"
+        Width="820" Height="640" MinWidth="560" MinHeight="400"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="Border.section">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14,10,14,12" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+    <Style Selector="Border.section > StackPanel">
+      <Setter Property="Spacing" Value="8" />
+    </Style>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Width" Value="170" />
+    </Style>
+    <Style Selector="TextBlock.indented">
+      <Setter Property="Margin" Value="28,-6,0,0" />
+    </Style>
+    <Style Selector="ListBox.sections ListBoxItem">
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <!-- Footer: where the settings live, reset, close -->
+    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,1,0,0" Padding="14,10">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button Content="Reset to defaults…" Command="{Binding ResetCommand}"
+                ToolTip.Tip="Put every preference in this window back to its default. Connections, queries, snippets and the AI key are kept." />
+        <TextBlock Grid.Column="1" Classes="hint" VerticalAlignment="Center" Margin="12,0" TextTrimming="CharacterEllipsis"
+                   Text="Changes are saved and applied right away." />
+        <Button Grid.Column="2" Content="Close" IsCancel="True" IsDefault="True" Classes="accent" Click="OnClose" MinWidth="80" />
+      </Grid>
+    </Border>
+
+    <!-- Section list: a click scrolls to the section -->
+    <Border DockPanel.Dock="Left" Width="170" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" Padding="8,12">
+      <ListBox x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
+        <ListBoxItem Content="Appearance" Tag="AppearanceSection" />
+        <ListBoxItem Content="SQL editor" Tag="EditorSection" />
+        <ListBoxItem Content="New Query tabs" Tag="QueryTabsSection" />
+        <ListBoxItem Content="Notifications" Tag="NotificationsSection" />
+        <ListBoxItem Content="Start-up" Tag="StartupSection" />
+        <ListBoxItem Content="Experimental" Tag="ExperimentalSection" />
+        <ListBoxItem Content="AI assistant" Tag="AssistantSection" />
+        <ListBoxItem Content="Settings file" Tag="FileSection" />
+      </ListBox>
+    </Border>
+
+    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="16,14,16,4">
+        <Border x:Name="AppearanceSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Appearance" />
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Theme" />
+              <ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding Theme}" Width="140" />
+            </StackPanel>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="System follows Windows' light or dark mode. Also in the toolbar's theme button." />
+            <CheckBox Content="Software rendering" IsChecked="{Binding SoftwareRendering}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Draws the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up. Applies after a restart." />
+            <TextBlock Classes="indented" TextWrapping="Wrap" Foreground="#E08A00" IsVisible="{Binding RestartNeeded}"
+                       Text="Restart DB Explorer to use the new rendering setting." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="EditorSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="SQL editor" />
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Font size" />
+              <NumericUpDown Value="{Binding EditorFontSize}" Minimum="{Binding MinFontSize}" Maximum="{Binding MaxFontSize}"
+                             Increment="1" FormatString="0" Width="110" />
+            </StackPanel>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="The same in every Query tab. Ctrl+wheel, Ctrl+= and Ctrl+- zoom in the editor; Ctrl+0 resets." />
+            <CheckBox Content="Wrap long lines" IsChecked="{Binding EditorWordWrap}" />
+            <CheckBox Content="Show SQL warnings while typing" IsChecked="{Binding SqlInspections}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Unknown names, ambiguous columns and GROUP BY mistakes, checked against the cached catalog, never on the server. Alt+Enter offers fixes, F8 goes to the next one." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="QueryTabsSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="New Query tabs" />
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Row limit per result" />
+              <NumericUpDown Value="{Binding DefaultRowLimit}" Minimum="0" Maximum="{Binding MaxRowLimit}"
+                             Increment="10000" FormatString="N0" Width="140" />
+            </StackPanel>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="0 means no limit. Further rows are read and discarded so the app stays responsive. Each tab can change its own limit in its toolbar." />
+            <CheckBox Content="Auto-commit" IsChecked="{Binding DefaultAutoCommit}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Off: runs stay inside a transaction until you Commit or Rollback, so changes can be checked first. Tabs that are already open keep their own setting." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="NotificationsSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Notifications" />
+            <CheckBox Content="Notify when a long run finishes" IsChecked="{Binding NotifyLongRuns}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="28,0,0,0" IsEnabled="{Binding NotifyLongRuns}">
+              <TextBlock Text="Long means at least" VerticalAlignment="Center" />
+              <NumericUpDown Value="{Binding LongRunNotifySeconds}" Minimum="1" Maximum="{Binding MaxNotifySeconds}"
+                             Increment="5" FormatString="0" Width="100" />
+              <TextBlock Text="seconds" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Only while you look at another app, tab or Query tab. Clicking the notification opens the tab; on Windows the taskbar button flashes too." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="StartupSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Start-up" />
+            <CheckBox Content="Reopen the last connection at start" IsChecked="{Binding ReconnectOnStart}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Production connections and ones without a saved password are only selected, never opened by themselves." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="ExperimentalSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Experimental Query tab features" />
+            <CheckBox Content="What changed: compare each run with the previous one" IsChecked="{Binding ResultDiff}" />
+            <CheckBox Content="Expectations: check -- expect: comments after each run" IsChecked="{Binding Expectations}" />
+            <CheckBox Content="Cost lens: planner estimate of the statement at the caret while typing" IsChecked="{Binding CostLens}" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="Also in each Query tab's Lab menu. None of them writes data." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="AssistantSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="AI assistant" />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding AssistantStatus}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Button Grid.Column="1" Content="{Binding AssistantButtonText}" Command="{Binding EditAssistantKeyCommand}" Margin="12,0,0,0" />
+            </Grid>
+            <TextBlock Classes="hint" TextWrapping="Wrap"
+                       Text="Uses your own Anthropic API key. Only names and types of the tab's database objects and the query text are sent, never row data." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="FileSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Settings file" />
+            <Grid ColumnDefinitions="*,Auto">
+              <SelectableTextBlock Classes="mono" Text="{Binding SettingsFile}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Button Grid.Column="1" Content="Open folder" Command="{Binding OpenSettingsFolderCommand}" Margin="12,0,0,0" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

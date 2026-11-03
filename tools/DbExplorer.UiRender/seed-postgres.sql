@@ -43,3 +43,14 @@ GRANT shop_readers TO shop_app, reporting;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO shop_readers;
 GRANT INSERT, UPDATE ON orders, order_items TO shop_app;
 GRANT EXECUTE ON FUNCTION order_total(int) TO shop_readers;
+
+-- An older copy of the shop for the Comparer's migration script: a missing table, a shorter and an extra column,
+-- a view that drifted, and a table only this copy has.
+DROP DATABASE IF EXISTS uirender_shop_old;
+CREATE DATABASE uirender_shop_old;
+\c uirender_shop_old
+CREATE TABLE customers (id serial PRIMARY KEY, name varchar(80) NOT NULL, email text UNIQUE, phone text);
+CREATE TABLE products (id serial PRIMARY KEY, sku text UNIQUE NOT NULL, name text NOT NULL, price numeric(10,2) NOT NULL, stock int NOT NULL DEFAULT 0);
+CREATE TABLE orders (id serial PRIMARY KEY, customer_id int NOT NULL REFERENCES customers(id), ordered_at timestamptz NOT NULL DEFAULT now(), status text NOT NULL DEFAULT 'new');
+CREATE TABLE legacy_import (id int PRIMARY KEY, payload text);
+CREATE VIEW v_order_totals AS SELECT o.id AS order_id, c.name AS customer, o.status FROM orders o JOIN customers c ON c.id = o.customer_id;

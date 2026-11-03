@@ -1,116 +1,76 @@
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
+
 namespace DbExplorer.Desktop.ViewModels;
 
-/// <summary>One keyboard shortcut: where it works, the keys, and what it does.</summary>
-public sealed record ShortcutInfo(string Area, string Keys, string Action);
+/// <summary>One keyboard shortcut: where it works, the keys, and what it does. <see cref="Id"/> is set when the keys can
+/// be changed in the F1 sheet.</summary>
+public sealed record ShortcutInfo(string Area, string Keys, string Action)
+{
+    public string? Id { get; init; }
 
-/// <summary>Every keyboard shortcut in the app, in the order the F1 sheet shows them. The key handlers live in the
-/// views; a test checks that every KeyBinding and every "(Ctrl+…)" tooltip in the XAML is listed here.</summary>
+    /// <summary>The keys differ from the defaults.</summary>
+    public bool IsCustomized { get; init; }
+
+    public bool IsEditable => Id is not null;
+
+    /// <summary>The default keys, shown next to a changed shortcut.</summary>
+    public string? DefaultKeys { get; init; }
+
+    public bool HasNoKeys => Keys.Length == 0;
+}
+
+/// <summary>Every keyboard shortcut in the app, in the order the F1 sheet shows them: the changeable commands of
+/// <see cref="ShortcutCommands"/> with their current keys, then the fixed keys of each area. A test checks that every
+/// KeyBinding and every "(Ctrl+…)" tooltip in the XAML is listed here.</summary>
 public static class ShortcutCatalog
 {
-    public const string Anywhere = "Anywhere";
-    public const string QueryEditor = "Query editor";
-    public const string QueryTabs = "Query tabs";
-    public const string ResultGrid = "Result grid";
-    public const string Navigator = "Database navigator";
-    public const string Comparer = "Comparer";
-    public const string ErModel = "ER model";
-    public const string Debugger = "Routine debugger";
-    public const string Palette = "Command palette";
+    public const string Anywhere = ShortcutAreas.Anywhere;
+    public const string QueryEditor = ShortcutAreas.QueryEditor;
+    public const string QueryTabs = ShortcutAreas.QueryTabs;
+    public const string ResultGrid = ShortcutAreas.ResultGrid;
+    public const string Navigator = ShortcutAreas.Navigator;
+    public const string Comparer = ShortcutAreas.Comparer;
+    public const string ErModel = ShortcutAreas.ErModel;
+    public const string Debugger = ShortcutAreas.Debugger;
+    public const string Palette = ShortcutAreas.Palette;
+    public const string Vim = ShortcutAreas.Vim;
 
-    public static IReadOnlyList<ShortcutInfo> All { get; } =
-    [
-        new(Anywhere, "Ctrl+K", "Command palette: go to an object, tab or command"),
-        new(Anywhere, "Ctrl+P", "Command palette (same as Ctrl+K)"),
-        new(Anywhere, "Ctrl+Shift+P", "Command palette, commands only"),
-        new(Anywhere, "Ctrl+B", "Show or hide the database navigator"),
-        new(Anywhere, "F1", "Keyboard shortcuts (this sheet)"),
+    private static readonly string[] AreaOrder = [Anywhere, Palette, QueryEditor, QueryTabs, ResultGrid, Navigator, Comparer, ErModel, Debugger, Vim];
 
-        new(Palette, ">", "Type first to list commands only"),
-        new(Palette, "Enter", "Open or run the selected item"),
-        new(Palette, "Shift+Enter", "Show the table in the diagram"),
-        new(Palette, "Ctrl+Enter", "Get data from a table or view, execute a routine"),
-        new(Palette, "Esc", "Close"),
+    /// <summary>Every shortcut with the keys in use now (the Vim card only while Vim mode is on).</summary>
+    public static IReadOnlyList<ShortcutInfo> All => Build(Keymap.Current);
 
-        new(QueryEditor, "F5", "Run the selection, or the whole script"),
-        new(QueryEditor, "Ctrl+E", "Run the selection, or the whole script"),
-        new(QueryEditor, "Ctrl+Enter", "Run the statement at the caret"),
-        new(QueryEditor, "Ctrl+L", "Execution plan of the statement at the caret"),
-        new(QueryEditor, "Ctrl+Shift+L", "Execution plan with actual run (EXPLAIN ANALYZE)"),
-        new(QueryEditor, "Ctrl+Space", "Completion: names, keywords, snippets"),
-        new(QueryEditor, "Ctrl+Shift+F", "Format the selection, or the whole script"),
-        new(QueryEditor, "Ctrl+/", "Comment or uncomment the lines"),
-        new(QueryEditor, "Ctrl+F", "Find"),
-        new(QueryEditor, "Ctrl+H", "Find and replace"),
-        new(QueryEditor, "Ctrl+G", "Go to line"),
-        new(QueryEditor, "F12", "Go to the definition of the name at the caret"),
-        new(QueryEditor, "Ctrl+D", "Duplicate the line or selection"),
-        new(QueryEditor, "Alt+↑ / Alt+↓", "Move the lines up or down"),
-        new(QueryEditor, "Ctrl+Shift+U", "Selection to UPPER case"),
-        new(QueryEditor, "Ctrl+Alt+U", "Selection to lower case"),
-        new(QueryEditor, "Alt+J", "Add a caret at the next occurrence"),
-        new(QueryEditor, "Ctrl+Alt+Shift+J", "Add carets at every occurrence"),
-        new(QueryEditor, "Alt+Enter", "Fixes for the SQL warning at the caret"),
-        new(QueryEditor, "F8 / Shift+F8", "Next or previous SQL warning"),
-        new(QueryEditor, "Alt+Z", "Word wrap on or off"),
-        new(QueryEditor, "Ctrl+= / Ctrl+-", "Zoom the editor in or out (also Ctrl+wheel)"),
-        new(QueryEditor, "Ctrl+0", "Reset the editor zoom"),
-        new(QueryEditor, "Ctrl+Shift+↑", "Give the results most of the space"),
-        new(QueryEditor, "Ctrl+Shift+↓", "Give the editor most of the space"),
-        new(QueryEditor, "Ctrl+Z / Ctrl+Y", "Undo, redo"),
-        new(QueryEditor, "Esc", "Leave multi-caret mode, close popups"),
+    public static IReadOnlyList<ShortcutInfo> Build(KeymapService keymap)
+    {
+        var list = new List<ShortcutInfo>();
+        foreach (var area in AreaOrder)
+        {
+            foreach (var command in ShortcutCommands.All.Where(c => c.Area == area))
+            {
+                list.Add(new ShortcutInfo(area, keymap.Display(command.Id) ?? "", command.Action)
+                {
+                    Id = command.Id,
+                    IsCustomized = keymap.IsCustomized(command.Id),
+                    DefaultKeys = string.Join(" / ", command.Defaults)
+                });
+            }
+            var fixedKeys = area == Vim ? keymap.VimMode ? ShortcutCommands.Vim : [] : ShortcutCommands.Fixed.Where(f => f.Area == area);
+            list.AddRange(fixedKeys.Select(f => new ShortcutInfo(f.Area, f.Keys, f.Action)));
+        }
+        return list;
+    }
 
-        new(QueryTabs, "Ctrl+N", "New query tab"),
-        new(QueryTabs, "Ctrl+W", "Close the query tab"),
-        new(QueryTabs, "Ctrl+Shift+T", "Reopen the last closed tab"),
-        new(QueryTabs, "Ctrl+O", "Open a .sql file"),
-        new(QueryTabs, "Ctrl+S", "Save the tab to its file"),
-        new(QueryTabs, "Ctrl+Shift+S", "Save the tab to a new file"),
-        new(QueryTabs, "Ctrl+Shift+H", "Local history of the tab"),
-        new(QueryTabs, "Ctrl+PgUp", "Previous query tab"),
-        new(QueryTabs, "Ctrl+PgDn", "Next query tab"),
-        new(QueryTabs, "Ctrl+Shift+PgUp", "Move the tab left"),
-        new(QueryTabs, "Ctrl+Shift+PgDn", "Move the tab right"),
-        new(QueryTabs, "Middle-click", "Close the tab"),
-
-        new(ResultGrid, "Ctrl+C", "Copy the cell, or the selected rows"),
-        new(ResultGrid, "Ctrl+Shift+C", "Copy the selected rows with column names"),
-        new(ResultGrid, "Ctrl+F", "Quick filter on the rows"),
-        new(ResultGrid, "F2", "Edit the cell (or select its text when read-only)"),
-        new(ResultGrid, "Enter", "Show the whole cell value"),
-        new(ResultGrid, "Alt+Insert", "Add a row"),
-        new(ResultGrid, "Ctrl+Delete", "Delete the selected rows"),
-        new(ResultGrid, "Ctrl+S", "Save edits to the database"),
-        new(ResultGrid, "Esc", "Clear the quick filter"),
-
-        new(Navigator, "Enter", "Open the selected object"),
-        new(Navigator, "F5", "Refresh"),
-        new(Navigator, "Ctrl+C", "Copy the name"),
-        new(Navigator, "Esc", "Clear the filter"),
-
-        new(Comparer, "F8 / Shift+F8", "Next or previous difference"),
-        new(Comparer, "Esc", "Cancel the comparison"),
-
-        new(ErModel, "Ctrl+Z", "Undo"),
-        new(ErModel, "Ctrl+Y / Ctrl+Shift+Z", "Redo"),
-        new(ErModel, "Delete", "Delete the selected table"),
-
-        new(Debugger, "F5", "Start or continue"),
-        new(Debugger, "Shift+F5", "Stop (rolls back)"),
-        new(Debugger, "F9", "Toggle a breakpoint on the caret line"),
-        new(Debugger, "F10", "Step over"),
-        new(Debugger, "F11", "Step into"),
-        new(Debugger, "Shift+F11", "Step out"),
-    ];
-
-    /// <summary>The keys listed for an action in an area, for showing next to a palette command.</summary>
-    public static string? KeysFor(string area, string action) =>
-        All.FirstOrDefault(s => s.Area == area && s.Action == action)?.Keys;
+    /// <summary>The keys of a changeable command as the palette shows them next to it.</summary>
+    public static string? KeysFor(string id) => Keymap.Display(id);
 
     /// <summary>Areas in sheet order, each with the shortcuts that match <paramref name="filter"/> (keys or text).</summary>
-    public static IReadOnlyList<ShortcutGroup> Grouped(string? filter)
+    public static IReadOnlyList<ShortcutGroup> Grouped(string? filter) => Grouped(All, filter);
+
+    public static IReadOnlyList<ShortcutGroup> Grouped(IReadOnlyList<ShortcutInfo> all, string? filter)
     {
         var terms = (filter ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return All
+        return all
             .Where(s => terms.All(t => s.Keys.Contains(t, StringComparison.OrdinalIgnoreCase) ||
                                        s.Action.Contains(t, StringComparison.OrdinalIgnoreCase) ||
                                        s.Area.Contains(t, StringComparison.OrdinalIgnoreCase)))

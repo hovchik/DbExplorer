@@ -1,7 +1,9 @@
 using System.Windows.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application.Shortcuts;
 using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
@@ -23,6 +25,9 @@ public partial class MainWindowViewModel
         {
             ShowShortcuts = ShowShortcuts
         });
+
+    /// <summary>The keys of a command as set in the F1 sheet.</summary>
+    private static string? K(string id) => Keymap.Current.Primary(id)?.ToString();
 
     internal IReadOnlyList<PaletteItem> BuildPaletteItems()
     {
@@ -46,28 +51,28 @@ public partial class MainWindowViewModel
             void Editor(string title, EditorAction action, string? shortcut = null, string? keywords = null) =>
                 Add("Query", title, () => RunInEditor(doc, action), shortcut, doc.Title, keywords);
 
-            if (IsConnected) Editor("Run script or selection", EditorAction.RunScript, "F5", "execute go");
-            if (IsConnected) Editor("Run statement at caret", EditorAction.RunStatement, "Ctrl+Enter", "execute current");
-            if (IsConnected) Editor("Explain (execution plan)", EditorAction.Explain, "Ctrl+L", "plan showplan");
-            if (IsConnected) Editor("Explain analyze (actual plan)", EditorAction.ExplainAnalyze, "Ctrl+Shift+L", "plan actual");
+            if (IsConnected) Editor("Run script or selection", EditorAction.RunScript, K(ShortcutCommands.RunScript), "execute go");
+            if (IsConnected) Editor("Run statement at caret", EditorAction.RunStatement, K(ShortcutCommands.RunStatement), "execute current");
+            if (IsConnected) Editor("Explain (execution plan)", EditorAction.Explain, K(ShortcutCommands.Explain), "plan showplan");
+            if (IsConnected) Editor("Explain analyze (actual plan)", EditorAction.ExplainAnalyze, K(ShortcutCommands.ExplainAnalyze), "plan actual");
             Command("Query", "Cancel the running query", doc.CancelCommand, subtitle: doc.Title, keywords: "stop abort");
             Command("Query", "Commit transaction", doc.CommitCommand, subtitle: doc.Title);
             Command("Query", "Rollback transaction", doc.RollbackCommand, subtitle: doc.Title, keywords: "undo");
-            Editor("Format SQL", EditorAction.Format, "Ctrl+Shift+F", "beautify pretty indent");
-            Editor("Comment or uncomment lines", EditorAction.ToggleComment, "Ctrl+/", "toggle");
+            Editor("Format SQL", EditorAction.Format, K(ShortcutCommands.Format), "beautify pretty indent");
+            Editor("Comment or uncomment lines", EditorAction.ToggleComment, K(ShortcutCommands.ToggleComment), "toggle");
             Editor("Find", EditorAction.Find, "Ctrl+F", "search");
-            Editor("Find and replace", EditorAction.Replace, "Ctrl+H", "search substitute");
-            Editor("Go to line…", EditorAction.GoToLine, "Ctrl+G", "jump");
-            Editor("Upper case", EditorAction.UpperCase, "Ctrl+Shift+U", "capitals");
-            Editor("Lower case", EditorAction.LowerCase, "Ctrl+Alt+U");
-            Editor("Duplicate line or selection", EditorAction.Duplicate, "Ctrl+D", "copy");
-            Editor("Next SQL warning", EditorAction.NextWarning, "F8", "problem inspection");
-            Editor(_settings.EditorWordWrap ? "Turn word wrap off" : "Turn word wrap on", EditorAction.ToggleWordWrap, "Alt+Z", "wrap lines");
-            Editor("Zoom in", EditorAction.ZoomIn, "Ctrl+=", "font bigger larger");
-            Editor("Zoom out", EditorAction.ZoomOut, "Ctrl+-", "font smaller");
-            Editor("Reset zoom", EditorAction.ResetZoom, "Ctrl+0", "font size");
-            Editor("Maximize results", EditorAction.MaximizeResults, "Ctrl+Shift+↑", "layout grid");
-            Editor("Maximize editor", EditorAction.MaximizeEditor, "Ctrl+Shift+↓", "layout");
+            Editor("Find and replace", EditorAction.Replace, K(ShortcutCommands.Replace), "search substitute");
+            Editor("Go to line…", EditorAction.GoToLine, K(ShortcutCommands.GoToLine), "jump");
+            Editor("Upper case", EditorAction.UpperCase, K(ShortcutCommands.UpperCase), "capitals");
+            Editor("Lower case", EditorAction.LowerCase, K(ShortcutCommands.LowerCase));
+            Editor("Duplicate line or selection", EditorAction.Duplicate, K(ShortcutCommands.Duplicate), "copy");
+            Editor("Next SQL warning", EditorAction.NextWarning, K(ShortcutCommands.NextWarning), "problem inspection");
+            Editor(_settings.EditorWordWrap ? "Turn word wrap off" : "Turn word wrap on", EditorAction.ToggleWordWrap, K(ShortcutCommands.WordWrap), "wrap lines");
+            Editor("Zoom in", EditorAction.ZoomIn, K(ShortcutCommands.ZoomIn), "font bigger larger");
+            Editor("Zoom out", EditorAction.ZoomOut, K(ShortcutCommands.ZoomOut), "font smaller");
+            Editor("Reset zoom", EditorAction.ResetZoom, K(ShortcutCommands.ResetZoom), "font size");
+            Editor("Maximize results", EditorAction.MaximizeResults, K(ShortcutCommands.MaximizeResults), "layout grid");
+            Editor("Maximize editor", EditorAction.MaximizeEditor, K(ShortcutCommands.MaximizeEditor), "layout");
             Editor("Reset editor and results split", EditorAction.ResetLayout, keywords: "layout");
             Add("Query", _settings.SqlInspections ? "Turn SQL warnings off" : "Turn SQL warnings on",
                 () => _settings.SetSqlInspections(!_settings.SqlInspections), keywords: "inspections lint problems", id: "toggle-sql-warnings");
@@ -80,8 +85,16 @@ public partial class MainWindowViewModel
         // ----- Query tabs -----
         if (queryUsable)
         {
-            Add("Query tabs", "New query tab", () => { SelectedTab = AppTab.Query; Query.NewTab(); }, "Ctrl+N", keywords: "new script sql editor");
-            Add("Query tabs", "Open SQL file…", () => RunInWorkspace(QueryFileAction.Open), "Ctrl+O", keywords: "load script");
+            Add("Query tabs", "New query tab", () => { SelectedTab = AppTab.Query; Query.NewTab(); }, K(ShortcutCommands.NewTab), keywords: "new script sql editor");
+            Add("Query tabs", "Open SQL file…", () => RunInWorkspace(QueryFileAction.Open), K(ShortcutCommands.OpenFile), keywords: "load script");
+            foreach (var recent in Query.RecentFiles)
+            {
+                Add("Query tabs", $"Open recent: {recent.Name}", () =>
+                {
+                    SelectedTab = AppTab.Query;
+                    Query.OpenRecentCommand.Execute(recent);
+                }, subtitle: recent.Folder, keywords: "recent file sql script mru", id: "open-recent:" + recent.Path);
+            }
             // Closed Query tabs: the newest first (Ctrl+Shift+T), then each one by name.
             foreach (var (closed, i) in Query.RecentlyClosed.Select((c, i) => (c, i)))
             {
@@ -89,18 +102,20 @@ public partial class MainWindowViewModel
                 {
                     SelectedTab = AppTab.Query;
                     Query.ReopenTabCommand.Execute(closed);
-                }, i == 0 ? "Ctrl+Shift+T" : null, $"closed at {closed.When}", "restore undo close", id: i == 0 ? "reopen-closed-tab" : null);
+                }, i == 0 ? K(ShortcutCommands.ReopenTab) : null, $"closed at {closed.When}", "restore undo close", id: i == 0 ? "reopen-closed-tab" : null);
             }
             if (Query.SelectedDocument is { } tab)
             {
-                Add("Query tabs", "Save", () => RunInWorkspace(QueryFileAction.Save), "Ctrl+S", tab.Title, "write file");
-                Add("Query tabs", "Save as…", () => RunInWorkspace(QueryFileAction.SaveAs), "Ctrl+Shift+S", tab.Title, "write file");
-                Command("Query tabs", "Close query tab", Query.CloseTabCommand, "Ctrl+W", tab.Title);
+                Add("Query tabs", "Save", () => RunInWorkspace(QueryFileAction.Save), K(ShortcutCommands.Save), tab.Title, "write file");
+                Add("Query tabs", "Save as…", () => RunInWorkspace(QueryFileAction.SaveAs), K(ShortcutCommands.SaveAs), tab.Title, "write file");
+                Command("Query tabs", "Close query tab", Query.CloseTabCommand, K(ShortcutCommands.CloseTab), tab.Title);
                 Command("Query tabs", "Close other query tabs", Query.CloseOtherTabsCommand, subtitle: tab.Title);
                 Command("Query tabs", "Close all query tabs", Query.CloseAllTabsCommand);
                 Command("Query tabs", "Duplicate query tab", Query.DuplicateTabCommand, subtitle: tab.Title, keywords: "copy clone");
                 Command("Query tabs", "Rename query tab…", Query.RenameTabCommand, subtitle: tab.Title);
-                Command("Query tabs", "Local history…", Query.ShowLocalHistoryCommand, "Ctrl+Shift+H", $"earlier versions of {tab.Title}", "versions restore diff");
+                Command("Query tabs", "Local history…", Query.ShowLocalHistoryCommand, K(ShortcutCommands.LocalHistory), $"earlier versions of {tab.Title}", "versions restore diff");
+                if (tab.FilePath is not null)
+                    Command("Query tabs", "Show file in folder", Query.ShowInFolderCommand, subtitle: tab.FilePath, keywords: "explorer reveal finder");
             }
         }
 
@@ -115,6 +130,8 @@ public partial class MainWindowViewModel
         Command("Connection", "Delete connection…", DeleteConnectionCommand, subtitle: SelectedProfile?.ToString(), keywords: "remove");
         Command("Connection", "Export connections…", ExportConnectionsCommand, subtitle: "with or without passwords", keywords: "backup share file");
         Command("Connection", "Import connections…", ImportConnectionsCommand, keywords: "load file");
+        Command("Connection", "Export database documentation…", ExportDocumentationCommand,
+            subtitle: "tables, columns, keys, comments and diagram as HTML or Markdown", keywords: "docs data dictionary schema report wiki");
         Command("Connection", "Team sharing…", OpenTeamCommand, subtitle: "share connections, queries and snippets through a shared folder", keywords: "sync");
         if (!IsBusy)
         {
@@ -133,6 +150,10 @@ public partial class MainWindowViewModel
         if (IsConnected)
         {
             Command("Navigator", "Collapse the navigator tree", Navigator.CollapseAllCommand, keywords: "tree fold");
+            if (Objects.SelectedObject is { Type: DbObjectType.Table } table)
+                Command("Data", $"Import data into {table.FullName}…", Objects.ImportDataCommand, keywords: "csv excel xlsx tsv load file rows");
+            Command("Data", "Import a CSV or Excel file…", Objects.ImportNewTableCommand, subtitle: "into a new or an existing table",
+                keywords: "csv excel xlsx tsv load file rows new table");
             Command("Comparer", "Compare schemas", Comparer.CompareSchemaCommand, keywords: "diff");
             Command("Comparer", "Compare data", Comparer.CompareDataCommand, keywords: "diff rows");
             Command("Locks", "Refresh locks", Locks.RefreshCommand, keywords: "blocking");
@@ -144,7 +165,7 @@ public partial class MainWindowViewModel
 
         // ----- View and settings -----
         Add("View", ShowNavigator ? "Hide the database navigator" : "Show the database navigator", () => ShowNavigator = !ShowNavigator,
-            "Ctrl+B", keywords: "tree sidebar explorer", id: "toggle-navigator");
+            K(ShortcutCommands.ToggleNavigator), keywords: "tree sidebar explorer", id: "toggle-navigator");
         foreach (var theme in ThemeModes)
             if (theme != SelectedTheme)
                 Add("View", $"Theme: {theme}", () => SelectedTheme = theme, keywords: "color colour appearance dark light");
@@ -152,7 +173,10 @@ public partial class MainWindowViewModel
             () => ReconnectOnStart = !ReconnectOnStart, keywords: "restore workspace startup", id: "toggle-reconnect");
         Add("Settings", SoftwareRendering ? "Use GPU rendering (after restart)" : "Use software rendering (after restart)",
             () => SoftwareRendering = !SoftwareRendering, keywords: "blank window graphics", id: "toggle-software-rendering");
-        Add("Help", "Keyboard shortcuts", ShowShortcuts, "F1", keywords: "keys hotkeys keybindings cheat sheet help");
+        Add("Settings", "Preferences…", OpenPreferences, K(ShortcutCommands.Preferences), keywords: "settings options configure theme font row limit auto-commit notifications");
+        Add("Help", "Keyboard shortcuts", ShowShortcuts, K(ShortcutCommands.ShortcutSheet), keywords: "keys hotkeys keybindings cheat sheet help customize change remap");
+        Add("Settings", Keymap.Current.VimMode ? "Turn Vim keys off" : "Turn Vim keys on", () => Keymap.Current.SetVimMode(!Keymap.Current.VimMode),
+            subtitle: "Query editor", keywords: "vim vi modal normal insert editor keys", id: "toggle-vim");
 
         // ----- Tabs -----
         foreach (var tab in Enum.GetValues<AppTab>())

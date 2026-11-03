@@ -9,13 +9,6 @@
         Title="{Binding Title}"
         Width="1180" Height="780" MinWidth="760" MinHeight="480"
         WindowStartupLocation="CenterOwner">
-  <Window.KeyBindings>
-    <KeyBinding Gesture="F5" Command="{Binding StartOrContinueCommand}" />
-    <KeyBinding Gesture="F10" Command="{Binding StepOverCommand}" />
-    <KeyBinding Gesture="F11" Command="{Binding StepIntoCommand}" />
-    <KeyBinding Gesture="Shift+F11" Command="{Binding StepOutCommand}" />
-    <KeyBinding Gesture="Shift+F5" Command="{Binding StopCommand}" />
-  </Window.KeyBindings>
 
   <DockPanel Margin="10">
     <!-- Title, overloads and the run options. -->

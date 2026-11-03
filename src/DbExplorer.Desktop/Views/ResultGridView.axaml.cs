@@ -16,7 +16,9 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using DbExplorer.Application.Export;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Shortcuts;
 using DbExplorer.Desktop.Controls;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.Converters;
 using DbExplorer.Desktop.ViewModels;
 using Path = Avalonia.Controls.Shapes.Path;
@@ -175,9 +177,9 @@ public partial class ResultGridView : UserControl
         _revertCellItem = Item("Revert this value", () => EditTarget((row, column) => row.RevertCell(column)));
         _revertRowItem = Item("Revert this row", () => RevertRow(TargetCell()?.Row));
         _addRowItem = Item("Add row", AddRow);
-        _addRowItem.InputGesture = new KeyGesture(Key.Insert, KeyModifiers.Alt);
+        Keymap.SetCommand(_addRowItem, ShortcutCommands.GridAddRow);
         _deleteRowsItem = Item("Delete selected rows", ToggleDeleteSelected);
-        _deleteRowsItem.InputGesture = new KeyGesture(Key.Delete, KeyModifiers.Control);
+        Keymap.SetCommand(_deleteRowsItem, ShortcutCommands.GridDeleteRows);
         _selectTextItem = Item("Select text in cell", () => BeginCellEdit(TargetCell()));
         _selectTextItem.InputGesture = new KeyGesture(Key.F2);
         if (Grid.ContextMenu is { } menu)
@@ -1125,15 +1127,20 @@ public partial class ResultGridView : UserControl
         }
         _pressedRow = null;
         _pressedColumn = null;
-        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        if (e.Key == Key.C && ctrl)
+        var command = Keymap.Find(ShortcutAreas.ResultGrid, e);
+        if (command == ShortcutCommands.GridCopyWithHeader)
         {
-            // One row: the current cell's value. Several rows (or Ctrl+Shift+C): the rows.
+            _ = CopyTsvAsync(VisibleColumns(), SelectedRows(), includeHeader: true);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.C && ctrl && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            // One row: the current cell's value. Several rows: the rows.
             var rows = SelectedRows();
-            if (!shift && rows.Count <= 1 && TargetCell() is ({ } row, var column))
+            if (rows.Count <= 1 && TargetCell() is ({ } row, var column))
                 _ = SetClipboardAsync(ResultExporter.FormatInvariant(Cell(row, column)));
             else
-                _ = CopyTsvAsync(VisibleColumns(), rows, includeHeader: shift);
+                _ = CopyTsvAsync(VisibleColumns(), rows, includeHeader: false);
             e.Handled = true;
         }
         else if (e.Key == Key.F2 && e.KeyModifiers == KeyModifiers.None)
@@ -1141,12 +1148,12 @@ public partial class ResultGridView : UserControl
             BeginCellEdit(TargetCell());
             e.Handled = true;
         }
-        else if (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Alt && ResultSet?.CanEditRows == true)
+        else if (command == ShortcutCommands.GridAddRow && ResultSet?.CanEditRows == true)
         {
             AddRow();
             e.Handled = true;
         }
-        else if (e.Key == Key.Delete && ctrl && ResultSet?.CanEditRows == true)
+        else if (command == ShortcutCommands.GridDeleteRows && ResultSet?.CanEditRows == true)
         {
             ToggleDeleteSelected();
             e.Handled = true;
@@ -1156,7 +1163,7 @@ public partial class ResultGridView : UserControl
             _ = CommitEditsAsync();
             e.Handled = true;
         }
-        else if (e.Key == Key.F && ctrl)
+        else if (command == ShortcutCommands.GridFilter)
         {
             FilterBox.Focus();
             FilterBox.SelectAll();

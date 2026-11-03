@@ -15,11 +15,6 @@
 	<conv:CompareStatusToBrushConverter x:Key="CompareStatusBrush" />
   </UserControl.Resources>
 
-  <UserControl.KeyBindings>
-	<KeyBinding Gesture="F8" Command="{Binding NextDifferenceCommand}" />
-	<KeyBinding Gesture="Shift+F8" Command="{Binding PreviousDifferenceCommand}" />
-	<KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
-  </UserControl.KeyBindings>
 
   <UserControl.Styles>
 	<Style Selector="Border.card">
@@ -188,6 +183,8 @@
 					  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)" />
 			<Button Content="Open selected" Command="{Binding OpenOverviewEntryCommand}"
 					ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row)" />
+			<Button Content="Migration script…" Command="{Binding MigrationFromOverviewCommand}"
+					ToolTip.Tip="Build one script that makes the right database match the left (for the selected objects when several are selected) on the Migration tab" />
 			<Button Content="{Binding CopyOverviewLabel}" Command="{Binding CopyOverviewEntryCommand}"
 					ToolTip.Tip="Open the selected left object(s) on the Copy &amp; sync tab: create them on the right, or merge / replace their data. Ctrl/Shift-click to select several for a batch copy" />
 			<TextBlock Classes="hint" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
@@ -707,11 +704,104 @@
 		</Grid>
 		</Panel>
 	  </TabItem>
+
+	  <!-- One reviewed script that makes the right database's schema match the left's -->
+	  <TabItem Header="Migration">
+		<Grid RowDefinitions="Auto,Auto,Auto,*">
+		  <WrapPanel Grid.Row="0" Classes="toolbar">
+			<Button Content="Generate script" Classes="accent" Command="{Binding GenerateMigrationCommand}"
+					ToolTip.Tip="Build the script that makes the right database match the left: creates missing tables, views and routines, alters tables that differ, replaces changed views and routines. Reads column defaults from both servers; nothing is changed" />
+			<CheckBox Content="Drop what only the right has" IsChecked="{Binding MigrationDropExtras}"
+					  ToolTip.Tip="Also drop tables, columns, keys, indexes, views and routines that exist only on the right. Off: they are left alone and listed at the end of the script as comments" />
+			<CheckBox Content="{Binding MigrationOnlySelectedLabel}" IsChecked="{Binding MigrationOnlySelected}"
+					  ToolTip.Tip="Script only the objects selected on the Overview tab (Ctrl/Shift-click there)" />
+			<Button Content="Copy" Command="{Binding CopyMigrationCommand}" ToolTip.Tip="Copy the script to the clipboard" />
+			<Button Content="Save .sql…" Click="OnSaveMigrationScript" IsEnabled="{Binding HasMigration}"
+					ToolTip.Tip="Save the script as a .sql file, e.g. for a deployment pipeline or a review" />
+			<Panel ToolTip.Tip="{Binding OpenMigrationTip}">
+			  <Button Content="Open in Query tab" Command="{Binding OpenMigrationInQueryCommand}" />
+			</Panel>
+		  </WrapPanel>
+		  <TextBlock Grid.Row="1" Classes="hint" Margin="4,0,4,4" TextWrapping="Wrap" Text="{Binding MigrationDirection}" FontWeight="SemiBold" />
+		  <TextBlock Grid.Row="2" Classes="hint" Margin="4,0,4,4" TextWrapping="Wrap" Text="{Binding MigrationStatus}"
+					 IsVisible="{Binding MigrationStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+		  <Grid Grid.Row="3" ColumnDefinitions="11*,Auto,10*" IsVisible="{Binding HasMigration}">
+			<Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+			  <CheckBox Grid.Row="0" Content="Show objects that already match" IsChecked="{Binding ShowUnchangedMigrationItems}" Margin="0,0,0,4" />
+			  <DataGrid Grid.Row="1" ItemsSource="{Binding MigrationItems}" IsReadOnly="True" AutoGenerateColumns="False"
+						CanUserResizeColumns="True" CanUserSortColumns="True" GridLinesVisibility="Horizontal">
+				<DataGrid.Styles>
+				  <Style Selector="TextBlock.action">
+					<Setter Property="Margin" Value="12,0" />
+					<Setter Property="VerticalAlignment" Value="Center" />
+					<Setter Property="FontWeight" Value="SemiBold" />
+				  </Style>
+				  <Style Selector="TextBlock.action.create">
+					<Setter Property="Foreground" Value="#FF2E9E4F" />
+				  </Style>
+				  <Style Selector="TextBlock.action.change">
+					<Setter Property="Foreground" Value="#FF3B82F6" />
+				  </Style>
+				  <Style Selector="TextBlock.action.drop">
+					<Setter Property="Foreground" Value="#FFD9453B" />
+				  </Style>
+				  <Style Selector="TextBlock.action.manual">
+					<Setter Property="Foreground" Value="#FFD08A00" />
+				  </Style>
+				</DataGrid.Styles>
+				<DataGrid.Columns>
+				  <DataGridTemplateColumn Header="Action" SortMemberPath="Action" Width="90">
+					<DataGridTemplateColumn.CellTemplate>
+					  <DataTemplate x:DataType="compare:MigrationItem">
+						<TextBlock Classes="action" Text="{Binding Action, Converter={x:Static conv:HumanizeConverter.Instance}}"
+								   Classes.create="{Binding IsCreate}" Classes.change="{Binding IsChange}"
+								   Classes.drop="{Binding IsDrop}" Classes.manual="{Binding IsManual}" />
+					  </DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				  </DataGridTemplateColumn>
+				  <DataGridTemplateColumn Header="Type" SortMemberPath="Type" Width="100">
+					<DataGridTemplateColumn.CellTemplate>
+					  <DataTemplate x:DataType="compare:MigrationItem">
+						<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					  </DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				  </DataGridTemplateColumn>
+				  <DataGridTextColumn Header="Object" Binding="{Binding FullName}" Width="180" />
+				  <DataGridTemplateColumn Header="Details" Width="*">
+					<DataGridTemplateColumn.CellTemplate>
+					  <DataTemplate x:DataType="compare:MigrationItem">
+						<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Details}" TextTrimming="CharacterEllipsis"
+								   ToolTip.Tip="{Binding Details}" />
+					  </DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				  </DataGridTemplateColumn>
+				</DataGrid.Columns>
+			  </DataGrid>
+			  <ScrollViewer Grid.Row="2" MaxHeight="140" Margin="0,4,0,0" IsVisible="{Binding HasMigrationWarnings}">
+				<ItemsControl ItemsSource="{Binding MigrationWarnings}">
+				  <ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="x:String">
+					  <TextBlock Text="{Binding StringFormat='⚠ {0}'}" TextWrapping="Wrap" Foreground="#FFD08A00" Margin="0,0,0,2" />
+					</DataTemplate>
+				  </ItemsControl.ItemTemplate>
+				</ItemsControl>
+			  </ScrollViewer>
+			</Grid>
+			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
+			<TextBox Grid.Column="2" Classes="code" Text="{Binding MigrationScript}" IsReadOnly="True"
+					 AcceptsReturn="True" TextWrapping="NoWrap"
+					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+		  </Grid>
+		  <TextBlock Grid.Row="3" Classes="empty" IsVisible="{Binding !HasMigration}"
+					 Text="Connect both sides and pick their databases, then Generate script. The script makes the right database's schema match the left's: it creates missing tables, views and routines, alters tables that differ, and replaces changed views and routines, in an order that runs. Nothing runs here: review it, then save it, copy it, or open it in a Query tab." />
+		</Grid>
+	  </TabItem>
 	</TabControl>
 
 	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side. The toggles are docked
 	     right and the texts take what is left (trimmed), so nothing leaves the window when it is narrow. -->
-	<DockPanel Grid.Row="2" VerticalAlignment="Top" Height="30" Margin="440,0,0,0">
+	<DockPanel Grid.Row="2" VerticalAlignment="Top" Height="30" Margin="530,0,0,0">
 	  <Button DockPanel.Dock="Right" Classes="compact" Content="{Binding ConnectionsToggleText}" Command="{Binding ToggleConnectionsCommand}"
 			  VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Collapse the connection panels to give the results more room" />
 	  <CheckBox DockPanel.Dock="Right" Content="Right" IsChecked="{Binding IsRightPanelVisible}" Margin="8,0,0,0"

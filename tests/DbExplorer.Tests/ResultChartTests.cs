@@ -10,6 +10,7 @@ using DbExplorer.Desktop.Views;
 
 namespace DbExplorer.Tests;
 
+[Collection(nameof(HeadlessUiCollection))]
 public class ResultChartTests
 {
     private static readonly string[] Columns = ["region", "product", "qty", "price", "sold"];

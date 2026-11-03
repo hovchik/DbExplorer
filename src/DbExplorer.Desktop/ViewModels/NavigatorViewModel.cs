@@ -145,7 +145,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
     [NotifyPropertyChangedFor(nameof(SelectedIsConnection), nameof(SelectedIsClosedConnection), nameof(SelectedIsActiveConnection),
         nameof(SelectedIsOpenConnection), nameof(SelectedIsOpenInactiveConnection),
         nameof(SelectedIsObject), nameof(SelectedIsTableLike), nameof(SelectedIsTable), nameof(SelectedIsRoutine),
-        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument))]
+        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument), nameof(SelectedCanBackup))]
     private NavigatorNode? _selectedNode;
 
     /// <summary>Raised for an object the Objects tab can show (it is in the session's catalog).</summary>
@@ -163,6 +163,10 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
 
     /// <summary>Export documentation of a database (null: the connection's own) and, from a schema row, one schema.</summary>
     public event Action<string?, string?, DatabaseSession?>? DocumentationRequested;
+
+    /// <summary>Back up (false) or restore (true) the given database, or the connection's own when null, on the row's
+    /// open connection (the window makes it active first).</summary>
+    public event Action<string?, bool, DatabaseSession?>? BackupRequested;
 
     /// <summary>Whether any connection is open.</summary>
     public bool IsConnected => OpenSessions.Count > 0;
@@ -623,6 +627,9 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
     public bool SelectedCanDocument => SelectedHasDatabase &&
                                        SelectedNode!.Kind is NavigatorNodeKind.Connection or NavigatorNodeKind.Database or NavigatorNodeKind.Schema;
 
+    /// <summary>Back up / Restore: the connected connection or one of its databases.</summary>
+    public bool SelectedCanBackup => SelectedHasDatabase && SelectedNode!.Kind is NavigatorNodeKind.Connection or NavigatorNodeKind.Database;
+
     public bool SelectedHasName => SelectedNode is { Kind: not NavigatorNodeKind.Message };
 
     /// <summary>The object of an object row, or of the table a column / index / key row belongs to.</summary>
@@ -721,6 +728,18 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         if (!SelectedCanDocument) return;
         var node = SelectedNode!;
         DocumentationRequested?.Invoke(DatabaseOf(node), node.Kind == NavigatorNodeKind.Schema ? node.Title : null, SessionOf(node));
+    }
+
+    [RelayCommand]
+    private void BackupDatabase()
+    {
+        if (SelectedCanBackup) BackupRequested?.Invoke(SelectedNode!.Kind == NavigatorNodeKind.Database ? DatabaseOf(SelectedNode) : null, false, SessionOf(SelectedNode));
+    }
+
+    [RelayCommand]
+    private void RestoreDatabase()
+    {
+        if (SelectedCanBackup) BackupRequested?.Invoke(SelectedNode!.Kind == NavigatorNodeKind.Database ? DatabaseOf(SelectedNode) : null, true, SessionOf(SelectedNode));
     }
 
     [RelayCommand]

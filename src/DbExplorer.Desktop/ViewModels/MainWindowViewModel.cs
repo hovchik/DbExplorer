@@ -47,6 +47,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ComparerViewModel comparer,
         LabViewModel lab,
         SecurityViewModel security,
+        JobsViewModel jobs,
         NavigatorViewModel navigator,
         WorkspaceStore workspace,
         AssistantSettings assistantSettings,
@@ -85,9 +86,10 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
         Lab = lab;
         Security = security;
+        Jobs = jobs;
         Navigator = navigator;
         _showNavigator = settings.ShowNavigator;
-        _tabs = [navigator, objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, erModel, queryBuilder, query, comparer, lab, security];
+        _tabs = [navigator, objects, search, dataSearch, indexes, locks, activity, diagram, tableDesigner, erModel, queryBuilder, query, comparer, lab, security, jobs];
 
         objects.ShowInDiagramRequested += table =>
         {
@@ -110,6 +112,11 @@ public partial class MainWindowViewModel : ViewModelBase
             query.OpenInNewTab(sql, database: database);
         };
         queryBuilder.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, database: database);
+        };
+        jobs.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;
             query.OpenInNewTab(sql, database: database);
@@ -171,6 +178,7 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.HideRequested += () => ShowNavigator = false;
         navigator.ObjectActionRequested += (action, obj, session) => _ = OnNavigatorObjectActionAsync(action, obj, session);
         navigator.DocumentationRequested += (database, schema, session) => _ = ExportDocumentationFromNavigatorAsync(database, schema, session);
+        navigator.BackupRequested += (database, restore, session) => _ = BackupFromNavigatorAsync(database, restore, session);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
 
@@ -200,6 +208,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (session is not null && !ReferenceEquals(session, Session) && !await ActivateAsync(session)) return;
         OnNavigatorObjectAction(action, obj);
+    }
+
+    private async Task BackupFromNavigatorAsync(string? database, bool restore, DatabaseSession? session)
+    {
+        if (session is not null && !ReferenceEquals(session, Session) && !await ActivateAsync(session)) return;
+        OpenBackupRestore(database, restore);
     }
 
     private async Task ExportDocumentationFromNavigatorAsync(string? database, string? schema, DatabaseSession? session)
@@ -297,7 +311,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Every app-wide setting in one window (Ctrl+, or the theme menu).</summary>
     [RelayCommand]
-    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs));
+    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs)
+    {
+        CurrentVersion = AppVersion,
+        CheckForUpdatesNow = _updates is null ? null : CheckForUpdatesNowAsync
+    });
 
     /// <summary>Runs at least this long notify when they finish out of sight (0 = never), from Preferences.</summary>
     public TimeSpan LongRunNotifyThreshold => TimeSpan.FromSeconds(_settings.LongRunNotifySeconds);
@@ -334,6 +352,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public ComparerViewModel Comparer { get; }
     public LabViewModel Lab { get; }
     public SecurityViewModel Security { get; }
+
+    public JobsViewModel Jobs { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -947,7 +967,7 @@ public partial class MainWindowViewModel : ViewModelBase
         activate |= Session is null;
         if (activate && confirmSwitch && !await ConfirmSwitchAsync()) return;
 
-        if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
+        if (profile.MissingPassword || profile.Ssh.NeedsPassword)
         {
             // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");
@@ -1162,6 +1182,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
         ExportDocumentationCommand.NotifyCanExecuteChanged();
+        BackupDatabaseCommand.NotifyCanExecuteChanged();
+        RestoreDatabaseCommand.NotifyCanExecuteChanged();
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 }
@@ -1181,5 +1203,6 @@ public enum AppTab
     Locks,
     Activity,
     Lab,
-    Security
+    Security,
+    Jobs
 }

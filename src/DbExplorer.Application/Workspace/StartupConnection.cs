@@ -29,7 +29,7 @@ public static class StartupConnection
             return (StartupConnectionAction.Select, profile, $"{profile.DisplayName} is a production connection, so it was not reopened. Click Connect to open it.");
 
         // A password that was not saved would pop a dialog before the window is even up; let the user ask for it.
-        if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
+        if (profile.MissingPassword || profile.Ssh.NeedsPassword)
             return (StartupConnectionAction.Select, profile, $"{profile.DisplayName} needs a password, so it was not reopened. Click Connect to open it.");
 
         return (StartupConnectionAction.Connect, profile, null);

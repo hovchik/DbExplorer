@@ -43,6 +43,7 @@ public partial class ResultGridView
             if (_rebuilding) return;
             _state.PivotOn = PivotToggle.IsChecked == true;
             if (_state.PivotOn) _state.Pivot ??= DefaultPivot();
+            if (_state.PivotOn && _state.ChartOn) { _state.ChartOn = false; SyncChartControls(); UpdateChart(); }
             SyncPivotControls();
             UpdatePivot();
         };
@@ -91,7 +92,7 @@ public partial class ResultGridView
             PivotToggle.IsEnabled = ResultSet is not null && _columns.Count > 0;
             PivotBar.IsVisible = on;
             PivotGrid.IsVisible = on;
-            BodyGrid.IsVisible = !on;
+            BodyGrid.IsVisible = !on && !(ResultSet is not null && _state.ChartOn);
             if (!on) return;
 
             var spec = _state.Pivot ??= DefaultPivot();

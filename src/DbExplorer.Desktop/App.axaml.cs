@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using DbExplorer.Application;
 using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Diagnostics;
+using DbExplorer.Application.Updates;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
@@ -41,6 +42,10 @@ public partial class App : Avalonia.Application
             .AddMySqlProvider();      // <- new engines are registered here
 
         services.AddSingleton<ISshHostKeyPrompt, SshHostKeyPrompt>();
+        services.AddSingleton<IReleaseSource>(_ => new GitHubReleaseSource(
+            new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, MainWindowViewModel.AppVersion));
+        services.AddSingleton(sp => new UpdateChecker(
+            sp.GetRequiredService<IReleaseSource>(), sp.GetRequiredService<AppSettingsService>(), MainWindowViewModel.AppVersion));
         services.AddSingleton<DialogService>();
         services.AddSingleton<IDialogService>(sp => sp.GetRequiredService<DialogService>());
         services.AddSingleton<ObjectsViewModel>();
@@ -55,6 +60,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<ErModelViewModel>();
         services.AddSingleton<QueryBuilderViewModel>();
         services.AddSingleton<SecurityViewModel>();
+        services.AddSingleton<JobsViewModel>();
         services.AddTransient<QueryViewModel>();
         services.AddSingleton<Func<QueryViewModel>>(sp => sp.GetRequiredService<QueryViewModel>);
         services.AddSingleton<QueryWorkspaceViewModel>();
@@ -74,6 +80,7 @@ public partial class App : Avalonia.Application
         Keymap.Current = provider.GetRequiredService<Application.Shortcuts.KeymapService>();
         var vm = provider.GetRequiredService<MainWindowViewModel>();
         vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
+        vm.AttachUpdates(provider.GetRequiredService<UpdateChecker>());
         var window = new MainWindow { DataContext = vm };
         provider.GetRequiredService<DialogService>().Owner = window;
         return window;
@@ -152,6 +159,7 @@ public partial class App : Avalonia.Application
 
         vm.StartupFiles = StartupFiles;
         _ = vm.InitializeAsync();
+        _ = vm.CheckForUpdatesAtStartAsync(TimeSpan.FromSeconds(5));
         OpenChannel?.Listen(paths => Dispatcher.UIThread.Post(async () =>
         {
             window.BringToFront();

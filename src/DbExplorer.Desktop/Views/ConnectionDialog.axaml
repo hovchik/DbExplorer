@@ -139,12 +139,19 @@
           <!-- SQLite: a file instead of a server -->
           <StackPanel Grid.Column="2" Grid.ColumnSpan="3" IsVisible="{Binding IsFileEngine}">
             <TextBlock Classes="field" Text="File" />
-            <Grid ColumnDefinitions="*,6,Auto,6,Auto">
-              <TextBox Grid.Column="0" x:Name="FileBox" Text="{Binding Host}" Watermark="path to a .db, .sqlite or .sqlite3 file"
-                       ToolTip.Tip="The SQLite database file. The app never creates it by accident: use New file… for an empty database." />
-              <Button Grid.Column="2" Content="Browse…" Click="OnBrowseFile" ToolTip.Tip="Open an existing SQLite database file" />
-              <Button Grid.Column="4" Content="New file…" Click="OnNewFile" ToolTip.Tip="Create an empty SQLite database file" />
-            </Grid>
+            <TextBox x:Name="FileBox" Text="{Binding Host}" Watermark="path to a .db, .sqlite or .sqlite3 file"
+                     ToolTip.Tip="The SQLite database file. The app never creates it by accident: use New file… for an empty database.">
+              <TextBox.InnerRightContent>
+                <StackPanel Orientation="Horizontal" Margin="0,0,2,0">
+                  <Button Content="Browse…" Padding="8,0" MinHeight="0" VerticalAlignment="Stretch" VerticalContentAlignment="Center"
+                          Background="Transparent" BorderThickness="0" Click="OnBrowseFile"
+                          ToolTip.Tip="Open an existing SQLite database file" />
+                  <Button Content="New file…" Padding="8,0" MinHeight="0" VerticalAlignment="Stretch" VerticalContentAlignment="Center"
+                          Background="Transparent" BorderThickness="0" Click="OnNewFile"
+                          ToolTip.Tip="Create an empty SQLite database file" />
+                </StackPanel>
+              </TextBox.InnerRightContent>
+            </TextBox>
           </StackPanel>
         </Grid>
         <TextBlock Classes="hint" TextWrapping="Wrap" FontSize="12" IsVisible="{Binding IsFileEngine}"

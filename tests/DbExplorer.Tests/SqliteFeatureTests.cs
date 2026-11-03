@@ -286,4 +286,19 @@ public sealed class SqliteFeatureTests : IAsyncLifetime
         Assert.DoesNotContain("ALTER TABLE ALTER COLUMN", ddl);
         Assert.Contains("\"a\"\"b\"", SqlSymbolFinder.QuoteFor("Sqlite")("a\"b"));
     }
+
+    [Fact]
+    public void A_file_connection_never_asks_for_a_password()
+    {
+        var file = new ConnectionProfile { Name = "Shop", ProviderKey = SqlDialect.SqliteKey, Host = Path.Combine(_root, "shop.db") };
+        Assert.True(file.IsFile);
+        Assert.False(file.NeedsDatabasePassword);
+        Assert.True(new ConnectionProfile { ProviderKey = SqlDialect.PostgresKey, UserName = "u" }.NeedsDatabasePassword);
+
+        // Reopened on start like any connection with its password saved.
+        var (action, _, note) = DbExplorer.Application.Workspace.StartupConnection.Decide(
+            new DbExplorer.Application.Workspace.WorkspaceState { ConnectionId = file.Id, WasConnected = true }, [file], true);
+        Assert.Equal(DbExplorer.Application.Workspace.StartupConnectionAction.Connect, action);
+        Assert.Null(note);
+    }
 }

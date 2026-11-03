@@ -140,7 +140,6 @@ public sealed class SqlCompletionEngine
         new("JSON_OBJECT", "JSON_OBJECT(key, value, …)", "MySql"), new("JSON_ARRAYAGG", "JSON_ARRAYAGG(expression)", "MySql"),
         new("GREATEST", "GREATEST(value, …)", "MySql"), new("LEAST", "LEAST(value, …)", "MySql"),
         // SQLite
-        new("DATE", "date(value, modifier, …) → 'YYYY-MM-DD'", "Sqlite"), new("DATETIME", "datetime(value, modifier, …)", "Sqlite"),
         new("STRFTIME", "strftime('%Y-%m-%d', value, modifier, …)", "Sqlite"), new("JULIANDAY", "julianday(value)", "Sqlite"),
         new("UNIXEPOCH", "unixepoch(value)", "Sqlite"), new("IFNULL", "ifnull(value, replacement)", "Sqlite"),
         new("IIF", "iif(condition, whenTrue, whenFalse)", "Sqlite"), new("LENGTH", "length(text)", "Sqlite"),

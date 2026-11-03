@@ -25,7 +25,7 @@ public static class SqlitePlanParser
 
     public static ExecutionPlan Parse(QueryResultSet rs, string? statement)
     {
-        var root = new PlanNode { Operator = "QUERY PLAN", Object = null, Detail = null };
+        var root = new PlanNode { Operator = "QUERY PLAN", Object = null, Detail = null, HasRowEstimates = false };
         var byId = new Dictionary<long, PlanNode>();
         var raw = new StringBuilder("QUERY PLAN\n");
         var depth = new Dictionary<long, int> { [0] = 0 };
@@ -59,7 +59,7 @@ public static class SqlitePlanParser
     private static PlanNode Node(string detail)
     {
         var m = Step.Match(detail);
-        if (!m.Success) return new PlanNode { Operator = detail, OwnWeight = 0.1 };
+        if (!m.Success) return new PlanNode { Operator = detail, OwnWeight = 0.1, HasRowEstimates = false };
         var op = m.Groups["op"].Value;
         var rest = m.Groups["rest"].Value.Trim();
         if (op is "SCAN" or "SEARCH")
@@ -75,9 +75,10 @@ public static class SqlitePlanParser
                 Operator = op,
                 Object = table,
                 Detail = string.IsNullOrEmpty(using_) ? null : using_,
-                OwnWeight = op == "SCAN" ? (covering ? 0.6 : 1.0) : 0.25
+                OwnWeight = op == "SCAN" ? (covering ? 0.6 : 1.0) : 0.25,
+                HasRowEstimates = false
             };
         }
-        return new PlanNode { Operator = op, Detail = rest.Length > 0 ? rest : null, OwnWeight = op == "USE TEMP B-TREE" ? 0.4 : 0.1 };
+        return new PlanNode { Operator = op, Detail = rest.Length > 0 ? rest : null, OwnWeight = op == "USE TEMP B-TREE" ? 0.4 : 0.1, HasRowEstimates = false };
     }
 }

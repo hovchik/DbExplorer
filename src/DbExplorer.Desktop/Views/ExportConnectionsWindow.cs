@@ -87,7 +87,7 @@ public sealed class ExportConnectionsWindow : Window
             Close(new ConnectionExportRequest(selected, password.Text));
         };
 
-        var missing = profiles.Count(p => !p.IntegratedSecurity && string.IsNullOrEmpty(p.Password));
+        var missing = profiles.Count(p => p.NeedsDatabasePassword);
         Content = new StackPanel
         {
             Margin = new Thickness(16),

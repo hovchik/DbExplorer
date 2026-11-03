@@ -57,6 +57,14 @@ public sealed class ConnectionProfile
     [JsonIgnore]
     public bool IsProduction => Environment == ConnectionEnvironment.Production;
 
+    /// <summary>A database file (SQLite): Host holds its path, and there is no server, sign-in or password.</summary>
+    [JsonIgnore]
+    public bool IsFile => string.Equals(ProviderKey, "Sqlite", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The database sign-in needs a password that was not saved, so connecting must ask for it.</summary>
+    [JsonIgnore]
+    public bool NeedsDatabasePassword => !IsFile && !IntegratedSecurity && string.IsNullOrEmpty(Password);
+
     public ConnectionProfile Clone()
     {
         var copy = (ConnectionProfile)MemberwiseClone();

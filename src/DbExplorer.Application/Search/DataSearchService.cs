@@ -82,6 +82,10 @@ public sealed class DataSearchService
             ? null
             : new HashSet<string>(request.Schemas, StringComparer.OrdinalIgnoreCase);
 
+        var only = request.OnlyTables is null
+            ? null
+            : new HashSet<(string, string)>(request.OnlyTables.Select(t => (t.Schema.ToUpperInvariant(), t.Table.ToUpperInvariant())));
+
         var targets = new List<(DbTableTarget Target, long Rows)>();
         var tooLarge = new List<DbObject>();
 
@@ -91,6 +95,7 @@ public sealed class DataSearchService
                 || (request.IncludeViews && obj.Type is DbObjectType.View or DbObjectType.MaterializedView);
             if (!include) continue;
             if (schemas is not null && !schemas.Contains(obj.Schema)) continue;
+            if (only is not null && !only.Contains((obj.Schema.ToUpperInvariant(), obj.Name.ToUpperInvariant()))) continue;
             if (!string.IsNullOrWhiteSpace(request.TableNameFilter)
                 && !obj.Name.Contains(request.TableNameFilter.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
 

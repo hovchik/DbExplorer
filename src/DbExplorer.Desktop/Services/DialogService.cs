@@ -51,6 +51,10 @@ public interface IDialogService
     /// <summary>The keyboard shortcut sheet (F1); one at a time, brought to the front if already open.</summary>
     void ShowShortcutSheet();
 
+    /// <summary>The Preferences window (Ctrl+,); one at a time, brought to the front if already open. The view model is
+    /// created only when a new window opens.</summary>
+    void ShowPreferences(Func<PreferencesViewModel> create);
+
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
     Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
 
@@ -93,6 +97,12 @@ public interface IDialogService
 
     /// <summary>Lets the user pick a text file and reads it; null when cancelled.</summary>
     Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName);
+
+    /// <summary>Asks what documentation to export; null when cancelled.</summary>
+    Task<DocumentationRequest?> PromptDocumentationAsync(DocumentationPrompt prompt);
+
+    /// <summary>Lets the user pick where to save a file; its local path, or null when cancelled or not a local file.</summary>
+    Task<string?> PickSaveFilePathAsync(string title, string suggestedName, string extension, string typeName);
 }
 
 public sealed class DialogService(ProviderRegistry registry, SshTunnelService tunnels) : IDialogService
@@ -255,6 +265,26 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         return file.Name;
     }
 
+    public async Task<DocumentationRequest?> PromptDocumentationAsync(DocumentationPrompt prompt)
+    {
+        if (Owner is null) return null;
+        return await new ExportDocumentationWindow(prompt).ShowDialog<DocumentationRequest?>(Owner);
+    }
+
+    public async Task<string?> PickSaveFilePathAsync(string title, string suggestedName, string extension, string typeName)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggestedName + "." + extension,
+            DefaultExtension = extension,
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = ["*." + extension] }]
+        });
+        return file?.TryGetLocalPath();
+    }
+
     public async Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName)
     {
         if (Owner?.StorageProvider is not { } storage) return null;
@@ -338,6 +368,21 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         _shortcutSheet = new ShortcutSheetWindow { DataContext = new ShortcutSheetViewModel() };
         _shortcutSheet.Closed += (_, _) => _shortcutSheet = null;
         _shortcutSheet.Show(Owner);
+    }
+
+    private PreferencesWindow? _preferences;
+
+    public void ShowPreferences(Func<PreferencesViewModel> create)
+    {
+        if (Owner is null) return;
+        if (_preferences is not null)
+        {
+            _preferences.Activate();
+            return;
+        }
+        _preferences = new PreferencesWindow { DataContext = create() };
+        _preferences.Closed += (_, _) => _preferences = null;
+        _preferences.Show(Owner);
     }
 
     public Task ShowGetDataAsync(

@@ -1,3 +1,4 @@
+using DbExplorer.Application.Assistant;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -5,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
 using DbExplorer.Application.Connections;
 using DbExplorer.Application.Providers;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Application.Workspace;
 using DbExplorer.Core.Connections;
@@ -20,6 +22,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ProviderRegistry _registry;
     private readonly IDialogService _dialogs;
     private readonly AppSettingsService _settings;
+    private readonly AssistantSettings _assistantSettings;
     private readonly ISessionAware[] _tabs;
     private readonly WorkspaceStore _workspace;
 
@@ -44,8 +47,10 @@ public partial class MainWindowViewModel : ViewModelBase
         LabViewModel lab,
         SecurityViewModel security,
         NavigatorViewModel navigator,
-        WorkspaceStore workspace)
+        WorkspaceStore workspace,
+        AssistantSettings assistantSettings)
     {
+        _assistantSettings = assistantSettings;
         _workspace = workspace;
         SavedWorkspace = workspace.Load();
         if (Enum.TryParse<AppTab>(SavedWorkspace.MainTab, out var savedTab) && Enum.IsDefined(savedTab)) _selectedTab = savedTab;
@@ -55,6 +60,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogs = dialogs;
         _settings = settings;
         _selectedTheme = settings.Theme;
+        // The Preferences window changes the theme too; the toolbar icon follows.
+        settings.ThemeChanged += theme => SelectedTheme = theme;
         Objects = objects;
         Search = search;
         DataSearch = dataSearch;
@@ -151,6 +158,7 @@ public partial class MainWindowViewModel : ViewModelBase
         };
         navigator.HideRequested += () => ShowNavigator = false;
         navigator.ObjectActionRequested += OnNavigatorObjectAction;
+        navigator.DocumentationRequested += (database, schema) => _ = ExportDocumentationAsync(database, schema);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
 
@@ -264,7 +272,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SetTheme(AppThemeMode mode) => SelectedTheme = mode;
 
-    /// <summary>Draw with the CPU instead of the graphics card from the next start (theme menu).</summary>
+    /// <summary>Every app-wide setting in one window (Ctrl+, or the theme menu).</summary>
+    [RelayCommand]
+    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs));
+
+    /// <summary>Runs at least this long notify when they finish out of sight (0 = never), from Preferences.</summary>
+    public TimeSpan LongRunNotifyThreshold => TimeSpan.FromSeconds(_settings.LongRunNotifySeconds);
+
+    /// <summary>Draw with the CPU instead of the graphics card from the next start (palette; Preferences has the same switch).</summary>
     public bool SoftwareRendering
     {
         get => _settings.SoftwareRendering;
@@ -337,6 +352,8 @@ public partial class MainWindowViewModel : ViewModelBase
             await Query.RestoreTabsAsync();
             if (SavedWorkspace.QueryTabIndex is { } index && index >= 0 && index < Query.Documents.Count)
                 Query.SelectedDocument = Query.Documents[index];
+            // Files named on the command line (Explorer's Open) come after the restored tabs and are the ones shown.
+            if (StartupFiles.Count > 0) await OpenFilesAsync(StartupFiles);
             foreach (var p in ConnectionFolders.Order(await _store.LoadAsync())) Profiles.Add(p);
             (action, var saved, note) = StartupConnection.Decide(SavedWorkspace, Profiles, _settings.ReconnectOnStart);
             SelectedProfile = saved ?? Profiles.FirstOrDefault();
@@ -352,6 +369,32 @@ public partial class MainWindowViewModel : ViewModelBase
         if (action == StartupConnectionAction.Connect && ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
         // Nothing connected (not asked to, or the connect failed): open on the Query tab rather than a disabled one.
         ShowQueryWhileOffline();
+    }
+
+    /// <summary>The files the app was started with (Explorer's Open on a .sql file).</summary>
+    public IReadOnlyList<string> StartupFiles { get; set; } = [];
+
+    /// <summary>Opens files in Query tabs (from Explorer, another start of the app or a drop on the window) and shows
+    /// the Query tab; a file that cannot be opened is named in the status bar.</summary>
+    public async Task OpenFilesAsync(IReadOnlyList<string> paths)
+    {
+        var failed = new List<string>();
+        var opened = 0;
+        foreach (var path in paths)
+        {
+            try
+            {
+                await Query.OpenPathAsync(path);
+                opened++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqlFileException or ArgumentException or NotSupportedException)
+            {
+                failed.Add(ex is FileNotFoundException or DirectoryNotFoundException ? $"{Path.GetFileName(path)} was not found" : ex.Message);
+            }
+        }
+        if (opened > 0) SelectedTab = AppTab.Query;
+        if (failed.Count > 0)
+            ShowError((failed.Count == 1 ? "Could not open a file: " : $"Could not open {failed.Count} files: ") + string.Join("; ", failed));
     }
 
     // ----- Offline: the Query tab stands in for the tabs that need a connection -----
@@ -389,7 +432,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The window's current normal bounds, kept up to date by the window and saved on close.</summary>
     public WindowPlacement? WindowPlacement { get; set; }
 
-    /// <summary>Theme menu: open the last connection again at start.</summary>
+    /// <summary>Open the last connection again at start (Preferences and the palette).</summary>
     public bool ReconnectOnStart
     {
         get => _settings.ReconnectOnStart;
@@ -920,6 +963,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
+        ExportDocumentationCommand.NotifyCanExecuteChanged();
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 }

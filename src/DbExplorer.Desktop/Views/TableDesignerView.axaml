@@ -4,205 +4,405 @@
              xmlns:vm="using:DbExplorer.Desktop.ViewModels"
              x:Class="DbExplorer.Desktop.Views.TableDesignerView">
   <UserControl.Styles>
-    <Style Selector="ItemsControl.rows CheckBox">
+    <!-- Editor rows: one grid per row, the same column widths as the header above them -->
+    <Style Selector="Border.row">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.row:focus-within">
+      <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+    </Style>
+    <Style Selector="Border.row CheckBox">
       <Setter Property="Margin" Value="0" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
-    <Style Selector="ItemsControl.rows TextBox, ItemsControl.rows AutoCompleteBox, ItemsControl.rows ComboBox">
+    <Style Selector="Border.row TextBox, Border.row AutoCompleteBox, Border.row ComboBox">
       <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+    <Style Selector="Grid.header">
+      <Setter Property="Margin" Value="2,0,2,2" />
     </Style>
     <Style Selector="Grid.header TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
       <Setter Property="FontSize" Value="12" />
     </Style>
+
+    <!-- What a column row is against the open table: a thin bar at its left edge -->
+    <Style Selector="Border.marker">
+      <Setter Property="Width" Value="3" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Margin" Value="0,2,5,2" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.marker.new">
+      <Setter Property="Background" Value="{DynamicResource AppStatusConnectedBrush}" />
+    </Style>
+    <Style Selector="Border.marker.changed">
+      <Setter Property="Background" Value="{DynamicResource AppStatusBusyBrush}" />
+    </Style>
+
+    <!-- Header card and mode badge -->
+    <Style Selector="Border.card">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource AppStatusConnectedBrush}" />
+    </Style>
+    <Style Selector="Border.badge.alter">
+      <Setter Property="Background" Value="{DynamicResource AppStatusBusyBrush}" />
+    </Style>
+    <Style Selector="Border.badge TextBlock">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="StackPanel.fields > TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+
+    <!-- Counts on the suggestions panel -->
+    <Style Selector="Border.count">
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="7,0" />
+      <Setter Property="MinHeight" Value="18" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.count TextBlock">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Suggestion cards: the left edge says how serious -->
+    <Style Selector="Border.suggestion">
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="3,1,1,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppObjectProcedureBrush}" />
+    </Style>
+    <Style Selector="Border.suggestion.warning">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppPlanWarningBrush}" />
+    </Style>
+    <Style Selector="Border.suggestion.error">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
+    <Style Selector="TabControl.sections TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
   </UserControl.Styles>
 
   <DockPanel Margin="4">
-    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
-      <TextBlock Text="Database" />
-      <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
-                               ToolTip.Tip="Database the table is created in. Type to filter the list." />
-      <TextBlock Text="Schema" />
-      <AutoCompleteBox Width="130" ItemsSource="{Binding Schemas}" Text="{Binding Schema, Mode=TwoWay}"
-                       FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus"
-                       ToolTip.Tip="An existing schema, or a new one (the script creates it)" />
-      <TextBlock Text="Table" />
-      <TextBox Width="240" Text="{Binding TableName}" Watermark="Table name" />
-      <Button Content="New table" Command="{Binding NewTableCommand}" ToolTip.Tip="Start over with an empty design" />
-      <AutoCompleteBox Width="220" ItemsSource="{Binding TableNames}" Text="{Binding OpenTableName, Mode=TwoWay}"
-                       FilterMode="Contains" MinimumPrefixLength="0" GotFocus="OnPickerFocus" Watermark="schema.table"
-                       ToolTip.Tip="An existing table of this database to change" />
-      <Button Content="Open table" Command="{Binding OpenExistingTableCommand}"
-              ToolTip.Tip="Open an existing table: edit it and the designer writes the ALTER script" />
-      <Button Content="Revert" Command="{Binding RevertChangesCommand}" IsVisible="{Binding IsAltering}"
-              ToolTip.Tip="Undo every edit: back to the table as it is on the server" />
-      <Button Content="Open created table" Command="{Binding OpenCreatedCommand}" IsVisible="{Binding LastCreated, Converter={x:Static ObjectConverters.IsNotNull}}"
-              ToolTip.Tip="Show the table you just created in the Objects tab" />
-      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
-    </WrapPanel>
-
-    <Grid MinHeight="0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="5*" />
-        <ColumnDefinition Width="6" />
-        <!-- About 400 px at 1400 px; shrinks with the window so the editor keeps its room -->
-        <ColumnDefinition Width="2*" MinWidth="240" MaxWidth="440" />
-      </Grid.ColumnDefinitions>
-      <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="14" Margin="0,4,8,8">
-
-          <!-- Columns -->
-          <StackPanel Spacing="4">
-            <TextBlock Classes="section" Text="{Binding ModeText}" />
-            <TextBlock Classes="hint" TextWrapping="Wrap" MaxWidth="780" HorizontalAlignment="Left" IsVisible="{Binding IsAltering}"
-                       Text="Edit columns, keys and indexes; the script below holds only the ALTER statements for what changed. New columns are added at the end." />
-            <Grid Classes="header" ColumnDefinitions="200,170,80,52,52,64,170,Auto" Margin="0,0,0,2">
-              <TextBlock Grid.Column="0" Text="Name" />
-              <TextBlock Grid.Column="1" Text="Type" />
-              <TextBlock Grid.Column="2" Text="Size" ToolTip.Tip="Length (100, max) or precision,scale (18,2)" />
-              <TextBlock Grid.Column="3" Text="Null" HorizontalAlignment="Center" ToolTip.Tip="Allows NULL" />
-              <TextBlock Grid.Column="4" Text="Key" HorizontalAlignment="Center" ToolTip.Tip="Part of the primary key" />
-              <TextBlock Grid.Column="5" Text="Identity" HorizontalAlignment="Center" ToolTip.Tip="Values generated by the server" />
-              <TextBlock Grid.Column="6" Text="Default" ToolTip.Tip="SQL expression, e.g. 0, N'new', SYSUTCDATETIME(), now()" />
-            </Grid>
-            <ItemsControl Classes="rows" ItemsSource="{Binding Columns}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:ColumnRow">
-                  <Grid ColumnDefinitions="200,170,80,52,52,64,170,Auto" Margin="0,0,0,4">
-                    <TextBox Grid.Column="0" Text="{Binding Name}" Watermark="Column name" ToolTip.Tip="{Binding Origin}" />
-                    <AutoCompleteBox Grid.Column="1" Text="{Binding Type, Mode=TwoWay}" Watermark="Type"
-                                     ItemsSource="{Binding $parent[UserControl].DataContext.TypeNames}"
-                                     FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" />
-                    <TextBox Grid.Column="2" Text="{Binding Size}" Watermark="size" />
-                    <CheckBox AutomationProperties.Name="Allows null" Grid.Column="3" IsChecked="{Binding IsNullable}" IsEnabled="{Binding !IsPrimaryKey}" />
-                    <CheckBox AutomationProperties.Name="Primary key" Grid.Column="4" IsChecked="{Binding IsPrimaryKey}" />
-                    <CheckBox AutomationProperties.Name="Identity" Grid.Column="5" IsChecked="{Binding IsIdentity}" />
-                    <TextBox Grid.Column="6" Text="{Binding Default}" Watermark="default" />
-                    <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="2">
-                      <Button Classes="icon" Content="↑" ToolTip.Tip="Move up" CommandParameter="{Binding}"
-                              Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" />
-                      <Button Classes="icon" Content="↓" ToolTip.Tip="Move down" CommandParameter="{Binding}"
-                              Command="{Binding $parent[UserControl].DataContext.MoveColumnDownCommand}" />
-                      <Button Classes="icon" Content="✕" ToolTip.Tip="Remove column" CommandParameter="{Binding}"
-                              Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" />
-                    </StackPanel>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Button Classes="compact" Content="＋ Add column" Command="{Binding AddColumnCommand}" HorizontalAlignment="Left" />
+    <!-- What is being designed, where, and the one button that runs it -->
+    <Border DockPanel.Dock="Top" Classes="card" Background="{DynamicResource AppBarBackgroundBrush}" Padding="10,8" Margin="0,0,0,6">
+      <StackPanel Spacing="8">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+            <AutoCompleteBox Width="220" ItemsSource="{Binding TableNames}" Text="{Binding OpenTableName, Mode=TwoWay}"
+                             FilterMode="Contains" MinimumPrefixLength="0" GotFocus="OnPickerFocus" Watermark="Open existing table…"
+                             AutomationProperties.Name="Existing table to open" KeyDown="OnOpenTableKeyDown"
+                             ToolTip.Tip="An existing table of this database to change. Enter opens it." />
+            <Button Content="Open" Command="{Binding OpenExistingTableCommand}"
+                    ToolTip.Tip="Open the table: edit it and the designer writes the ALTER script" />
+            <Button Content="＋ New table" Command="{Binding NewTableCommand}" ToolTip.Tip="Start over with an empty design" />
           </StackPanel>
-
-          <!-- Foreign keys -->
-          <StackPanel Spacing="4">
-            <TextBlock Classes="section" Text="Foreign keys" />
-            <TextBlock Classes="hint" Text="A column of this table that must match a key of an existing table." IsVisible="{Binding !HasForeignKeys}" />
-            <Grid Classes="header" ColumnDefinitions="200,260,180,200,Auto" IsVisible="{Binding HasForeignKeys}">
-              <TextBlock Grid.Column="0" Text="Column" />
-              <TextBlock Grid.Column="1" Text="References table" />
-              <TextBlock Grid.Column="2" Text="Column" />
-              <TextBlock Grid.Column="3" Text="Name (optional)" />
-            </Grid>
-            <ItemsControl Classes="rows" ItemsSource="{Binding ForeignKeys}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:ForeignKeyRow">
-                  <Grid ColumnDefinitions="200,260,180,200,Auto" Margin="0,0,0,4">
-                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ColumnChoices}" SelectedItem="{Binding Column}"
-                              PlaceholderText="Column" />
-                    <AutoCompleteBox Grid.Column="1" ItemsSource="{Binding TableChoices}" Text="{Binding ReferencedTable, Mode=TwoWay}"
-                                     FilterMode="Contains" MinimumPrefixLength="0" Watermark="schema.table" GotFocus="OnPickerFocus" />
-                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ReferencedColumnChoices}"
-                              SelectedItem="{Binding ReferencedColumn}" PlaceholderText="Key column" />
-                    <TextBox Grid.Column="3" Text="{Binding Name}" Watermark="FK_… (automatic)" />
-                    <Button Grid.Column="4" Classes="icon" Content="✕" ToolTip.Tip="Remove foreign key" CommandParameter="{Binding}"
-                            Command="{Binding $parent[UserControl].DataContext.RemoveForeignKeyCommand}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Button Classes="compact" Content="＋ Add foreign key" Command="{Binding AddForeignKeyCommand}" HorizontalAlignment="Left" />
-          </StackPanel>
-
-          <!-- Indexes -->
-          <StackPanel Spacing="4">
-            <TextBlock Classes="section" Text="Indexes" />
-            <TextBlock Classes="hint" Text="The primary key is indexed already. Add indexes for columns you search or join on." IsVisible="{Binding !HasIndexes}" />
-            <Grid Classes="header" ColumnDefinitions="380,64,200,Auto" IsVisible="{Binding HasIndexes}">
-              <TextBlock Grid.Column="0" Text="Columns (comma-separated, in order)" />
-              <TextBlock Grid.Column="1" Text="Unique" HorizontalAlignment="Center" />
-              <TextBlock Grid.Column="2" Text="Name (optional)" />
-            </Grid>
-            <ItemsControl Classes="rows" ItemsSource="{Binding Indexes}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:IndexRow">
-                  <Grid ColumnDefinitions="380,64,200,Auto" Margin="0,0,0,4">
-                    <TextBox Grid.Column="0" Text="{Binding Columns}" Watermark="CustomerId, CreatedAt" />
-                    <CheckBox AutomationProperties.Name="Unique" Grid.Column="1" IsChecked="{Binding IsUnique}" />
-                    <TextBox Grid.Column="2" Text="{Binding Name}" Watermark="IX_… (automatic)" />
-                    <Button Grid.Column="3" Classes="icon" Content="✕" ToolTip.Tip="Remove index" CommandParameter="{Binding}"
-                            Command="{Binding $parent[UserControl].DataContext.RemoveIndexCommand}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Button Classes="compact" Content="＋ Add index" Command="{Binding AddIndexCommand}" HorizontalAlignment="Left" />
-          </StackPanel>
-
-          <!-- Script -->
-          <StackPanel Spacing="6">
-            <TextBlock Classes="section" Text="Script" />
-            <TextBlock Classes="hint" TextWrapping="Wrap"
-                       Text="Updated as you edit. Nothing runs until you press Execute (Apply changes for an open table), which shows this script and asks first." />
-            <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="180" />
-            <WrapPanel>
-              <Button Classes="accent" Content="{Binding ExecuteLabel}" Command="{Binding ExecuteCommand}" Margin="0,0,8,0"
-                      ToolTip.Tip="Show the script, confirm, then run it in one transaction" />
-              <Button Content="Open in Query tab" Command="{Binding OpenInQueryTabCommand}" Margin="0,0,8,0"
-                      ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
-              <Button Content="Copy script" Command="{Binding CopyScriptCommand}" />
-            </WrapPanel>
-          </StackPanel>
-        </StackPanel>
-      </ScrollViewer>
-
-      <GridSplitter Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns" />
-
-      <!-- Suggestions -->
-      <Border Grid.Column="2" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-        <DockPanel Margin="8">
-          <TextBlock DockPanel.Dock="Top" Text="Suggestions" FontWeight="SemiBold" FontSize="14" />
-          <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,2,0,6" Text="{Binding SuggestionSummary}" />
-          <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button Content="Apply all" Command="{Binding ApplyAllSuggestionsCommand}" IsVisible="{Binding HasFixable}" Margin="0,0,6,4"
-                    ToolTip.Tip="Apply every suggestion that has a fix, one after the other" />
-            <Button Content="Show dismissed" Command="{Binding ShowDismissedCommand}" IsVisible="{Binding HasDismissed}" Margin="0,0,6,4" />
-          </WrapPanel>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Suggestions}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:DesignSuggestionItem">
-                  <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}">
-                    <StackPanel Spacing="4">
-                      <TextBlock TextWrapping="Wrap" FontWeight="SemiBold">
-                        <Run Text="{Binding SeverityText}" Foreground="{Binding SeverityColor}" />
-                        <Run Text=" · " />
-                        <Run Text="{Binding Title}" />
-                      </TextBlock>
-                      <TextBlock Classes="hint" Text="{Binding Detail}" TextWrapping="Wrap" />
-                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
-                        <Button Classes="compact" Content="{Binding FixLabel}" IsVisible="{Binding CanFix}" CommandParameter="{Binding}"
-                                Command="{Binding $parent[UserControl].DataContext.ApplySuggestionCommand}" />
-                        <Button Classes="compact" Content="Dismiss" IsVisible="{Binding CanDismiss}" CommandParameter="{Binding}"
-                                Command="{Binding $parent[UserControl].DataContext.DismissSuggestionCommand}" />
-                      </StackPanel>
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </ScrollViewer>
+          <Border DockPanel.Dock="Left" Classes="badge" Classes.alter="{Binding IsAltering}" Margin="0,0,8,0"
+                  ToolTip.Tip="NEW: the script creates the table. ALTER: it changes a table that exists.">
+            <TextBlock Text="{Binding ModeBadge}" />
+          </Border>
+          <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding TitleText}" FontSize="16" FontWeight="SemiBold" />
+            <Run Text="   " />
+            <Run Text="{Binding ChangeSummary}" Foreground="{DynamicResource AppHintForegroundBrush}" FontSize="12" />
+          </TextBlock>
         </DockPanel>
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top" Margin="8,0,0,0">
+            <Button Classes="compact" Click="OnShowSuggestionsClick" IsVisible="{Binding HasErrorCount}" VerticalAlignment="Center"
+                    Foreground="{DynamicResource AppDangerBrush}" AutomationProperties.Name="Show what to fix"
+                    Content="{Binding ErrorCount, StringFormat='{}{0} to fix first'}"
+                    ToolTip.Tip="Execute waits until these are fixed: they are listed under Suggestions" />
+            <Button Content="Show in Objects" Command="{Binding OpenCreatedCommand}" IsVisible="{Binding LastCreated, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    ToolTip.Tip="Show the table you just created or changed in the Objects tab" />
+            <Button Content="Revert" Command="{Binding RevertChangesCommand}" IsVisible="{Binding IsAltering}"
+                    ToolTip.Tip="Undo every edit: back to the table as it is on the server" />
+            <Button Classes="accent" Content="{Binding ExecuteLabel}" Command="{Binding ExecuteCommand}" MinWidth="120"
+                    ToolTip.Tip="Show the script, confirm, then run it in one transaction (Ctrl+Enter)" />
+          </StackPanel>
+          <WrapPanel>
+            <StackPanel Classes="fields" Orientation="Horizontal" Spacing="6" Margin="0,0,10,4">
+              <TextBlock Text="Database" />
+              <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                                       ToolTip.Tip="Database the table is created in. Type to filter the list." />
+            </StackPanel>
+            <StackPanel Classes="fields" Orientation="Horizontal" Spacing="6" Margin="0,0,10,4">
+              <TextBlock Text="Schema" />
+              <AutoCompleteBox Width="120" ItemsSource="{Binding Schemas}" Text="{Binding Schema, Mode=TwoWay}"
+                               FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" AutomationProperties.Name="Schema"
+                               ToolTip.Tip="An existing schema, or a new one (the script creates it)" />
+            </StackPanel>
+            <StackPanel Classes="fields" Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+              <TextBlock Text="Table" />
+              <TextBox Width="200" Text="{Binding TableName}" Watermark="Table name" AutomationProperties.Name="Table name" />
+            </StackPanel>
+          </WrapPanel>
+        </DockPanel>
+      </StackPanel>
+    </Border>
+
+    <TextBlock DockPanel.Dock="Bottom" Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" Margin="4,4,4,0" />
+
+    <Grid x:Name="Body" MinHeight="0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="3*" MinWidth="360" />
+        <ColumnDefinition Width="6" />
+        <ColumnDefinition Width="2*" MinWidth="260" MaxWidth="560" />
+      </Grid.ColumnDefinitions>
+
+      <TabControl x:Name="Sections" Grid.Column="0" Classes="sections" Padding="0,4,0,0">
+        <!-- Columns -->
+        <TabItem Header="{Binding ColumnsHeader}">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="2,6,0,0">
+              <Button Classes="compact" Content="＋ Add column" Command="{Binding AddColumnCommand}"
+                      ToolTip.Tip="Add a column below the one being edited (Alt+Insert)" />
+              <Button Classes="compact" Content="Common columns ▾" Click="OnCommonColumnsClick"
+                      ToolTip.Tip="Add a ready-made column: created at, name, email, an active flag…" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
+                         Text="Alt+Up/Down moves the column, Alt+Delete removes it" />
+            </StackPanel>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" SizeChanged="OnEditorSizeChanged">
+              <StackPanel MinWidth="580" HorizontalAlignment="Left" Spacing="2" Margin="0,0,0,4">
+                <Grid Classes="header" ColumnDefinitions="8,3*,2*,56,40,40,56,2*,76">
+                  <TextBlock Grid.Column="1" Text="Name" />
+                  <TextBlock Grid.Column="2" Text="Type" />
+                  <TextBlock Grid.Column="3" Text="Size" ToolTip.Tip="Length (100, max) or precision,scale (18,2)" />
+                  <TextBlock Grid.Column="4" Text="Null" HorizontalAlignment="Center" ToolTip.Tip="Allows NULL" />
+                  <TextBlock Grid.Column="5" Text="Key" HorizontalAlignment="Center" ToolTip.Tip="Part of the primary key" />
+                  <TextBlock Grid.Column="6" Text="Identity" HorizontalAlignment="Center" ToolTip.Tip="Values generated by the server" />
+                  <TextBlock Grid.Column="7" Text="Default" ToolTip.Tip="SQL expression, e.g. 0, N'new', SYSUTCDATETIME(), now()" />
+                </Grid>
+                <ItemsControl x:Name="ColumnList" ItemsSource="{Binding Columns}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ColumnRow">
+                      <Border Classes="row" GotFocus="OnColumnRowFocus">
+                        <Grid ColumnDefinitions="8,3*,2*,56,40,40,56,2*,76">
+                          <Border Grid.Column="0" Classes="marker" Classes.new="{Binding IsNew}" Classes.changed="{Binding IsChanged}"
+                                  ToolTip.Tip="{Binding ChangeText}" />
+                          <TextBox Grid.Column="1" Text="{Binding Name}" Watermark="Column name" ToolTip.Tip="{Binding Origin}"
+                                   AutomationProperties.Name="Column name" />
+                          <AutoCompleteBox Grid.Column="2" Text="{Binding Type, Mode=TwoWay}" Watermark="Type" AutomationProperties.Name="Column type"
+                                           ItemsSource="{Binding $parent[UserControl].DataContext.TypeNames}"
+                                           FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" />
+                          <TextBox Grid.Column="3" Text="{Binding Size}" Watermark="size" AutomationProperties.Name="Size" />
+                          <CheckBox AutomationProperties.Name="Allows null" Grid.Column="4" IsChecked="{Binding IsNullable}" IsEnabled="{Binding !IsPrimaryKey}" />
+                          <CheckBox AutomationProperties.Name="Primary key" Grid.Column="5" IsChecked="{Binding IsPrimaryKey}" />
+                          <CheckBox AutomationProperties.Name="Identity" Grid.Column="6" IsChecked="{Binding IsIdentity}" />
+                          <TextBox Grid.Column="7" Text="{Binding Default}" Watermark="default" AutomationProperties.Name="Default value" />
+                          <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="2">
+                            <Button Classes="icon" Content="⋯" Click="OnColumnMenuClick" AutomationProperties.Name="Column actions"
+                                    ToolTip.Tip="Move, index or remove this column" />
+                            <Button Classes="icon" Content="✕" AutomationProperties.Name="Remove column" ToolTip.Tip="Remove column" CommandParameter="{Binding}"
+                                    Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Columns of the open table that Apply drops -->
+                <StackPanel Spacing="2" Margin="10,8,0,0" IsVisible="{Binding HasRemovedColumns}">
+                  <TextBlock Classes="hint" Text="Dropped when you apply the changes (their data is lost):" />
+                  <ItemsControl ItemsSource="{Binding RemovedColumns}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:RemovedColumnItem">
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
+                          <TextBlock Text="{Binding Text}" TextDecorations="Strikethrough" Foreground="{DynamicResource AppDangerBrush}" VerticalAlignment="Center" />
+                          <Button Classes="compact" Content="Restore" CommandParameter="{Binding}" AutomationProperties.Name="Restore column"
+                                  Command="{Binding $parent[UserControl].DataContext.RestoreColumnCommand}"
+                                  ToolTip.Tip="Keep this column as it is on the server" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+
+        <!-- Foreign keys -->
+        <TabItem Header="{Binding ForeignKeysHeader}">
+          <DockPanel>
+            <Button DockPanel.Dock="Bottom" Classes="compact" Content="＋ Add foreign key" Command="{Binding AddForeignKeyCommand}"
+                    HorizontalAlignment="Left" Margin="2,6,0,0" />
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" SizeChanged="OnEditorSizeChanged">
+              <StackPanel MinWidth="620" HorizontalAlignment="Left" Spacing="2" Margin="0,0,0,4">
+                <TextBlock Classes="hint" Margin="2,4" TextWrapping="Wrap" IsVisible="{Binding !HasForeignKeys}"
+                           Text="No foreign keys yet. A foreign key makes a column of this table match the key of another table, such as customer_id → customers.id." />
+                <Grid Classes="header" ColumnDefinitions="3*,4*,3*,3*,32" IsVisible="{Binding HasForeignKeys}">
+                  <TextBlock Grid.Column="0" Text="Column" />
+                  <TextBlock Grid.Column="1" Text="References table" />
+                  <TextBlock Grid.Column="2" Text="Its column" />
+                  <TextBlock Grid.Column="3" Text="Name (optional)" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding ForeignKeys}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ForeignKeyRow">
+                      <Border Classes="row">
+                        <Grid ColumnDefinitions="3*,4*,3*,3*,32">
+                          <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ColumnChoices}" SelectedItem="{Binding Column}"
+                                    PlaceholderText="Column" AutomationProperties.Name="Foreign key column" />
+                          <AutoCompleteBox Grid.Column="1" ItemsSource="{Binding TableChoices}" Text="{Binding ReferencedTable, Mode=TwoWay}"
+                                           FilterMode="Contains" MinimumPrefixLength="0" Watermark="schema.table" GotFocus="OnPickerFocus"
+                                           AutomationProperties.Name="Referenced table" />
+                          <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ReferencedColumnChoices}"
+                                    SelectedItem="{Binding ReferencedColumn}" PlaceholderText="Key column" AutomationProperties.Name="Referenced column" />
+                          <TextBox Grid.Column="3" Text="{Binding Name}" Watermark="automatic" AutomationProperties.Name="Foreign key name" />
+                          <Button Grid.Column="4" Classes="icon" Content="✕" AutomationProperties.Name="Remove foreign key" ToolTip.Tip="Remove foreign key"
+                                  CommandParameter="{Binding}" Command="{Binding $parent[UserControl].DataContext.RemoveForeignKeyCommand}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+
+        <!-- Indexes -->
+        <TabItem Header="{Binding IndexesHeader}">
+          <DockPanel>
+            <Button DockPanel.Dock="Bottom" Classes="compact" Content="＋ Add index" Command="{Binding AddIndexCommand}"
+                    HorizontalAlignment="Left" Margin="2,6,0,0" />
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" SizeChanged="OnEditorSizeChanged">
+              <StackPanel MinWidth="560" HorizontalAlignment="Left" Spacing="2" Margin="0,0,0,4">
+                <TextBlock Classes="hint" Margin="2,4" TextWrapping="Wrap" IsVisible="{Binding !HasIndexes}"
+                           Text="No indexes yet. The primary key is indexed already; add indexes for columns you search, sort or join on (a column's ⋯ menu has Index this column)." />
+                <Grid Classes="header" ColumnDefinitions="5*,34,64,3*,32" IsVisible="{Binding HasIndexes}">
+                  <TextBlock Grid.Column="0" Text="Columns, in order" />
+                  <TextBlock Grid.Column="2" Text="Unique" HorizontalAlignment="Center" />
+                  <TextBlock Grid.Column="3" Text="Name (optional)" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Indexes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:IndexRow">
+                      <Border Classes="row">
+                        <Grid ColumnDefinitions="5*,34,64,3*,32">
+                          <TextBox Grid.Column="0" Text="{Binding Columns}" Watermark="customer_id, created_at" AutomationProperties.Name="Index columns"
+                                   ToolTip.Tip="Column names, comma-separated; the ＋ button adds one from the list" />
+                          <Button Grid.Column="1" Classes="icon" Content="＋" Click="OnIndexColumnClick" AutomationProperties.Name="Add a column to the index"
+                                  ToolTip.Tip="Add a column of this table to the index" />
+                          <CheckBox AutomationProperties.Name="Unique" Grid.Column="2" IsChecked="{Binding IsUnique}" />
+                          <TextBox Grid.Column="3" Text="{Binding Name}" Watermark="automatic" AutomationProperties.Name="Index name" />
+                          <Button Grid.Column="4" Classes="icon" Content="✕" AutomationProperties.Name="Remove index" ToolTip.Tip="Remove index"
+                                  CommandParameter="{Binding}" Command="{Binding $parent[UserControl].DataContext.RemoveIndexCommand}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+        <!-- Below 1000 px the side panel moves into this tab, so the editor keeps the whole width -->
+        <TabItem x:Name="SideTab" Header="{Binding SideTabHeader}" IsVisible="False">
+          <Border x:Name="SideTabHost" />
+        </TabItem>
+      </TabControl>
+
+      <GridSplitter x:Name="SideSplitter" Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns" />
+
+      <!-- Suggestions over the live script -->
+      <Border x:Name="SideHost" Grid.Column="2">
+      <Grid x:Name="SidePanel" RowDefinitions="Auto,*" Margin="0,4,0,0">
+        <Border Classes="card" Padding="8" Margin="0,0,0,6">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,2">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+                <Border Classes="count" Background="{DynamicResource AppDangerBrush}" IsVisible="{Binding HasErrorCount}"
+                        ToolTip.Tip="To fix before Execute">
+                  <TextBlock Text="{Binding ErrorCount, StringFormat='{}{0} to fix'}" />
+                </Border>
+                <Border Classes="count" Background="{DynamicResource AppPlanWarningBrush}" IsVisible="{Binding HasWarningCount}"
+                        ToolTip.Tip="Worth a look">
+                  <TextBlock Text="{Binding WarningCount, StringFormat='{}{0} to check'}" />
+                </Border>
+                <Border Classes="count" Background="{DynamicResource AppObjectProcedureBrush}" IsVisible="{Binding HasTipCount}"
+                        ToolTip.Tip="Optional improvements">
+                  <TextBlock Text="{Binding TipCount, StringFormat='{}{0} tips'}" />
+                </Border>
+              </StackPanel>
+              <TextBlock Text="{Binding SuggestionsHeader}" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6" Text="{Binding SuggestionSummary}" />
+            <WrapPanel DockPanel.Dock="Bottom" Margin="0,2,0,0">
+              <Button Classes="compact" Content="Apply all" Command="{Binding ApplyAllSuggestionsCommand}" IsVisible="{Binding HasFixable}" Margin="0,0,6,0"
+                      ToolTip.Tip="Apply every suggestion that has a fix, one after the other" />
+              <Button Classes="compact" Content="Show dismissed" Command="{Binding ShowDismissedCommand}" IsVisible="{Binding HasDismissed}" />
+            </WrapPanel>
+            <ScrollViewer x:Name="SuggestionScroll" HorizontalScrollBarVisibility="Disabled" MaxHeight="300">
+              <ItemsControl ItemsSource="{Binding Suggestions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:DesignSuggestionItem">
+                    <Border Classes="suggestion" Classes.error="{Binding IsError}" Classes.warning="{Binding IsWarning}">
+                      <StackPanel Spacing="3">
+                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold">
+                          <Run Text="{Binding SeverityText}" Foreground="{Binding SeverityColor}" />
+                          <Run Text=" · " />
+                          <Run Text="{Binding Title}" />
+                        </TextBlock>
+                        <TextBlock Classes="hint" Text="{Binding Detail}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                          <Button Classes="compact" Content="{Binding FixLabel}" IsVisible="{Binding CanFix}" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].DataContext.ApplySuggestionCommand}" />
+                          <Button Classes="compact" Content="Dismiss" IsVisible="{Binding CanDismiss}" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].DataContext.DismissSuggestionCommand}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Classes="card" Padding="8">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+                <Button Classes="compact" Content="Copy" Command="{Binding CopyScriptCommand}" ToolTip.Tip="Copy the script (Ctrl+Shift+C)" />
+                <Button Classes="compact" Content="Open in Query tab" Command="{Binding OpenInQueryTabCommand}"
+                        ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
+              </StackPanel>
+              <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                <Run Text="Script" FontWeight="SemiBold" FontSize="14" />
+                <Run Text="  " />
+                <Run Text="{Binding ScriptSummary}" Foreground="{DynamicResource AppHintForegroundBrush}" FontSize="12" />
+              </TextBlock>
+            </DockPanel>
+            <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,6,0,0"
+                       Text="Updated as you edit. Nothing runs until you press Execute, which shows this script and asks first." />
+            <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     AutomationProperties.Name="Script" MinHeight="120" />
+          </DockPanel>
+        </Border>
+      </Grid>
       </Border>
     </Grid>
   </DockPanel>

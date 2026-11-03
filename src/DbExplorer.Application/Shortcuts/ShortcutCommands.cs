@@ -10,6 +10,7 @@ public static class ShortcutAreas
     public const string Navigator = "Database navigator";
     public const string Comparer = "Comparer";
     public const string ErModel = "ER model";
+    public const string TableDesigner = "Table designer";
     public const string QueryBuilder = "Query builder";
     public const string Debugger = "Routine debugger";
     public const string Palette = "Command palette";
@@ -94,6 +95,12 @@ public static class ShortcutCommands
     public const string CancelComparison = "comparer.cancel";
     public const string RunComparison = "comparer.run";
 
+    public const string DesignerExecute = "designer.execute";
+    public const string DesignerAddColumn = "designer.add-column";
+    public const string DesignerRemoveColumn = "designer.remove-column";
+    public const string DesignerColumnUp = "designer.column-up";
+    public const string DesignerColumnDown = "designer.column-down";
+    public const string DesignerCopyScript = "designer.copy-script";
     public const string BuilderRun = "builder.run";
     public const string BuilderOpen = "builder.open";
     public const string BuilderArrange = "builder.arrange";
@@ -239,6 +246,13 @@ public static class ShortcutCommands
         Add(PreviousDifference, c, "Previous difference", "Shift+F8");
         Add(CancelComparison, c, "Cancel the comparison", "Esc");
 
+        var td = ShortcutAreas.TableDesigner;
+        Add(DesignerExecute, td, "Execute the script (Apply changes for an open table)", "Ctrl+Enter");
+        Add(DesignerAddColumn, td, "Add a column", "Alt+Insert");
+        Add(DesignerRemoveColumn, td, "Remove the column being edited", "Alt+Delete");
+        Add(DesignerColumnUp, td, "Move the column being edited up", "Alt+↑");
+        Add(DesignerColumnDown, td, "Move the column being edited down", "Alt+↓");
+        Add(DesignerCopyScript, td, "Copy the script", "Ctrl+Shift+C");
         var b = ShortcutAreas.QueryBuilder;
         Add(BuilderRun, b, "Run the query in a new Query tab", "F5", "Ctrl+Enter");
         Add(BuilderOpen, b, "Open the query in a new Query tab", "Ctrl+Shift+Enter");

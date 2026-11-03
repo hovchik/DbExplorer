@@ -177,6 +177,7 @@ namespace DbExplorer.UiRender
 
             await Step("navigator", RenderNavigatorAsync);
             await Step("tabs", RenderTabsAsync);
+            await Step("designer", RenderTableDesignerAsync);
             await Step("small", RenderSmallAsync);
             await Step("toolbar", RenderToolbarStatesAsync);
             await Step("querytabs", RenderManyQueryTabsAsync);
@@ -507,6 +508,84 @@ namespace DbExplorer.UiRender
             await Settle(4);
             await Shot(_window, "security");
         }
+
+        /// <summary>The Table designer's states: a new table with keys and indexes, an open table with new, changed and
+        /// dropped columns, each section tab, the column menu and the common-columns menu, and the 1024 px window.</summary>
+        private async Task RenderTableDesignerAsync()
+        {
+            var designer = _vm.TableDesigner;
+            _vm.SelectedTab = AppTab.TableDesigner;
+            await Settle(4);
+            TabControl Sections() => _window.GetVisualDescendants().OfType<TableDesignerView>().First().FindControl<TabControl>("Sections")!;
+
+            designer.NewTableCommand.Execute(null);
+            designer.TableName = "invoices";
+            designer.AddCommonColumnCommand.Execute(designer.CommonColumnChoices.First(c => c.Label == "Created at"));
+            designer.AddColumnCommand.Execute(null);
+            var customer = designer.Columns[^1];
+            customer.Name = "customer_id";
+            customer.Type = "integer";
+            customer.IsNullable = false;
+            designer.AddColumnCommand.Execute(null);
+            designer.Columns[^1].Name = "total";
+            designer.Columns[^1].Type = "numeric";
+            designer.Columns[^1].Size = "12,2";
+            designer.AddForeignKeyCommand.Execute(null);
+            designer.ForeignKeys[^1].Column = "customer_id";
+            designer.ForeignKeys[^1].ReferencedTable = "public.customers";
+            await Settle(6);
+            await Shot(_window, "designer-new");
+            Sections().SelectedIndex = 1;
+            await Settle(4);
+            await Shot(_window, "designer-foreign-keys");
+            Sections().SelectedIndex = 0;
+
+            await designer.OpenTableAsync(Table("order_items"));
+            await Settle(4);
+            designer.Columns.First(c => c.Name == "quantity").Type = "bigint";
+            designer.Columns.First(c => c.Name == "unit_price").Name = "price";
+            designer.SelectedColumn = designer.Columns[^1];
+            designer.AddCommonColumnCommand.Execute(designer.CommonColumnChoices.First(c => c.Label == "Created at"));
+            designer.RemoveColumnCommand.Execute(designer.Columns.First(c => c.Name == "product_id"));
+            designer.IndexColumnCommand.Execute(designer.Columns.First(c => c.Name == "created_at"));
+            await Settle(6);
+            await Shot(_window, "designer-alter");
+            Sections().SelectedIndex = 2;
+            await Settle(4);
+            await Shot(_window, "designer-indexes");
+            Sections().SelectedIndex = 0;
+            await Settle(4);
+
+            var menuButton = _window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Column actions");
+            menuButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await Settle(4);
+            await Shot(_window, "designer-column-menu");
+            CloseFlyouts();
+            var common = _window.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Common columns ▾"));
+            common.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await Settle(4);
+            await Shot(_window, "designer-common-columns");
+            CloseFlyouts();
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-designer-alter");
+            var view = _window.GetVisualDescendants().OfType<TableDesignerView>().First();
+            view.FindControl<TabControl>("Sections")!.SelectedItem = view.FindControl<TabItem>("SideTab");
+            await Settle(6);
+            await Shot(_window, "small-designer-script");
+            Sections().SelectedIndex = 0;
+            designer.TableName = "";
+            await Settle(6);
+            await Shot(_window, "small-designer-error");
+            _window.Width = 1400;
+            _window.Height = 900;
+            designer.RevertChangesCommand.Execute(null);
+            await Settle(4);
+        }
+
+        private void CloseFlyouts() => _window.GetVisualDescendants().OfType<TableDesignerView>().First().LastMenu?.Hide();
 
         /// <summary>The Query builder: empty, a three-table design (related tables listed first, columns with a total,
         /// a sort and a filter), its Joins panel, and the design at 1024×700. Writes builder-*.png.</summary>

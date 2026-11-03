@@ -32,12 +32,13 @@ public static class ShortcutCatalog
     public const string Navigator = ShortcutAreas.Navigator;
     public const string Comparer = ShortcutAreas.Comparer;
     public const string ErModel = ShortcutAreas.ErModel;
+    public const string TableDesigner = ShortcutAreas.TableDesigner;
     public const string QueryBuilder = ShortcutAreas.QueryBuilder;
     public const string Debugger = ShortcutAreas.Debugger;
     public const string Palette = ShortcutAreas.Palette;
     public const string Vim = ShortcutAreas.Vim;
 
-    private static readonly string[] AreaOrder = [Anywhere, Palette, QueryEditor, QueryTabs, ResultGrid, Navigator, Comparer, QueryBuilder, ErModel, Debugger, Vim];
+    private static readonly string[] AreaOrder = [Anywhere, Palette, QueryEditor, QueryTabs, ResultGrid, Navigator, Comparer, QueryBuilder, TableDesigner, ErModel, Debugger, Vim];
 
     /// <summary>Every shortcut with the keys in use now (the Vim card only while Vim mode is on).</summary>
     public static IReadOnlyList<ShortcutInfo> All => Build(Keymap.Current);

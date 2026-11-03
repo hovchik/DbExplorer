@@ -138,6 +138,11 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
         };
+        comparer.OpenSqlRequested += (sql, database) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, title: "Migration", database: database);
+        };
         security.OpenSqlRequested += (sql, database) =>
         {
             SelectedTab = AppTab.Query;

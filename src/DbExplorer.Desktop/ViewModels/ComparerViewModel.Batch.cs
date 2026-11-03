@@ -47,6 +47,7 @@ public partial class ComparerViewModel
         {
             _selectedOverviewEntries = value;
             OnPropertyChanged(nameof(CopyOverviewLabel));
+            OnPropertyChanged(nameof(MigrationOnlySelectedLabel));
             CopyOverviewEntryCommand.NotifyCanExecuteChanged();
         }
     }

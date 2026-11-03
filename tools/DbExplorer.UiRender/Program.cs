@@ -647,6 +647,27 @@ namespace DbExplorer.UiRender
             badVm.FillFromConnectionStringCommand.Execute(null);
             await ShowAndShoot(new ConnectionDialog { DataContext = badVm, Title = "New connection" }, "connection-string-error");
 
+            // Microsoft Entra ID: the offer on an Azure host, browser sign-in on Azure SQL, and an app on Azure PostgreSQL.
+            var sqlKey = registry.All.First(p => p.Key == "SqlServer");
+            var azureVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = sqlKey.Key }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "shop-prod.database.windows.net", Database = "shop"
+            };
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-offer");
+            azureVm.UserName = "ann@contoso.com";
+            azureVm.UseEntraSignInCommand.Execute(null);
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-interactive");
+            var pgAppVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = "Postgres" }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "pg-prod.postgres.database.azure.com", Database = "shop"
+            };
+            pgAppVm.SelectedSignIn = pgAppVm.SignInOptions.First(o => o.Method == SignInMethod.EntraServicePrincipal);
+            pgAppVm.UserName = "reporting-app";
+            pgAppVm.ClientId = "6f1c2b0e-4d1a-4c55-9a7e-2f0b8c1d3e42";
+            pgAppVm.Password = "secret";
+            pgAppVm.TenantId = "contoso.onmicrosoft.com";
+            await ShowAndShoot(new ConnectionDialog { DataContext = pgAppVm, Title = "New connection" }, "entra-postgres-app");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";

@@ -773,7 +773,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedProfile is not { } profile) return;
 
-        if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
+        if (profile.MissingPassword || profile.Ssh.NeedsPassword)
         {
             // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");

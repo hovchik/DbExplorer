@@ -252,12 +252,13 @@ public class NavigatorTests
     }
 
     [Fact]
-    public void The_filter_shows_matching_objects_under_their_open_path_and_counts_them()
+    public async Task The_filter_shows_matching_objects_under_their_open_path_and_counts_them()
     {
         var (vm, session, _) = Connected();
         vm.Attach(session);
 
         vm.FilterText = "order";
+        await vm.FilterApplied;
 
         Assert.Equal("2 matches", vm.FilterSummary);
         var connection = vm.Roots.Single(r => r.Kind == NavigatorNodeKind.Connection && r.Title == "Shop");
@@ -267,6 +268,7 @@ public class NavigatorTests
             n => Assert.True(n.IsExpanded));
 
         vm.FilterText = "reports";
+        await vm.FilterApplied;
         Assert.Contains(vm.Roots, r => r.Title == "Reports");
         Assert.Equal("No object matches in the connection's catalog", vm.FilterSummary);
     }
@@ -299,7 +301,7 @@ public class NavigatorTests
     }
 
     [Fact]
-    public void Filter_results_keep_the_best_match_first_across_every_database()
+    public async Task Filter_results_keep_the_best_match_first_across_every_database()
     {
         // A server-wide catalog: 600 partial matches in Audit, one exact match in Shop.
         var objects = Enumerable.Range(0, 600).Select(i => Obj($"Old{i:000}Orders", database: "Audit"))
@@ -310,6 +312,7 @@ public class NavigatorTests
         vm.Attach(session);
 
         vm.FilterText = "Orders";
+        await vm.FilterApplied;
 
         Assert.Equal($"First {NavigatorViewModel.MaxMatches} of 602 matches", vm.FilterSummary);
         var shop = vm.Roots[0].Children.Single(d => d.Title == "Shop");
@@ -382,6 +385,93 @@ public class NavigatorTests
     [InlineData(3_400_000, "3.4M")]
     public void Row_counts_are_short(long rows, string expected) =>
         Assert.Equal(expected, NavigatorViewModel.ShortCount(rows).Replace(',', '.'));
+
+    [Fact]
+    public async Task Typing_quickly_searches_once_after_the_pause()
+    {
+        var (vm, session, _) = Connected();
+        vm.Attach(session);
+        vm.FilterDelay = TimeSpan.FromMilliseconds(100);
+        var before = vm.Roots.ToList();
+
+        vm.FilterText = "o";
+        var first = vm.FilterApplied;
+        vm.FilterText = "or";
+        vm.FilterText = "ord";
+
+        // Nothing changes while the keys come in; the earlier searches are dropped.
+        Assert.Equal(before, vm.Roots);
+        await first;
+        Assert.Equal("", vm.FilterSummary);
+        await vm.FilterApplied;
+        Assert.Equal("2 matches", vm.FilterSummary);
+    }
+
+    [Fact]
+    public async Task One_more_letter_keeps_the_rows_that_still_match()
+    {
+        var (vm, session, _) = Connected();
+        vm.Attach(session);
+        vm.FilterText = "o";
+        await vm.FilterApplied;
+        var orders = vm.Roots.SelectMany(r => r.SelfAndDescendants()).Single(n => n.Title == "Orders");
+        var folder = orders.Parent!;
+        orders.IsExpanded = true;
+
+        vm.FilterText = "ord";
+        await vm.FilterApplied;
+
+        var all = vm.Roots.SelectMany(r => r.SelfAndDescendants()).ToList();
+        Assert.Same(orders, all.Single(n => n.Title == "Orders"));
+        Assert.Same(folder, orders.Parent);
+        Assert.True(orders.IsExpanded);
+        Assert.DoesNotContain(all, n => n.Kind == NavigatorNodeKind.Object && !n.Title.Contains("ord", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Clearing_the_filter_opens_what_was_open_before_it_and_the_path_to_the_selected_match()
+    {
+        var objects = Enumerable.Range(0, 50).Select(i => Obj($"T{i:00}")).Append(Obj("Orders")).Append(Obj("Logs", database: "Audit"));
+        var session = new DatabaseSession(new ConnectionProfile { Name = "Server", ProviderKey = SqlDialect.SqlServerKey, Database = "Shop" },
+            null!, DesktopTabTests.ScriptedProvider.Create(new(), SqlDialect.SqlServerKey), "1", Snapshot(objects));
+        var vm = new NavigatorViewModel(null!) { Profiles = [session.Profile] };
+        vm.Attach(session);
+        await Until(() => !vm.IsRestoring);
+
+        vm.FilterText = "s";   // Orders and Logs, under open folders
+        await vm.FilterApplied;
+        vm.SelectedNode = vm.Roots.SelectMany(r => r.SelfAndDescendants()).Single(n => n.Title == "Logs");
+        vm.FilterText = "";
+        await Until(() => !vm.IsRestoring);
+
+        var tree = vm.Roots.SelectMany(r => r.SelfAndDescendants()).ToList();
+        Assert.Equal("Logs", vm.SelectedNode?.Title);
+        Assert.True(tree.Single(n => n.Kind == NavigatorNodeKind.Database && n.Title == "Audit").IsExpanded);
+        // The Shop database's Tables folder was opened by the filter only, so it is closed again.
+        Assert.DoesNotContain(tree.Where(n => n.Kind == NavigatorNodeKind.Database && n.Title == "Shop")
+            .SelectMany(n => n.SelfAndDescendants()), n => n.Kind == NavigatorNodeKind.Folder && n.IsExpanded);
+    }
+
+    [Fact]
+    public void Merge_keeps_equal_rows_moves_and_inserts_the_rest_and_can_stop_part_way()
+    {
+        static NavigatorNode Row(string key) => new(NavigatorNodeKind.Object, key, key);
+        var a = Row("a");
+        var b = Row("b");
+        var c = Row("c");
+        var target = new System.Collections.ObjectModel.ObservableCollection<NavigatorNode> { a, b, c };
+
+        var budget = new MergeBudget(1);
+        NavigatorNode.Merge(target, [Row("c"), Row("x"), Row("a"), Row("y")], parent: null, budget);
+
+        Assert.Same(c, target[0]);
+        Assert.Equal(["c", "x", "a"], target.Select(n => n.Key));   // one new row now, b removed
+        Assert.False(budget.IsDone);
+        budget.Continue(10);
+        Assert.True(budget.IsDone);
+        Assert.Equal(["c", "x", "a", "y"], target.Select(n => n.Key));
+        Assert.Same(a, target[2]);
+    }
 
     private static async Task Until(Func<bool> condition)
     {

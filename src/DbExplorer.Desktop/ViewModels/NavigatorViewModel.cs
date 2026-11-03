@@ -202,7 +202,142 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         Rebuild();
     }
 
-    partial void OnFilterTextChanged(string value) => Rebuild();
+    // ----- Filter: debounced, matched off the UI thread, merged into the tree -----
+
+    /// <summary>How long typing has to pause before the filter runs, so a word typed quickly is matched once rather
+    /// than once per key. Clearing the box is never delayed.</summary>
+    public TimeSpan FilterDelay { get; set; } = TimeSpan.FromMilliseconds(180);
+
+    /// <summary>Completes when the latest filter text is shown in the tree (tests wait for it).</summary>
+    public Task FilterApplied { get; private set; } = Task.CompletedTask;
+
+    private CancellationTokenSource? _filterCancel;
+
+    /// <summary>The nodes that were open before the filter was typed, opened again when it is cleared (rather than
+    /// every folder of the filter's results, which in a large catalog lists thousands of objects).</summary>
+    private HashSet<string>? _expandedBeforeFilter;
+
+    private bool _filtering;
+
+    partial void OnFilterTextChanged(string value)
+    {
+        var filtering = value.Trim().Length > 0;
+        if (filtering && !_filtering)
+        {
+            _expandedBeforeFilter = ExpandedKeys();
+            if (_pendingExpanded is not null) _expandedBeforeFilter.UnionWith(_pendingExpanded);
+        }
+        if (filtering) StartFilter(FilterDelay);
+        else Rebuild();
+    }
+
+    private HashSet<string> ExpandedKeys() =>
+        Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.IsExpanded).Select(n => n.Key).ToHashSet();
+
+    private void CancelFilter()
+    {
+        _filterCancel?.Cancel();
+        _filterCancel = null;
+    }
+
+    private void StartFilter(TimeSpan delay)
+    {
+        CancelFilter();
+        var cancel = _filterCancel = new CancellationTokenSource();
+        FilterApplied = RunFilterAsync(delay, cancel.Token);
+    }
+
+    private async Task RunFilterAsync(TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, token);
+            var filter = FilterText.Trim();
+            if (filter.Length == 0 || token.IsCancellationRequested) return;
+            // Read what the search needs here, on the UI thread; the matching and the new rows are made on a worker.
+            var open = OpenSessions;
+            var several = open.Count > 1;
+            var inputs = open.OrderBy(s => ReferenceEquals(s, _session) ? 0 : 1)   // the active connection first
+                .Select(s => new FilterInput(s, s.Snapshot,
+                    _otherCatalogs.TryGetValue(s, out var read) ? new Dictionary<string, MetadataSnapshot>(read, StringComparer.OrdinalIgnoreCase) : [],
+                    ReferenceEquals(s, _session), several ? ConnectionMarks.Brush(IndexOfOpen(s)) : null))
+                .ToList();
+            var result = await Task.Run(() => Search(inputs, filter, token), token);
+            if (token.IsCancellationRequested || FilterText.Trim() != filter) return;
+            await ApplyFilterAsync(filter, result, token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("navigator filter", ex);
+        }
+    }
+
+    private sealed record FilterInput(DatabaseSession Session, MetadataSnapshot Snapshot,
+        Dictionary<string, MetadataSnapshot> OtherCatalogs, bool IsActive, Avalonia.Media.IBrush? MarkBrush);
+
+    private sealed record FilterResult(IReadOnlyList<NavigatorNode> Connections, int Total, int Shown, bool OtherCatalogs);
+
+    /// <summary>Runs on a worker: the matches of every open connection and their rows, all opened, not yet in the tree.</summary>
+    private static FilterResult Search(IReadOnlyList<FilterInput> inputs, string filter, CancellationToken token)
+    {
+        var connections = new List<NavigatorNode>();
+        var total = 0;
+        var shown = 0;
+        var others = false;
+        foreach (var input in inputs)
+        {
+            token.ThrowIfCancellationRequested();
+            var (connection, matches, kept, read) = FilterConnection(input, filter, MaxMatches - shown, token);
+            total += matches;
+            shown += kept;
+            others |= read;
+            OpenContainers(connection);
+            connection.IsExpanded = true;
+            connections.Add(connection);
+        }
+        return new FilterResult(connections, total, shown, others);
+    }
+
+    /// <summary>Puts the new filter results in the tree in one pass: rows that were already shown (same key, same
+    /// content) stay, with whatever the user opened under them, so typing one more letter only adds and removes the
+    /// rows that changed instead of rebuilding hundreds of them.</summary>
+    private async Task ApplyFilterAsync(string filter, FilterResult result, CancellationToken token)
+    {
+        _filtering = true;
+        var (expanded, selected, generation) = BeginRestore(ExpandedKeys());
+        // Kept until this run finishes, so a newer one that cancels it still re-opens what was open.
+        _pendingExpanded = expanded;
+        _pendingSelected = selected;
+
+        var open = OpenSessions;
+        var connectionMatches = (_profiles ?? []).Where(p => p.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                                                             && open.All(s => s.Profile.Id != p.Id)).ToList();
+        var roots = result.Connections.Concat(ConnectionFolders.Order(connectionMatches).Select(ConnectionNode)).ToList();
+        // On the UI thread the new rows go in a screenful at a time, each step after the keys and clicks waiting, so
+        // typing never waits for hundreds of rows. Without a UI thread (tests) they go in at once.
+        var stepwise = SynchronizationContext.Current is not null;
+        var budget = new MergeBudget(stepwise ? RowsPerStep : int.MaxValue);
+        NavigatorNode.Merge(Roots, roots, parent: null, budget);
+
+        FilterSummary = open.Count == 0
+            ? connectionMatches.Count == 0 ? "No connection matches. Connect to search objects." : ""
+            : result.Total == 0
+                ? "No object matches" + (!result.OtherCatalogs ? open.Count > 1 ? " in the connections' catalogs" : " in the connection's catalog" : "")
+                : result.Total > result.Shown ? $"First {result.Shown:N0} of {result.Total:N0} matches" : $"{result.Total:N0} match{(result.Total == 1 ? "" : "es")}";
+        while (!budget.IsDone)
+        {
+            await Task.Yield();
+            if (token.IsCancellationRequested) return;
+            budget.Continue(RowsPerStep);
+        }
+        EndRestore(expanded, selected, generation);
+    }
+
+    /// <summary>New rows the filter adds to the tree in one step on the UI thread (about a screenful).</summary>
+    private const int RowsPerStep = 15;
 
     // ----- Building the tree -----
 
@@ -210,18 +345,42 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
     /// refresh or a new connection does not throw away where the user was.</summary>
     public void Rebuild()
     {
-        // A rebuild can start while the previous one is still re-opening nodes (a catalog refresh raises
-        // SnapshotChanged and then DatabasesChanged): carry over what that one still had to open and select, and stop it.
-        var expanded = Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.IsExpanded).Select(n => n.Key).ToHashSet();
-        if (_pendingExpanded is not null) expanded.UnionWith(_pendingExpanded);
-        var selected = SelectedNode?.Key ?? _pendingSelected;
-        var generation = ++_restoreGeneration;
+        if (FilterText.Trim().Length > 0)
+        {
+            StartFilter(TimeSpan.Zero);
+            return;
+        }
+        CancelFilter();
+
+        HashSet<string> open;
+        if (_filtering)
+        {
+            // Leaving the filter: open what was open before it, plus the path to the row selected in the results.
+            _filtering = false;
+            open = _expandedBeforeFilter ?? [];
+            for (var n = SelectedNode?.Parent; n is not null; n = n.Parent) open.Add(n.Key);
+            _expandedBeforeFilter = null;
+            _pendingExpanded = null;
+        }
+        else open = ExpandedKeys();
+        var (expanded, selected, generation) = BeginRestore(open);
 
         Roots.Clear();
         FilterSummary = "";
-        if (FilterText.Trim().Length > 0) BuildFiltered(FilterText.Trim());
-        else BuildConnections();
+        BuildConnections();
+        EndRestore(expanded, selected, generation);
+    }
 
+    private (HashSet<string> Expanded, string? Selected, int Generation) BeginRestore(HashSet<string> expanded)
+    {
+        // A rebuild can start while the previous one is still re-opening nodes (a catalog refresh raises
+        // SnapshotChanged and then DatabasesChanged): carry over what that one still had to open and select, and stop it.
+        if (_pendingExpanded is not null) expanded.UnionWith(_pendingExpanded);
+        return (expanded, SelectedNode?.Key ?? _pendingSelected, ++_restoreGeneration);
+    }
+
+    private void EndRestore(HashSet<string> expanded, string? selected, int generation)
+    {
         foreach (var opened in _expandOnBuild)
         {
             var key = ConnectionKey(opened.Profile);
@@ -398,7 +557,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         return SchemaChildren(node.Key, db.Name, snapshot, objects, inSession, session.Profile.ProviderKey);
     }
 
-    private IReadOnlyList<NavigatorNode> SchemaChildren(string parentKey, string database, MetadataSnapshot snapshot,
+    private static IReadOnlyList<NavigatorNode> SchemaChildren(string parentKey, string database, MetadataSnapshot snapshot,
         IReadOnlyList<DbObject> objects, bool inSession, string providerKey, bool keepOrder = false)
     {
         var schemas = NavigatorTree.Schemas(objects);
@@ -420,7 +579,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         }).ToList();
     }
 
-    private IReadOnlyList<NavigatorNode> FolderNodes(string parentKey, string database, MetadataSnapshot snapshot,
+    private static IReadOnlyList<NavigatorNode> FolderNodes(string parentKey, string database, MetadataSnapshot snapshot,
         IReadOnlyList<DbObject> objects, bool inSession, bool keepOrder = false) =>
         NavigatorTree.Folders(objects).Select(f =>
         {
@@ -436,7 +595,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
             };
         }).ToList();
 
-    private NavigatorNode ObjectNode(string parentKey, string database, MetadataSnapshot snapshot, DbObject obj, bool inSession)
+    private static NavigatorNode ObjectNode(string parentKey, string database, MetadataSnapshot snapshot, DbObject obj, bool inSession)
     {
         // Objects of another database may come without their database name; actions need it to run in the right place.
         var target = inSession || obj.Database.Length > 0 ? obj : obj with { Database = database };
@@ -491,71 +650,42 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
             };
         }).ToList();
 
-    /// <summary>Filter mode: the matching objects of every catalog read so far on every open connection, under their
-    /// connection, database, schema and folder, all open. Saved connections are matched by name as well.</summary>
-    private void BuildFiltered(string filter)
-    {
-        var open = OpenSessions;
-        var connectionMatches = (_profiles ?? []).Where(p => p.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                                                             && open.All(s => s.Profile.Id != p.Id)).ToList();
-        foreach (var profile in ConnectionFolders.Order(connectionMatches)) Roots.Add(ConnectionNode(profile));
-
-        if (open.Count == 0)
-        {
-            FilterSummary = connectionMatches.Count == 0 ? "No connection matches. Connect to search objects." : "";
-            return;
-        }
-
-        var total = 0;
-        var shown = 0;
-        var noOtherCatalogs = true;
-        var insertAt = 0;
-        // The active connection first, then the others in the order they were opened.
-        foreach (var session in open.OrderBy(s => ReferenceEquals(s, _session) ? 0 : 1))
-        {
-            var (connection, matches, kept, others) = FilterConnection(session, filter, MaxMatches - shown);
-            total += matches;
-            shown += kept;
-            if (others) noOtherCatalogs = false;
-            Roots.Insert(insertAt++, connection);
-            connection.IsExpanded = true;
-            _ = ExpandContainersAsync(connection);
-        }
-
-        FilterSummary = total == 0
-            ? "No object matches" + (noOtherCatalogs ? open.Count > 1 ? " in the connections' catalogs" : " in the connection's catalog" : "")
-            : total > shown ? $"First {shown:N0} of {total:N0} matches" : $"{total:N0} match{(total == 1 ? "" : "es")}";
-    }
-
     /// <returns>The connection row with its matches under it, how many matched, how many are shown (at most
     /// <paramref name="limit"/>) and whether other databases' catalogs were searched too.</returns>
-    private (NavigatorNode Connection, int Matches, int Shown, bool OtherCatalogs) FilterConnection(DatabaseSession session, string filter, int limit)
+    private static (NavigatorNode Connection, int Matches, int Shown, bool OtherCatalogs) FilterConnection(FilterInput input,
+        string filter, int limit, CancellationToken token)
     {
-        var several = OpenSessions.Count > 1;
+        var session = input.Session;
         var connection = new NavigatorNode(NavigatorNodeKind.Connection, session.Profile.DisplayName, ConnectionKey(session.Profile))
         {
             Icon = Icons.Server, ColorKey = "AppStatusConnectedBrush", Profile = session.Profile, Session = session,
-            IsEmphasized = ReferenceEquals(session, _session),
-            MarkBrush = several ? ConnectionMarks.Brush(IndexOfOpen(session)) : null
+            IsEmphasized = input.IsActive, MarkBrush = input.MarkBrush
         };
-        var otherCatalogs = _otherCatalogs.TryGetValue(session, out var read) ? read : [];
         var catalogs = new List<(string Database, MetadataSnapshot Snapshot, bool InSession)>();
-        foreach (var db in NavigatorTree.Databases(session.Snapshot, [], session.Profile.Database).Where(d => d.InCatalog))
-            catalogs.Add((db.Name, session.Snapshot, true));
-        foreach (var (name, snapshot) in otherCatalogs.OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
+        foreach (var db in NavigatorTree.Databases(input.Snapshot, [], session.Profile.Database).Where(d => d.InCatalog))
+            catalogs.Add((db.Name, input.Snapshot, true));
+        foreach (var (name, snapshot) in input.OtherCatalogs.OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
             if (!catalogs.Any(c => string.Equals(c.Database, name, StringComparison.OrdinalIgnoreCase)))
                 catalogs.Add((name, snapshot, false));
 
         // Rank every catalog's matches together before the limit, so an exact match in one database is never pushed
         // out by a pile of partial matches in another; then group what is kept back under its database.
-        var candidates = catalogs.SelectMany((c, index) =>
+        var candidates = new List<(int Catalog, DbObject Object, int Rank)>();
+        var counts = new int[catalogs.Count];
+        for (var index = 0; index < catalogs.Count; index++)
         {
+            token.ThrowIfCancellationRequested();
+            var c = catalogs[index];
             var own = c.InSession && string.Equals(c.Database, session.Profile.Database ?? "", StringComparison.OrdinalIgnoreCase);
-            return NavigatorTree.ObjectsOf(c.Snapshot, c.Database, own || !c.InSession)
-                .Select(o => (Catalog: index, Object: o, Rank: NavigatorTree.MatchRank(o, filter)))
-                .Where(m => m.Rank >= 0);
-        }).ToList();
-        var total = candidates.Count;
+            foreach (var o in NavigatorTree.ObjectsOf(c.Snapshot, c.Database, own || !c.InSession))
+            {
+                var rank = NavigatorTree.MatchRank(o, filter);
+                if (rank < 0) continue;
+                candidates.Add((index, o, rank));
+                counts[index]++;
+            }
+        }
+        token.ThrowIfCancellationRequested();
         var kept = candidates
             .OrderBy(m => m.Rank)
             .ThenBy(m => m.Object.Schema, StringComparer.OrdinalIgnoreCase)
@@ -563,7 +693,6 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
             .ThenBy(m => m.Catalog)
             .Take(Math.Max(0, limit))
             .ToList();
-        var shown = kept.Count;
 
         var databases = new List<NavigatorNode>();
         for (var index = 0; index < catalogs.Count; index++)
@@ -572,30 +701,30 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
             var take = kept.Where(m => m.Catalog == index).Select(m => m.Object).ToList();
             if (take.Count == 0) continue;
             var own = inSession && string.Equals(database, session.Profile.Database ?? "", StringComparison.OrdinalIgnoreCase);
-            var count = candidates.Count(m => m.Catalog == index);
 
             var dbKey = DatabaseKey(connection.Key, database);
             var dbNode = new NavigatorNode(NavigatorNodeKind.Database, database.Length > 0 ? database : "(database)", dbKey)
             {
                 Icon = Icons.Database, ColorKey = "SystemAccentColor", Database = database, IsEmphasized = own,
-                Detail = count.ToString("N0")
+                Detail = counts[index].ToString("N0")
             };
             dbNode.SetChildren(SchemaChildren(dbKey, database, snapshot, take, inSession, session.Profile.ProviderKey, keepOrder: true));
             databases.Add(dbNode);
         }
         connection.SetChildren(databases.Count > 0 ? databases : [NavigatorNode.Message("No object matches")]);
-        return (connection, total, shown, otherCatalogs.Count > 0);
+        return (connection, candidates.Count, kept.Count, input.OtherCatalogs.Count > 0);
     }
 
-    /// <summary>Opens every database, schema and folder under <paramref name="node"/> (the filter's results).</summary>
-    private static async Task ExpandContainersAsync(NavigatorNode node)
+    /// <summary>Opens every database, schema and folder under <paramref name="node"/> (the filter's results) before
+    /// they are shown. Their children are made from the catalog in memory, so this finishes at once.</summary>
+    private static void OpenContainers(NavigatorNode node)
     {
-        foreach (var child in node.Children.ToList())
+        foreach (var child in node.Children)
         {
             if (child.Kind is not (NavigatorNodeKind.Database or NavigatorNodeKind.Schema or NavigatorNodeKind.Folder)) continue;
-            await child.LoadAsync();
+            child.LoadAsync().GetAwaiter().GetResult();
             child.IsExpanded = true;
-            await ExpandContainersAsync(child);
+            OpenContainers(child);
         }
     }
 

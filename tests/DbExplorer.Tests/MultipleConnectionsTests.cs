@@ -315,6 +315,7 @@ public class MultipleConnectionsTests : IDisposable
 
         // The filter searches every open connection, the active one first.
         vm.FilterText = "s";
+        await vm.FilterApplied;
         Assert.Equal(["Reports", "Shop"], vm.Roots.Where(r => r.Session is not null).Select(r => r.Title));
         Assert.Equal("2 matches", vm.FilterSummary);
         vm.FilterText = "";

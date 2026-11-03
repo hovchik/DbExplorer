@@ -8,6 +8,7 @@ using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Tests;
 
+[Collection(nameof(HeadlessUiCollection))]
 public class AccessibleNamesTests
 {
     [Theory]
@@ -34,6 +35,8 @@ public class AccessibleNamesTests
     [Theory]
     [InlineData("Close (Ctrl+W)", "Ctrl+W")]
     [InlineData("Next change (F8)", "F8")]
+    [InlineData("Previous change (Shift+F8)", "Shift+F8")]
+    [InlineData("Close tab (Ctrl+F4)", "Ctrl+F4")]
     [InlineData("Give the results most of the space (Ctrl+Shift+↑)", "Ctrl+Shift+↑")]
     [InlineData("Zoom in (Ctrl+wheel)", null)]
     [InlineData("Collapse all", null)]
@@ -139,6 +142,20 @@ public class AccessibleNamesTests
     }
 
     private sealed class StatusSource { public string Text => "Ready"; }
+
+    [AvaloniaFact]
+    public void Check_box_in_a_grid_is_named_after_its_column()
+    {
+        var grid = new DataGrid { ItemsSource = new[] { new GridItem(true) }, AutoGenerateColumns = false };
+        grid.Columns.Add(new DataGridCheckBoxColumn { Header = "PK", Binding = new Avalonia.Data.Binding(nameof(GridItem.IsKey)) });
+        var (window, _) = Show(grid);
+
+        var box = window.GetVisualDescendants().OfType<CheckBox>().Single();
+        Assert.Equal("PK", Name(box));
+        window.Close();
+    }
+
+    public sealed record GridItem(bool IsKey);
 
     [AvaloniaFact]
     public void Input_is_labelled_by_the_caption_to_its_left()

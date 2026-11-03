@@ -196,7 +196,7 @@
 		  <Path Data="M0,0 L5,5 L10,0" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="6" Stretch="None" />
 		  <Button.Flyout>
 			<Flyout Placement="BottomEdgeAlignedRight">
-			  <ListBox x:Name="AllTabsList" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}"
+			  <ListBox AutomationProperties.Name="All tabs" x:Name="AllTabsList" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}"
 					   MaxHeight="420" MinWidth="240" MaxWidth="480" SelectionChanged="OnAllTabsPicked">
 				<ListBox.ItemTemplate>
 				  <DataTemplate x:DataType="vm:QueryViewModel">
@@ -221,7 +221,7 @@
 				<Button Grid.Column="1" Classes="bar" Content="Clear" Command="{Binding ClearRecentFilesCommand}" IsVisible="{Binding HasRecentFiles}"
 						ToolTip.Tip="Forget the recent files (the files themselves stay)" />
 			  </Grid>
-			  <ListBox x:Name="RecentList" ItemsSource="{Binding RecentFiles}" MaxHeight="360" IsVisible="{Binding HasRecentFiles}"
+			  <ListBox AutomationProperties.Name="Recent files" x:Name="RecentList" ItemsSource="{Binding RecentFiles}" MaxHeight="360" IsVisible="{Binding HasRecentFiles}"
 					   SelectionChanged="OnRecentPicked">
 				<ListBox.ItemTemplate>
 				  <DataTemplate x:DataType="vm:RecentFileItem">
@@ -249,7 +249,7 @@
 				  <Button Grid.Column="1" Classes="bar" Content="Clear" Command="{Binding ClearRecentlyClosedCommand}"
 						  ToolTip.Tip="Forget the closed tabs (their versions stay in Local history)" />
 				</Grid>
-				<ListBox x:Name="ClosedList" ItemsSource="{Binding RecentlyClosed}" MaxHeight="150" SelectionChanged="OnClosedTabPicked">
+				<ListBox AutomationProperties.Name="Recently closed tabs" x:Name="ClosedList" ItemsSource="{Binding RecentlyClosed}" MaxHeight="150" SelectionChanged="OnClosedTabPicked">
 				  <ListBox.ItemTemplate>
 					<DataTemplate x:DataType="vm:ClosedTabItem">
 					  <Grid ColumnDefinitions="18,160,60,*" ToolTip.Tip="{Binding ToolTip}">
@@ -269,7 +269,7 @@
 				<Button Grid.Column="1" Classes="bar" Content="Local history…" Margin="6,0,0,0" Command="{Binding ShowLocalHistoryCommand}"
 						ToolTip.Tip="Every version of this tab's text that a run, save, open or close kept, with a diff and Restore (Ctrl+Shift+H)" />
 			  </Grid>
-			  <ListBox x:Name="HistoryList" ItemsSource="{Binding History}" MaxHeight="420" DoubleTapped="OnHistoryDoubleTapped">
+			  <ListBox AutomationProperties.Name="Run history" x:Name="HistoryList" ItemsSource="{Binding History}" MaxHeight="420" DoubleTapped="OnHistoryDoubleTapped">
 				<ListBox.ItemTemplate>
 				  <DataTemplate x:DataType="vm:HistoryItem">
 					<Grid ColumnDefinitions="18,120,*">

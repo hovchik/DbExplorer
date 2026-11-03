@@ -102,7 +102,7 @@
                           <TextBlock Classes="hint" FontSize="11" Text="{Binding Flags}" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center">
-                          <ComboBox ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption}" HorizontalAlignment="Stretch" />
+                          <ComboBox AutomationProperties.Name="Generator" ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption}" HorizontalAlignment="Stretch" />
                           <TextBox Text="{Binding FixedValue}" Watermark="Value for every row" IsVisible="{Binding IsFixed}" />
                         </StackPanel>
                         <TextBlock Grid.Column="3" Classes="mono" Text="{Binding Sample}" Margin="10,0,0,0"

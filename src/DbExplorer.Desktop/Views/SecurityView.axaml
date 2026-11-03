@@ -218,7 +218,7 @@
               <WrapPanel Margin="0,4,0,0">
                 <AutoCompleteBox Width="170" ItemsSource="{Binding PermissionChoices}" Text="{Binding GrantPermission, Mode=TwoWay}"
                                  FilterMode="StartsWith" MinimumPrefixLength="0" Watermark="Permission" GotFocus="OnPickerFocus" Margin="0,0,6,4" />
-                <AutoCompleteBox Width="280" ItemsSource="{Binding GrantTargets}" Text="{Binding GrantTarget, Mode=TwoWay}"
+                <AutoCompleteBox AutomationProperties.Name="Grant on" Width="280" ItemsSource="{Binding GrantTargets}" Text="{Binding GrantTarget, Mode=TwoWay}"
                                  FilterMode="Contains" MinimumPrefixLength="0" Watermark="DATABASE, SCHEMA name or schema.object" GotFocus="OnPickerFocus" Margin="0,0,6,4" />
                 <CheckBox Content="With grant option" IsChecked="{Binding WithGrantOption}" Margin="0,0,6,4"
                           ToolTip.Tip="Lets the grantee pass the permission on" />

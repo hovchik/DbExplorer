@@ -513,7 +513,7 @@
               </Grid>
               <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4" Text="No messages yet."
                          IsVisible="{Binding !HasStatusHistory}" />
-              <ListBox ItemsSource="{Binding StatusHistory}" Background="Transparent"
+              <ListBox AutomationProperties.Name="Status history" ItemsSource="{Binding StatusHistory}" Background="Transparent"
                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListBox.ItemTemplate>
                   <DataTemplate>

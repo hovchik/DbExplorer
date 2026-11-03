@@ -97,11 +97,11 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ColumnItem">
                       <Grid ColumnDefinitions="52,170,150,150,130,220,Auto" Margin="0,0,0,4">
-                        <CheckBox Grid.Column="0" IsChecked="{Binding Output}" MinWidth="0" Margin="10,0,0,0" />
+                        <CheckBox AutomationProperties.Name="Output" Grid.Column="0" IsChecked="{Binding Output}" MinWidth="0" Margin="10,0,0,0" />
                         <TextBlock Grid.Column="1" Text="{Binding Source}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                    ToolTip.Tip="{Binding Source}" Margin="0,0,6,0" />
-                        <TextBox Grid.Column="2" Text="{Binding OutputAlias}" Watermark="as…" />
-                        <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                        <TextBox AutomationProperties.Name="Alias" Grid.Column="2" Text="{Binding OutputAlias}" Watermark="as…" />
+                        <ComboBox AutomationProperties.Name="Aggregate" Grid.Column="3" HorizontalAlignment="Stretch"
                                   ItemsSource="{x:Static vm:QueryBuilderViewModel.Aggregates}" SelectedItem="{Binding Aggregate}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -109,7 +109,7 @@
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <ComboBox Grid.Column="4" HorizontalAlignment="Stretch"
+                        <ComboBox AutomationProperties.Name="Sort" Grid.Column="4" HorizontalAlignment="Stretch"
                                   ItemsSource="{x:Static vm:QueryBuilderViewModel.SortDirections}" SelectedItem="{Binding Sort}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -117,7 +117,7 @@
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBox Grid.Column="5" Text="{Binding Filter}" Watermark="&gt; 100, LIKE 'A%'…"
+                        <TextBox AutomationProperties.Name="Filter" Grid.Column="5" Text="{Binding Filter}" Watermark="&gt; 100, LIKE 'A%'…"
                                  FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
                         <StackPanel Grid.Column="6" Orientation="Horizontal">
                           <Button Content="↑" Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move up" />
@@ -136,13 +136,13 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:JoinItem">
                       <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                        <ComboBox Width="100" ItemsSource="{x:Static vm:QueryBuilderViewModel.JoinKinds}" SelectedItem="{Binding Kind}"
+                        <ComboBox AutomationProperties.Name="Join kind" Width="100" ItemsSource="{x:Static vm:QueryBuilderViewModel.JoinKinds}" SelectedItem="{Binding Kind}"
                                   ToolTip.Tip="Inner: matching rows only. Left: every row of the left table. Right: every row of the right one. Full: both." />
                         <TextBlock Text="{Binding LeftAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
-                        <ComboBox Width="160" ItemsSource="{Binding LeftColumns}" SelectedItem="{Binding LeftColumn}" />
+                        <ComboBox AutomationProperties.Name="Left column" Width="160" ItemsSource="{Binding LeftColumns}" SelectedItem="{Binding LeftColumn}" />
                         <TextBlock Text="=" VerticalAlignment="Center" Margin="0,0,6,0" />
                         <TextBlock Text="{Binding RightAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
-                        <ComboBox Width="160" ItemsSource="{Binding RightColumns}" SelectedItem="{Binding RightColumn}" />
+                        <ComboBox AutomationProperties.Name="Right column" Width="160" ItemsSource="{Binding RightColumns}" SelectedItem="{Binding RightColumn}" />
                         <TextBlock Classes="hint" Text="{Binding Origin}" VerticalAlignment="Center" Margin="0,0,8,0" />
                         <Button Content="✕" Command="{Binding $parent[UserControl].DataContext.RemoveJoinCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove this condition" />
                       </StackPanel>

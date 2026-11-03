@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.VisualTree;
 
 namespace DbExplorer.Desktop.Services;
 
@@ -65,7 +66,13 @@ public static partial class AccessibleNames
         string? name = null;
         Control? label = null;
 
-        if (control is Button or SplitButton)
+        if (control is CheckBox or RadioButton) // before Button: both derive from it
+        {
+            var caption = ContentText(((ContentControl)control).Content);
+            if (HasWords(caption) && ((ContentControl)control).Content is string) { Clear(control, auto); return; }
+            name = HasWords(caption) ? caption : ShortTip(tip) ?? ColumnHeader(control) ?? NearbyCaption(control)?.Text;
+        }
+        else if (control is Button or SplitButton)
         {
             var content = ((ContentControl)control).Content;
             var caption = ContentText(content);
@@ -78,17 +85,11 @@ public static partial class AccessibleNames
             }
             name = NameFor(caption, tip);
         }
-        else if (control is CheckBox or RadioButton)
-        {
-            var caption = ContentText(((ContentControl)control).Content);
-            if (HasWords(caption) && ((ContentControl)control).Content is string) { Clear(control, auto); return; }
-            name = HasWords(caption) ? caption : ShortTip(tip) ?? NearbyCaption(control)?.Text;
-        }
         else
         {
             label = NearbyCaption(control)?.Control;
             if (label is null)
-                name = ShortTip(tip) ?? Watermark(control);
+                name = ColumnHeader(control) ?? ShortTip(tip) ?? Watermark(control);
         }
 
         if (label is not null)
@@ -199,6 +200,26 @@ public static partial class AccessibleNames
         _ => null
     };
 
+    /// <summary>For a check box or editor inside a data grid cell: the header of its column ("PK", "Null").</summary>
+    private static string? ColumnHeader(Control control)
+    {
+        var row = control.FindAncestorOfType<DataGridRow>();
+        var grid = row?.FindAncestorOfType<DataGrid>();
+        if (row is null || grid is null) return null;
+        foreach (var column in grid.Columns)
+        {
+            if (column.GetCellContent(row) is not { } content) continue;
+            if (content == control || content.IsVisualAncestorOf(control))
+                return column.Header switch
+                {
+                    string h when HasWords(h) => h,
+                    TextBlock { Text: { } t } when HasWords(t) => t,
+                    _ => null
+                };
+        }
+        return null;
+    }
+
     private static string? Watermark(Control control) => control switch
     {
         TextBox t => Clean(t.Watermark),
@@ -244,7 +265,7 @@ public static partial class AccessibleNames
     [GeneratedRegex(@"(:\s|\s\(|\.\s|\s·\s|;\s|\s—\s|\s–\s)")]
     private static partial Regex PhraseEnd();
 
-    [GeneratedRegex(@"(?<keys>\b(?:(?:Ctrl|Alt|Shift|Cmd|Win)\+)+(?:[A-Za-z0-9]|F\d{1,2}|PgUp|PgDn|Enter|Space|Tab|Esc|Delete|Del|Home|End|Up|Down|Left|Right|[=+\-,./↑↓←→])(?![A-Za-z])|\bF\d{1,2}\b)")]
+    [GeneratedRegex(@"(?<keys>\b(?:(?:Ctrl|Alt|Shift|Cmd|Win)\+)+(?:F\d{1,2}|PgUp|PgDn|Enter|Space|Tab|Esc|Delete|Del|Home|End|Up|Down|Left|Right|[A-Za-z0-9]|[=+\-,./↑↓←→])(?![A-Za-z0-9])|\bF\d{1,2}\b)")]
     private static partial Regex ShortcutPattern();
 
     [GeneratedRegex(@"\s+")]

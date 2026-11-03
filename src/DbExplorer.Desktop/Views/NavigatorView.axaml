@@ -49,7 +49,7 @@
   <DockPanel>
     <!-- Header: filter (Ctrl+Shift+F in the tree focuses it) plus collapse and refresh -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="6,6,4,4">
-      <TextBox x:Name="FilterBox" Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter objects…"
+      <TextBox AutomationProperties.Name="Filter navigator" x:Name="FilterBox" Grid.Column="0" Text="{Binding FilterText}" Watermark="Filter objects…"
                ToolTip.Tip="Show only the tables, views, routines… whose name contains this text, in every database opened so far. Esc clears it."
                KeyDown="OnFilterKeyDown">
         <TextBox.InnerLeftContent>

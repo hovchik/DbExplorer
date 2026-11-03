@@ -79,7 +79,7 @@
 			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
 			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsLeftConnected}" ToolTip.Tip="Database of the left server" />
-			  <AutoCompleteBox Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
+			  <AutoCompleteBox AutomationProperties.Name="Left object" Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsLeftConnected}"
 							   Watermark="Click to browse or type to filter objects...">
@@ -123,7 +123,7 @@
 			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}"
 						ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
-			  <AutoCompleteBox Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
+			  <AutoCompleteBox AutomationProperties.Name="Right object" Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsRightConnected}"
 							   Watermark="Picked automatically when the same name exists; or browse...">
@@ -636,7 +636,7 @@
 						 Text="{Binding CopyNotesText}" IsVisible="{Binding HasCopyNotes}" />
 			</Grid>
 			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
-			<TextBox Grid.Column="2" Classes="code" Text="{Binding CopyScriptPreview}" IsReadOnly="True"
+			<TextBox AutomationProperties.Name="Copy script" Grid.Column="2" Classes="code" Text="{Binding CopyScriptPreview}" IsReadOnly="True"
 					 AcceptsReturn="True" TextWrapping="NoWrap"
 					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
 		  </Grid>
@@ -789,7 +789,7 @@
 			  </ScrollViewer>
 			</Grid>
 			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
-			<TextBox Grid.Column="2" Classes="code" Text="{Binding MigrationScript}" IsReadOnly="True"
+			<TextBox AutomationProperties.Name="Migration script" Grid.Column="2" Classes="code" Text="{Binding MigrationScript}" IsReadOnly="True"
 					 AcceptsReturn="True" TextWrapping="NoWrap"
 					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
 		  </Grid>

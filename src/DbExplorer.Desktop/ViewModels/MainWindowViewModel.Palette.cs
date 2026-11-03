@@ -162,6 +162,7 @@ public partial class MainWindowViewModel
             () => ReconnectOnStart = !ReconnectOnStart, keywords: "restore workspace startup", id: "toggle-reconnect");
         Add("Settings", SoftwareRendering ? "Use GPU rendering (after restart)" : "Use software rendering (after restart)",
             () => SoftwareRendering = !SoftwareRendering, keywords: "blank window graphics", id: "toggle-software-rendering");
+        Add("Settings", "Preferences…", OpenPreferences, "Ctrl+,", keywords: "settings options configure theme font row limit auto-commit notifications");
         Add("Help", "Keyboard shortcuts", ShowShortcuts, "F1", keywords: "keys hotkeys keybindings cheat sheet help");
 
         // ----- Tabs -----

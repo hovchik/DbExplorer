@@ -1,3 +1,4 @@
+using DbExplorer.Application.Assistant;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -21,6 +22,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ProviderRegistry _registry;
     private readonly IDialogService _dialogs;
     private readonly AppSettingsService _settings;
+    private readonly AssistantSettings _assistantSettings;
     private readonly ISessionAware[] _tabs;
     private readonly WorkspaceStore _workspace;
 
@@ -45,8 +47,10 @@ public partial class MainWindowViewModel : ViewModelBase
         LabViewModel lab,
         SecurityViewModel security,
         NavigatorViewModel navigator,
-        WorkspaceStore workspace)
+        WorkspaceStore workspace,
+        AssistantSettings assistantSettings)
     {
+        _assistantSettings = assistantSettings;
         _workspace = workspace;
         SavedWorkspace = workspace.Load();
         if (Enum.TryParse<AppTab>(SavedWorkspace.MainTab, out var savedTab) && Enum.IsDefined(savedTab)) _selectedTab = savedTab;
@@ -56,6 +60,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogs = dialogs;
         _settings = settings;
         _selectedTheme = settings.Theme;
+        // The Preferences window changes the theme too; the toolbar icon follows.
+        settings.ThemeChanged += theme => SelectedTheme = theme;
         Objects = objects;
         Search = search;
         DataSearch = dataSearch;
@@ -262,7 +268,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SetTheme(AppThemeMode mode) => SelectedTheme = mode;
 
-    /// <summary>Draw with the CPU instead of the graphics card from the next start (theme menu).</summary>
+    /// <summary>Every app-wide setting in one window (Ctrl+, or the theme menu).</summary>
+    [RelayCommand]
+    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs));
+
+    /// <summary>Runs at least this long notify when they finish out of sight (0 = never), from Preferences.</summary>
+    public TimeSpan LongRunNotifyThreshold => TimeSpan.FromSeconds(_settings.LongRunNotifySeconds);
+
+    /// <summary>Draw with the CPU instead of the graphics card from the next start (palette; Preferences has the same switch).</summary>
     public bool SoftwareRendering
     {
         get => _settings.SoftwareRendering;
@@ -415,7 +428,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The window's current normal bounds, kept up to date by the window and saved on close.</summary>
     public WindowPlacement? WindowPlacement { get; set; }
 
-    /// <summary>Theme menu: open the last connection again at start.</summary>
+    /// <summary>Open the last connection again at start (Preferences and the palette).</summary>
     public bool ReconnectOnStart
     {
         get => _settings.ReconnectOnStart;

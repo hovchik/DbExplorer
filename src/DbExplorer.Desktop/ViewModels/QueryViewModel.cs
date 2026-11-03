@@ -52,6 +52,9 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         AssistantSettings assistantSettings, SqlAssistant assistant)
     {
         Settings = settings;
+        // New tabs start with the defaults from Preferences; each tab can change its own afterwards.
+        _maxRows = settings.DefaultRowLimit;
+        _autoCommit = settings.DefaultAutoCommit;
         AssistantSettings = assistantSettings;
         this.assistant = assistant;
         Snippets = snippets;

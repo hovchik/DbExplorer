@@ -151,6 +151,7 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("preferences", RenderPreferencesAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -925,6 +926,49 @@ namespace DbExplorer.UiRender
 
         /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it
         /// against the real editor, and the F1 shortcut sheet.</summary>
+        /// <summary>The Preferences window (Ctrl+,) at the top and scrolled to its last sections, and the theme menu
+        /// that now leads to it.</summary>
+        private async Task RenderPreferencesAsync()
+        {
+            var themeButton = _window.GetVisualDescendants().OfType<Button>()
+                .First(b => ToolTip.GetTip(b) as string == "Theme and preferences");
+            themeButton.Flyout!.ShowAt(themeButton);
+            await Settle(8);
+            await Shot(_window, "preferences-theme-menu");
+            themeButton.Flyout.Hide();
+            await Settle();
+
+            _vm.OpenPreferencesCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);
+            var window = _window.OwnedWindows.OfType<PreferencesWindow>().First();
+            await Settle(8);
+            await Shot(window, "preferences");
+
+            var prefs = (PreferencesViewModel)window.DataContext!;
+            prefs.SoftwareRendering = true; // shows the restart note
+            prefs.NotifyLongRuns = false;
+            var list = window.FindControl<ListBox>("SectionList")!;
+            list.SelectedIndex = 2;
+            await Settle(8);
+            await Shot(window, "preferences-middle");
+            list.SelectedIndex = list.ItemCount - 2;
+            await Settle(8);
+            await Shot(window, "preferences-scrolled");
+            prefs.SoftwareRendering = false;
+            prefs.NotifyLongRuns = true;
+
+            window.Width = 600;
+            window.Height = 480;
+            list.SelectedIndex = 0;
+            await Settle(8);
+            await Shot(window, "preferences-small");
+            list.SelectedIndex = 3;
+            await Settle(8);
+            await Shot(window, "preferences-small-notifications");
+            window.Close();
+            await Settle();
+        }
+
         private async Task RenderPaletteAsync()
         {
             _vm.SelectedTab = AppTab.Query;

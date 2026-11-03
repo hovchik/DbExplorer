@@ -8,6 +8,7 @@
 ;     prompt, or for everyone in Program Files if they pick that (or pass /ALLUSERS)
 ;   - Start menu shortcut, optional desktop shortcut
 ;   - DB Explorer in Explorer's "Open with" list for .sql files, and optionally as their default app
+;   - DB Explorer in "Open with" for SQLite databases (.db, .sqlite, .sqlite3, .db3), never their default app
 ;   - opens the app at the end
 ; The user's connections, settings, metadata cache and query tabs (%LOCALAPPDATA%\DbExplorer) are never
 ; touched, so upgrades and uninstalls keep them.
@@ -86,6 +87,20 @@ Root: HKA; Subkey: "Software\Classes\.sql\OpenWithProgids"; ValueType: string; V
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".sql"; ValueData: ""; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+; SQLite databases: a ProgID that opens the file as a connection, offered in "Open with" only (.db is used by many
+; programs, so the installer never takes it over).
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sqlite"; ValueType: string; ValueName: ""; ValueData: "SQLite database"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sqlite\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sqlite\shell\open"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"
+Root: HKA; Subkey: "Software\Classes\DbExplorer.sqlite\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.db\OpenWithProgids"; ValueType: string; ValueName: "DbExplorer.sqlite"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.sqlite\OpenWithProgids"; ValueType: string; ValueName: "DbExplorer.sqlite"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.sqlite3\OpenWithProgids"; ValueType: string; ValueName: "DbExplorer.sqlite"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.db3\OpenWithProgids"; ValueType: string; ValueName: "DbExplorer.sqlite"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".db"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".sqlite"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".sqlite3"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".db3"; ValueData: ""
 ; Only with the task: .sql files open in DB Explorer on a double-click.
 Root: HKA; Subkey: "Software\Classes\.sql"; ValueType: string; ValueName: ""; ValueData: "DbExplorer.sql"; Tasks: sqldefault; Flags: uninsdeletevalue
 

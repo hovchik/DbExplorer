@@ -191,6 +191,24 @@ public class TableDesignerRedesignTests
         Assert.Equal("No changes yet", vm.ScriptSummary);
     });
 
+    [Fact]
+    public Task Revert_clears_the_selected_column_so_the_remove_key_cannot_drop_its_old_keys() => UiThread.RunAsync(async () =>
+    {
+        var vm = await OpenOrders();
+        var stale = vm.Columns.Single(c => c.Name == "CustomerId");
+        vm.SelectedColumn = stale;
+        vm.RevertChangesCommand.Execute(null);
+        Assert.Null(vm.SelectedColumn);
+        vm.AddIndexCommand.Execute(null);
+        vm.Indexes[^1].Columns = "CustomerId";
+
+        vm.RemoveColumnCommand.Execute(null);
+        vm.RemoveColumnCommand.Execute(stale);
+
+        Assert.Equal(3, vm.Columns.Count);
+        Assert.Single(vm.Indexes);
+    });
+
     // ----- Shortcuts -----
 
     [Fact]

@@ -253,6 +253,8 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         {
             Schema = design.Schema;
             TableName = design.Name;
+            // The rows are replaced, so a selected row would point at one that is no longer in the list.
+            SelectedColumn = null;
             Columns.Clear();
             foreach (var c in design.Columns) Columns.Add(ColumnRow.From(c, Changed, ColumnRenamed));
             ForeignKeys.Clear();
@@ -463,7 +465,8 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private void RemoveColumn(ColumnRow? row)
     {
         row ??= SelectedColumn;
-        if (row is null) return;
+        // A row that is not in the list any more (replaced by Revert or a fix): its keys and indexes are not its own.
+        if (row is null || !Columns.Contains(row)) return;
         var position = Columns.IndexOf(row);
         Columns.Remove(row);
         if (ReferenceEquals(SelectedColumn, row)) SelectedColumn = Columns.Count == 0 ? null : Columns[Math.Clamp(position, 0, Columns.Count - 1)];
@@ -528,7 +531,8 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     private void IndexColumn(ColumnRow? row)
     {
         row ??= SelectedColumn;
-        var name = row?.Name?.Trim() ?? "";
+        if (row is null || !Columns.Contains(row)) return;
+        var name = row.Name?.Trim() ?? "";
         if (name.Length == 0) return;
         if (Indexes.Any(i => i.ToDesign().Columns is [var only] && Same(only, name)))
         {

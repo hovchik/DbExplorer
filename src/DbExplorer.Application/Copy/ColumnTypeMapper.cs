@@ -69,6 +69,9 @@ public static class ColumnTypeMapper
             warning = $"{c.Name} has no declared type in SQLite (any value); copied as binary, change it if it holds text or numbers.";
         if (family == Design.TypeFamily.Text && !(args.Count == 1 && ParseInt(args[0]) is not null)) family = Design.TypeFamily.LargeText;
 
+        // SQLite stores every integer in up to 8 bytes whatever the declared type (INT, SMALLINT…), so only a 64-bit
+        // target column is sure to hold the values.
+        if (family == Design.TypeFamily.Integer) return new("bigint", warning);
         if (family == Design.TypeFamily.Text) return new(target == SqlDialect.SqlServerKey ? $"nvarchar({args[0]})" : $"varchar({args[0]})", warning);
         if (family == Design.TypeFamily.Decimal && args.Count == 2) return new($"{(target == SqlDialect.PostgresKey ? "numeric" : "decimal")}({args[0]},{args[1]})", warning);
         var (type, size) = Design.ColumnTypes.Preferred(target, family);

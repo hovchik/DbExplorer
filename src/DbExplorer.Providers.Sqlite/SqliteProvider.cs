@@ -112,8 +112,10 @@ public sealed class SqliteProvider(ConnectionProfile profile) : IDatabaseProvide
     private static IEnumerable<DbColumn> TableColumns(SqliteConnection cn, string table)
     {
         var info = TableInfo(cn, table).Where(c => c.Hidden != 1).ToList();
-        // A lone INTEGER PRIMARY KEY is the rowid itself: SQLite numbers it, like an identity column elsewhere.
+        // A lone INTEGER PRIMARY KEY is the rowid itself: SQLite numbers it, like an identity column elsewhere. A
+        // WITHOUT ROWID table has no rowid, so there the key is an ordinary column the caller must fill in.
         var keys = info.Count(c => c.Pk > 0);
+        if (keys == 1 && IsWithoutRowid(cn, table)) keys = 0;
         return info.Select((c, i) => new DbColumn
         {
             Database = SqliteSql.Main,
@@ -128,6 +130,18 @@ public sealed class SqliteProvider(ConnectionProfile profile) : IDatabaseProvide
             IsPrimaryKey = c.Pk > 0,
             IsIdentity = keys == 1 && c.Pk > 0 && string.Equals(c.Type?.Trim(), "INTEGER", StringComparison.OrdinalIgnoreCase)
         });
+    }
+
+    private static bool IsWithoutRowid(SqliteConnection cn, string table)
+    {
+        try
+        {
+            return cn.ExecuteScalar<long?>("SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = @table;", new { table }) == 1;
+        }
+        catch (SqliteException)
+        {
+            return false;
+        }
     }
 
     public Task<IReadOnlyList<DbModule>> GetModulesAsync(CancellationToken ct = default) => Run<IReadOnlyList<DbModule>>(ct, () =>

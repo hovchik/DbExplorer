@@ -267,7 +267,7 @@ public sealed class SqliteFeatureTests : IAsyncLifetime
         Assert.Equal("numeric(10,2)", ColumnTypeMapper.Map(Col("decimal(10,2)"), SqlDialect.MySqlKey, SqlDialect.SqliteKey).Type);
         Assert.Equal("text", ColumnTypeMapper.Map(Col("TEXT"), SqlDialect.SqliteKey, SqlDialect.PostgresKey).Type);
         Assert.Equal("nvarchar(max)", ColumnTypeMapper.Map(Col("TEXT"), SqlDialect.SqliteKey, SqlDialect.SqlServerKey).Type);
-        Assert.Equal("int", ColumnTypeMapper.Map(Col("INTEGER"), SqlDialect.SqliteKey, SqlDialect.MySqlKey).Type);
+        Assert.Equal("bigint", ColumnTypeMapper.Map(Col("INTEGER"), SqlDialect.SqliteKey, SqlDialect.MySqlKey).Type);
         var untyped = ColumnTypeMapper.Map(Col(""), SqlDialect.SqliteKey, SqlDialect.PostgresKey);
         Assert.Equal("bytea", untyped.Type);
         Assert.NotNull(untyped.Warning);

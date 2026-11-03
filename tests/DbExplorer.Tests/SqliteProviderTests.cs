@@ -90,6 +90,16 @@ public sealed class SqliteProviderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_lone_integer_key_of_a_without_rowid_table_is_not_an_identity()
+    {
+        await using var provider = _factory.Create(Profile());
+        await provider.ExecuteScriptAsync("CREATE TABLE codes (id INTEGER PRIMARY KEY, label TEXT) WITHOUT ROWID;", null, 30);
+        var id = (await provider.GetColumnsAsync()).Single(c => c is { Table: "codes", Name: "id" });
+        Assert.True(id.IsPrimaryKey);
+        Assert.False(id.IsIdentity); // the caller supplies it: SQLite does not number a WITHOUT ROWID key
+    }
+
+    [Fact]
     public async Task Columns_report_keys_rowid_identity_and_generated_columns()
     {
         await using var provider = _factory.Create(Profile());

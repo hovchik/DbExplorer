@@ -60,7 +60,7 @@
       <!-- Versions, newest first -->
       <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4">
         <Grid>
-          <ListBox x:Name="VersionList" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}" Background="Transparent">
+          <ListBox AutomationProperties.Name="Versions" x:Name="VersionList" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}" Background="Transparent">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:LocalHistoryEntry">
                 <StackPanel Spacing="1" Margin="0,2">
@@ -99,7 +99,7 @@
         </Grid>
         <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4"
                 Background="{DynamicResource AppCodeBackgroundBrush}">
-          <ListBox Classes="diff" ItemsSource="{Binding DiffRows}" Background="Transparent">
+          <ListBox AutomationProperties.Name="Differences" Classes="diff" ItemsSource="{Binding DiffRows}" Background="Transparent">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="q:LocalHistoryDiffRow">
                 <Grid ColumnDefinitions="46,18,*" Background="{Binding Kind, Converter={StaticResource DiffKindBrush}}">

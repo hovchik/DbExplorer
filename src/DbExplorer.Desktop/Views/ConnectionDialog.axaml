@@ -82,7 +82,7 @@
       </Border>
       <TextBlock Classes="field" Text="Connection string or URL" />
       <Grid ColumnDefinitions="*,8,Auto">
-        <TextBox x:Name="ConnectionStringBox" Grid.Column="0" Text="{Binding ConnectionStringText}" FontSize="12"
+        <TextBox AutomationProperties.Name="Connection string" x:Name="ConnectionStringBox" Grid.Column="0" Text="{Binding ConnectionStringText}" FontSize="12"
                  Watermark="Paste a URL (postgresql://, mysql://, sqlite:///, jdbc:…) or Server=…;Database=…"
                  ToolTip.Tip="Fills in the engine, server, port, database, user, password and TLS settings below. Nothing connects until you press Test or Save." />
         <Button Grid.Column="2" Content="Fill in" Command="{Binding FillFromConnectionStringCommand}" />
@@ -139,7 +139,7 @@
           <!-- SQLite: a file instead of a server -->
           <StackPanel Grid.Column="2" Grid.ColumnSpan="3" IsVisible="{Binding IsFileEngine}">
             <TextBlock Classes="field" Text="File" />
-            <TextBox x:Name="FileBox" Text="{Binding Host}" Watermark="path to a .db, .sqlite or .sqlite3 file"
+            <TextBox AutomationProperties.Name="Database file" x:Name="FileBox" Text="{Binding Host}" Watermark="path to a .db, .sqlite or .sqlite3 file"
                      ToolTip.Tip="The SQLite database file. The app never creates it by accident: use New file… for an empty database.">
               <TextBox.InnerRightContent>
                 <StackPanel Orientation="Horizontal" Margin="0,0,2,0">
@@ -218,11 +218,11 @@
         <Grid ColumnDefinitions="*,12,*" IsVisible="{Binding UsesTenant}">
           <StackPanel Grid.Column="0">
             <TextBlock Classes="field" Text="Directory (tenant)" />
-            <TextBox Text="{Binding TenantId}" Watermark="{Binding TenantHint}" />
+            <TextBox AutomationProperties.Name="Tenant ID" Text="{Binding TenantId}" Watermark="{Binding TenantHint}" />
           </StackPanel>
           <StackPanel Grid.Column="2" IsVisible="{Binding UsesClientId}">
             <TextBlock Classes="field" Text="Client ID" />
-            <TextBox Text="{Binding ClientId}" Watermark="from the app registration" />
+            <TextBox AutomationProperties.Name="Client ID" Text="{Binding ClientId}" Watermark="from the app registration" />
           </StackPanel>
         </Grid>
         <CheckBox Content="Save password" IsChecked="{Binding SavePassword}" IsVisible="{Binding UsesPassword}"

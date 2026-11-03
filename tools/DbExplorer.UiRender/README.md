@@ -8,6 +8,8 @@ It boots the real `App` (same services as `App.OnFrameworkInitializationComplete
 `AppPaths` root so the user's connections and settings are never touched), connects to a PostgreSQL
 database, drives every tab and opens every dialog, and writes `<name>-light.png` / `<name>-dark.png`
 plus `avalonia-log.txt` (every binding/layout warning Avalonia logged) to `.ui-renders/` at the repo root.
+It also writes `accessibility-names.txt` (the name a screen reader reads for every visible button and input, per
+view) and `accessibility-missing.txt` (the ones it would read as just "button" or "edit"; should stay empty).
 
 ```sh
 # a sample database the tabs can show (tables with foreign keys, a view, a function, a procedure, roles)

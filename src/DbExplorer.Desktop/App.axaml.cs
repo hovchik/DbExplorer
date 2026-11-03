@@ -21,7 +21,11 @@ namespace DbExplorer.Desktop;
 // Fully qualified: "Application" alone would resolve to the DbExplorer.Application namespace.
 public partial class App : Avalonia.Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        AccessibleNames.Install(); // screen-reader names for icon buttons and unlabelled inputs
+    }
 
     /// <summary>Watches the UI thread while the desktop app runs (null in tests and the render harness).</summary>
     internal static ResponsivenessWatchdog? Watchdog { get; private set; }

@@ -53,7 +53,7 @@
 
     <!-- Section list: a click scrolls to the section -->
     <Border DockPanel.Dock="Left" Width="170" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" Padding="8,12">
-      <ListBox x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
+      <ListBox AutomationProperties.Name="Sections" x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
         <ListBoxItem Content="Appearance" Tag="AppearanceSection" />
         <ListBoxItem Content="SQL editor" Tag="EditorSection" />
         <ListBoxItem Content="New Query tabs" Tag="QueryTabsSection" />

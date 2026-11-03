@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -33,6 +34,8 @@ public sealed class QueryCanvasControl : Control
 
     static QueryCanvasControl()
     {
+        AutomationProperties.NameProperty.OverrideDefaultValue<QueryCanvasControl>("Query builder tables");
+        AutomationProperties.HelpTextProperty.OverrideDefaultValue<QueryCanvasControl>("Delete removes the selected table or join");
         AffectsMeasure<QueryCanvasControl>(BuilderProperty);
         AffectsRender<QueryCanvasControl>(BuilderProperty);
     }

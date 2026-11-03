@@ -11,7 +11,7 @@
       <Setter Property="Background" Value="{DynamicResource AppObjectOtherBrush}" />
     </Style>
     <Style Selector="Border.badge TextBlock">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="FontSize" Value="11" />
       <Setter Property="HorizontalAlignment" Value="Center" />

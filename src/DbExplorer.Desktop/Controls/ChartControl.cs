@@ -1,3 +1,4 @@
+using DbExplorer.Desktop.Services;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -52,7 +53,7 @@ public sealed class ChartControl : Control
     /// <summary>The colour of series <paramref name="index"/> in the current theme.</summary>
     public Color SeriesColor(int index) => (IsDark ? DarkPalette : LightPalette)[index % LightPalette.Length];
 
-    private bool IsDark => ActualThemeVariant == ThemeVariant.Dark;
+    private bool IsDark => AppThemes.IsDark(ActualThemeVariant);
 
     /// <summary>Writes the chart as it looks now (without the hover tooltip) as a PNG at twice the screen resolution.</summary>
     public void SavePng(Stream stream)

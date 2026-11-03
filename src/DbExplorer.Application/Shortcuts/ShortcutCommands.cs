@@ -68,6 +68,7 @@ public static class ShortcutCommands
     public const string ResetZoom = "editor.zoom-reset";
     public const string MaximizeResults = "editor.maximize-results";
     public const string MaximizeEditor = "editor.maximize-editor";
+    public const string ResultsAsText = "editor.results-as-text";
 
     public const string NewTab = "tabs.new";
     public const string CloseTab = "tabs.close";
@@ -197,6 +198,7 @@ public static class ShortcutCommands
         Add(ZoomOut, e, "Zoom the editor out", "Ctrl+-");
         Add(ResetZoom, e, "Reset the editor zoom", "Ctrl+0");
         Add(MaximizeResults, e, "Give the results most of the space", "Ctrl+Shift+↑");
+        Add(ResultsAsText, e, "Show results as text or as a grid", "Ctrl+T");
         Add(MaximizeEditor, e, "Give the editor most of the space", "Ctrl+Shift+↓");
 
         var t = ShortcutAreas.QueryTabs;

@@ -204,6 +204,9 @@
 		</ContextMenu>
 	  </DataGrid.ContextMenu>
 	</DataGrid>
+	<!-- Screen readers: the grid exposes no cells, so the current cell is announced here (polite live region) -->
+	<TextBlock x:Name="CellAnnouncer" Width="1" Height="1" Opacity="0" IsHitTestVisible="False"
+			   HorizontalAlignment="Left" VerticalAlignment="Top" AutomationProperties.LiveSetting="Polite" />
 	<Grid x:Name="BodyGrid" ColumnDefinitions="*,Auto,0">
 	  <DataGrid x:Name="Grid" Grid.Column="0" IsReadOnly="False" AutoGenerateColumns="False"
 				CanUserResizeColumns="True" CanUserSortColumns="True" CanUserReorderColumns="True"

@@ -180,6 +180,7 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.DocumentationRequested += (database, schema, session) => _ = ExportDocumentationFromNavigatorAsync(database, schema, session);
         navigator.BackupRequested += (database, restore, session) => _ = BackupFromNavigatorAsync(database, restore, session);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
+        HookWelcome();
     }
 
     // ----- Database navigator (left of the tabs) -----
@@ -547,7 +548,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var failed = new List<string>();
         var opened = 0;
-        foreach (var path in paths)
+        // A SQLite file opens as a connection, not as a script; with several, the first one is connected.
+        var databases = paths.Where(DatabaseFiles.IsDatabaseFile).ToList();
+        if (databases.Count > 0) await OpenDatabaseFileAsync(databases[0]);
+        foreach (var path in paths.Except(databases))
         {
             try
             {
@@ -562,6 +566,39 @@ public partial class MainWindowViewModel : ViewModelBase
         if (opened > 0) SelectedTab = AppTab.Query;
         if (failed.Count > 0)
             ShowError((failed.Count == 1 ? "Could not open a file: " : $"Could not open {failed.Count} files: ") + string.Join("; ", failed));
+    }
+
+    /// <summary>
+    /// Connects to a SQLite file: the saved connection for that path, or a new one named after the file, saved first so
+    /// it is in the connection list next time.
+    /// </summary>
+    public async Task OpenDatabaseFileAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            ShowError($"Could not open {Path.GetFileName(path)}: the file was not found.");
+            return;
+        }
+        var (profile, isNew) = DatabaseFiles.ProfileFor(Profiles, path);
+        if (isNew)
+        {
+            Profiles.Add(profile);
+            SortProfiles(profile);
+            await SaveProfilesAsync();
+        }
+        SelectedProfile = profile;
+        await ConnectProfileAsync(profile);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCreate))]
+    private async Task OpenDatabaseFileDialogAsync()
+    {
+        var path = await _dialogs.PickFilePathAsync("Open SQLite file",
+        [
+            ("SQLite databases", DatabaseFiles.Extensions.Select(e => "*" + e).ToArray()),
+            ("All files", ["*"])
+        ]);
+        if (path is not null) await OpenDatabaseFileAsync(path);
     }
 
     // ----- Offline: the Query tab stands in for the tabs that need a connection -----

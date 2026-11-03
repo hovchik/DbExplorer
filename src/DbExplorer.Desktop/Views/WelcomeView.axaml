@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             xmlns:core="using:DbExplorer.Core.Connections"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             x:Class="DbExplorer.Desktop.Views.WelcomeView"
+             x:DataType="vm:MainWindowViewModel">
+  <!-- Shown over the Query tab while nothing is connected and no script has been started -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.welcome-head">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="Button.welcome-item">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.welcome-item:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppToolHoverBrush}" />
+    </Style>
+    <Style Selector="Border.keycap">
+      <Setter Property="Background" Value="{DynamicResource AppKeycapBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1,1,1,2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.keycap TextBlock">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <StackPanel MaxWidth="960" Margin="32,28,32,24" Spacing="22">
+        <StackPanel Spacing="4">
+          <TextBlock Text="Welcome to DB Explorer" FontSize="24" FontWeight="SemiBold" />
+          <TextBlock Classes="hint" TextWrapping="Wrap"
+                     Text="Nothing is connected yet. Open a connection to browse and query a database, or start writing: scripts can be written and saved offline and run once you connect." />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="*,24,*,24,*">
+          <!-- Connections -->
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="welcome-head" Text="Connect" />
+            <ItemsControl ItemsSource="{Binding WelcomeProfiles}" IsVisible="{Binding HasWelcomeProfiles}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="core:ConnectionProfile">
+                  <Button Classes="welcome-item" AutomationProperties.Name="{Binding DisplayName, StringFormat='Connect to {0}'}"
+                          Command="{Binding $parent[UserControl].DataContext.WelcomeConnectCommand}"
+                          CommandParameter="{Binding}" ToolTip.Tip="{Binding Host}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Database}" Width="15" Height="15" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding DisplayName}" MaxWidth="240" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="8,0,0,6" IsVisible="{Binding !HasWelcomeProfiles}"
+                       Text="No saved connections yet." />
+            <Button Classes="welcome-item" Command="{Binding NewConnectionCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Plus}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Text="New connection…" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="welcome-item" Command="{Binding OpenDatabaseFileDialogCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Folder}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Text="Open SQLite file…" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- Files -->
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="welcome-head" Text="Scripts" />
+            <Button Classes="welcome-item" Command="{Binding DismissWelcomeCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Pencil}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Text="Start with an empty script" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="welcome-item" Command="{Binding WelcomeOpenFileCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Download}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Text="Open SQL file…" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <TextBlock Classes="hint" Text="Recent" Margin="8,10,0,2" IsVisible="{Binding HasWelcomeRecentFiles}" />
+            <ItemsControl ItemsSource="{Binding WelcomeRecentFiles}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:RecentFileItem">
+                  <Button Classes="welcome-item" ToolTip.Tip="{Binding Path}" AutomationProperties.Name="{Binding Name, StringFormat='Open {0}'}"
+                          Command="{Binding $parent[UserControl].DataContext.WelcomeOpenRecentCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="{Binding Name}" MaxWidth="260" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="hint" FontSize="11" Text="{Binding Folder}" MaxWidth="260" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- Keys -->
+          <StackPanel Grid.Column="4">
+            <TextBlock Classes="welcome-head" Text="Good to know" />
+            <ItemsControl ItemsSource="{Binding WelcomeKeys}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:WelcomeKey">
+                  <Grid ColumnDefinitions="92,*" Margin="0,3">
+                    <Border Classes="keycap" IsVisible="{Binding Keys, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                      <TextBlock Text="{Binding Keys}" />
+                    </Border>
+                    <TextBlock Grid.Column="1" Text="{Binding Action}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Classes="welcome-item" Margin="0,8,0,0" Command="{Binding OpenCommandPaletteCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <controls:StrokeIcon Data="{x:Static controls:Icons.Search}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Text="Open the command palette" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

@@ -84,6 +84,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     public event Action<QueryViewModel>? RunStarting;
 
     [ObservableProperty] private string _title = "Query";
+
+    /// <summary>Result tabs show their rows as aligned plain text instead of a grid (Ctrl+T), until toggled back.</summary>
+    [ObservableProperty] private bool _resultsAsText;
+
+    [RelayCommand]
+    private void ToggleResultsAsText() => ResultsAsText = !ResultsAsText;
+
     [ObservableProperty] private string? _filePath;
     [ObservableProperty] private bool _isDirty;
 

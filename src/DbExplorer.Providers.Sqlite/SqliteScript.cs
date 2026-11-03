@@ -57,6 +57,13 @@ public static class SqliteScript
         return -1;
     }
 
+    private static readonly Regex ForeignKeysOff = new(
+        @"\A(?:\s+|--[^\n]*(?:\n|\z)|/\*.*?\*/)*PRAGMA\s+(?:main\.)?foreign_keys\s*=\s*(?:OFF|0|false|no)\s*(?:;|\z)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    /// <summary>True when the script's first statement (after comments) is <c>PRAGMA foreign_keys = OFF</c>.</summary>
+    public static bool TurnsForeignKeysOff(string sql) => ForeignKeysOff.IsMatch(sql);
+
     private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c is '_' or '$';
 
     /// <summary>The text from <paramref name="open"/> (an opening parenthesis) to its closing one, exclusive, or null.</summary>

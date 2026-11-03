@@ -22,6 +22,7 @@ public enum EditorAction
     ResetZoom,
     ToggleWordWrap,
     MaximizeResults,
+    ResultsAsText,
     MaximizeEditor,
     ResetLayout,
     Focus

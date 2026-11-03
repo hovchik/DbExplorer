@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -133,7 +134,7 @@ public partial class ResultGridView : UserControl
 
         Grid.AddHandler(KeyDownEvent, OnGridKeyDown, RoutingStrategies.Tunnel);
         Grid.SelectionChanged += (_, _) => { UpdateAggregates(); UpdateDetails(); UpdateRowButtons(); };
-        Grid.CurrentCellChanged += (_, _) => UpdateAggregates();
+        Grid.CurrentCellChanged += (_, _) => { UpdateAggregates(); AnnounceCurrentCell(); };
         Grid.DoubleTapped += OnGridDoubleTapped;
         Grid.Sorting += OnSorting;
         Grid.ColumnReordering += OnColumnReordering;
@@ -490,6 +491,19 @@ public partial class ResultGridView : UserControl
         var item = new MenuItem { Header = header };
         item.Click += (_, _) => action();
         return item;
+    }
+
+    /// <summary>
+    /// Tells a screen reader which cell is current: "Row 3 of 120, city: Oslo". Only while the grid has keyboard focus,
+    /// so a refresh or a click elsewhere stays quiet; the same text is the grid's ItemStatus.
+    /// </summary>
+    private void AnnounceCurrentCell()
+    {
+        if (Grid.SelectedItem is not ResultRow row || CurrentColumnIndex is not { } column || column >= _columns.Count) return;
+        var index = _viewRows.IndexOf(row);
+        var text = CellSpeech.Describe(index + 1, _viewRows.Count, _columns[column].Name, Cell(row, column), row.IsCellModified(column));
+        AutomationProperties.SetItemStatus(Grid, text);
+        if (Grid.IsKeyboardFocusWithin) AutomationProperties.SetName(CellAnnouncer, text);
     }
 
     private static object? Cell(ResultRow row, int column) => column < row.Values.Count ? row.Values[column] : null;

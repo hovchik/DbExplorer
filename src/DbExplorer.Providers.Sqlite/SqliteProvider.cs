@@ -553,7 +553,7 @@ public sealed class SqliteProvider(ConnectionProfile profile) : IDatabaseProvide
             var cn = Open(readOnly: false);
             try
             {
-                return new ScriptSession(cn, transactional ? cn.BeginTransaction() : null);
+                return new ScriptSession(cn, transactional);
             }
             catch
             {
@@ -586,13 +586,33 @@ public sealed class SqliteProvider(ConnectionProfile profile) : IDatabaseProvide
         };
     });
 
-    private sealed class ScriptSession(SqliteConnection connection, SqliteTransaction? transaction) : IScriptSession
+    /// <summary>
+    /// A connection, and with <c>transactional</c> one transaction that starts with the first statement. A script whose
+    /// first statement is <c>PRAGMA foreign_keys = OFF</c> (the table rebuild the designer writes, as SQLite documents it)
+    /// gets that pragma applied before the transaction begins, since SQLite ignores it inside one; the commit then runs
+    /// <c>PRAGMA foreign_key_check</c> and rolls everything back if a row points at a missing parent.
+    /// </summary>
+    private sealed class ScriptSession(SqliteConnection connection, bool transactional) : IScriptSession
     {
+        private SqliteTransaction? _transaction;
+        private bool _foreignKeysOff;
         private bool _finished;
+
+        private SqliteTransaction? Transaction(string sql)
+        {
+            if (!transactional || _transaction is not null) return _transaction;
+            if (SqliteScript.TurnsForeignKeysOff(sql))
+            {
+                using var off = Command(connection, "PRAGMA foreign_keys = OFF;");
+                off.ExecuteNonQuery();
+                _foreignKeysOff = true;
+            }
+            return _transaction = connection.BeginTransaction();
+        }
 
         public Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default) => Run(ct, () =>
         {
-            using var cmd = Command(connection, sql, transaction);
+            using var cmd = Command(connection, sql, Transaction(sql));
             try
             {
                 using var guard = new Guard(connection, timeoutSeconds, ct);
@@ -609,40 +629,79 @@ public sealed class SqliteProvider(ConnectionProfile profile) : IDatabaseProvide
             Run(ct, () =>
             {
                 var sw = Stopwatch.StartNew();
-                return RunScript(connection, transaction, sql, timeoutSeconds, maxRows, readOnly is not null, ct) with { Elapsed = sw.Elapsed };
+                return RunScript(connection, Transaction(sql), sql, timeoutSeconds, maxRows, readOnly is not null, ct) with { Elapsed = sw.Elapsed };
             });
 
         public Task<long> StreamAsync(string sql, ResultSetStream stream, CancellationToken ct = default) => Run(ct, () =>
         {
-            RunScript(connection, transaction, sql, 0, 0, false, ct, stream);
+            RunScript(connection, Transaction(sql), sql, 0, 0, false, ct, stream);
             return stream.RowCount;
         });
 
         public Task CommitAsync(CancellationToken ct = default) => Run(ct, () =>
         {
-            transaction?.Commit();
+            if (_foreignKeysOff && _transaction is not null && ForeignKeyProblem() is { } problem)
+            {
+                _transaction.Rollback();
+                _finished = true;
+                RestoreForeignKeys();
+                throw new InvalidOperationException(problem + " Nothing was changed.");
+            }
+            _transaction?.Commit();
             _finished = true;
+            RestoreForeignKeys();
             return true;
         });
 
         public Task RollbackAsync(CancellationToken ct = default) => Run(ct, () =>
         {
-            transaction?.Rollback();
+            _transaction?.Rollback();
             _finished = true;
+            RestoreForeignKeys();
             return true;
         });
 
+        /// <summary>The first rows <c>PRAGMA foreign_key_check</c> reports, described, or null when every reference holds.</summary>
+        private string? ForeignKeyProblem()
+        {
+            using var check = Command(connection, "PRAGMA foreign_key_check;", _transaction);
+            using var reader = check.ExecuteReader();
+            var problems = new List<string>();
+            var count = 0;
+            while (reader.Read())
+            {
+                count++;
+                if (problems.Count < 3)
+                    problems.Add($"{reader.GetString(0)} row {(reader.IsDBNull(1) ? "?" : reader.GetValue(1))} → {reader.GetString(2)}");
+            }
+            return count == 0 ? null
+                : $"{count:N0} row(s) would point at missing rows ({string.Join("; ", problems)}{(count > problems.Count ? "; …" : "")}).";
+        }
+
+        private void RestoreForeignKeys()
+        {
+            if (!_foreignKeysOff) return;
+            _foreignKeysOff = false;
+            try
+            {
+                using var on = Command(connection, "PRAGMA foreign_keys = ON;");
+                on.ExecuteNonQuery();
+            }
+            catch (SqliteException) { /* the connection is closed next anyway */ }
+        }
+
         public ValueTask DisposeAsync()
         {
-            if (transaction is not null)
+            if (_transaction is not null)
             {
                 if (!_finished)
                 {
-                    try { transaction.Rollback(); }
+                    try { _transaction.Rollback(); }
                     catch (Exception) { /* the statement that failed already ended it */ }
                 }
-                transaction.Dispose();
+                _transaction.Dispose();
             }
+            RestoreForeignKeys();
             connection.Dispose();
             return ValueTask.CompletedTask;
         }

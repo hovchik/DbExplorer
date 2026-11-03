@@ -72,6 +72,7 @@ public partial class MainWindowViewModel
             Editor("Zoom out", EditorAction.ZoomOut, K(ShortcutCommands.ZoomOut), "font smaller");
             Editor("Reset zoom", EditorAction.ResetZoom, K(ShortcutCommands.ResetZoom), "font size");
             Editor("Maximize results", EditorAction.MaximizeResults, K(ShortcutCommands.MaximizeResults), "layout grid");
+            Editor(doc.ResultsAsText ? "Show results as a grid" : "Show results as text", EditorAction.ResultsAsText, K(ShortcutCommands.ResultsAsText), "plain text copy aligned grid");
             Editor("Maximize editor", EditorAction.MaximizeEditor, K(ShortcutCommands.MaximizeEditor), "layout");
             Editor("Reset editor and results split", EditorAction.ResetLayout, keywords: "layout");
             Add("Query", _settings.SqlInspections ? "Turn SQL warnings off" : "Turn SQL warnings on",
@@ -129,6 +130,7 @@ public partial class MainWindowViewModel
         Command("Connection", "Refresh metadata", RefreshMetadataCommand, subtitle: "re-read the catalog", keywords: "reload schema objects");
         Command("Connection", "Cancel loading", CancelLoadCommand, keywords: "stop abort");
         Command("Connection", "New connection…", NewConnectionCommand, keywords: "add server profile");
+        Command("Connection", "Open SQLite file…", OpenDatabaseFileDialogCommand, keywords: "sqlite db database file open connect");
         Command("Connection", "Edit connection…", EditConnectionCommand, subtitle: SelectedProfile?.ToString(), keywords: "change settings password");
         Command("Connection", "Duplicate connection…", DuplicateConnectionCommand, subtitle: SelectedProfile?.ToString(), keywords: "copy clone");
         Command("Connection", "Delete connection…", DeleteConnectionCommand, subtitle: SelectedProfile?.ToString(), keywords: "remove");

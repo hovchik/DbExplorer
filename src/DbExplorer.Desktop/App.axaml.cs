@@ -175,14 +175,20 @@ public partial class App : Avalonia.Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    private AppThemeMode _theme;
+    private bool _watchingContrast;
+
     private void ApplyTheme(AppThemeMode theme)
     {
-        RequestedThemeVariant = theme switch
+        _theme = theme;
+        RequestedThemeVariant = AppThemes.For(theme, PlatformSettings?.GetColorValues());
+        // With the System theme, turning Windows' contrast themes on or off switches the app too.
+        if (!_watchingContrast && PlatformSettings is { } platform)
         {
-            AppThemeMode.Light => ThemeVariant.Light,
-            AppThemeMode.Dark => ThemeVariant.Dark,
-            _ => ThemeVariant.Default
-        };
+            _watchingContrast = true;
+            platform.ColorValuesChanged += (_, values) =>
+                Dispatcher.UIThread.Post(() => RequestedThemeVariant = AppThemes.For(_theme, values));
+        }
     }
 }
 

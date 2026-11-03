@@ -11,7 +11,7 @@
     <ProjectReference Include="..\..\src\DbExplorer.Desktop\DbExplorer.Desktop.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="11.2.3" />
-    <PackageReference Include="Avalonia.Skia" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Headless" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.22" />
   </ItemGroup>
 </Project>

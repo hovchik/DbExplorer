@@ -44,7 +44,7 @@ public partial class RoutineDebuggerWindow : Window
     }
 
     private void ApplyHighlighting() =>
-        SourceEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: ActualThemeVariant == ThemeVariant.Dark);
+        SourceEditor.SyntaxHighlighting = SqlHighlighting.Get(dark: AppThemes.IsDark(ActualThemeVariant));
 
     private void Bind()
     {

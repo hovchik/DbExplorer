@@ -601,7 +601,10 @@
           <views:ObjectsView DataContext="{Binding Objects}" />
         </TabItem>
         <TabItem Header="Query">
-          <views:QueryWorkspaceView DataContext="{Binding Query}" />
+          <Panel>
+            <views:QueryWorkspaceView DataContext="{Binding Query}" />
+            <views:WelcomeView IsVisible="{Binding ShowWelcome}" />
+          </Panel>
         </TabItem>
         <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
           <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />

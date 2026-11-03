@@ -180,6 +180,7 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.DocumentationRequested += (database, schema, session) => _ = ExportDocumentationFromNavigatorAsync(database, schema, session);
         navigator.BackupRequested += (database, restore, session) => _ = BackupFromNavigatorAsync(database, restore, session);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
+        HookWelcome();
     }
 
     // ----- Database navigator (left of the tabs) -----

@@ -174,6 +174,12 @@ public partial class MainWindowViewModel
         Add("Settings", SoftwareRendering ? "Use GPU rendering (after restart)" : "Use software rendering (after restart)",
             () => SoftwareRendering = !SoftwareRendering, keywords: "blank window graphics", id: "toggle-software-rendering");
         Add("Settings", "Preferences…", OpenPreferences, K(ShortcutCommands.Preferences), keywords: "settings options configure theme font row limit auto-commit notifications");
+        if (_updates is not null)
+            Add("Help", "Check for updates", () => _ = CheckForUpdatesNowAsync(), keywords: "update upgrade new version release download latest",
+                id: "check-for-updates");
+        if (AvailableUpdate is { } update)
+            Add("Help", $"Download DB Explorer {update.Version}", () => DownloadUpdateCommand.Execute(null), keywords: "update upgrade install",
+                id: "download-update");
         Add("Help", "Keyboard shortcuts", ShowShortcuts, K(ShortcutCommands.ShortcutSheet), keywords: "keys hotkeys keybindings cheat sheet help customize change remap");
         Add("Settings", Keymap.Current.VimMode ? "Turn Vim keys off" : "Turn Vim keys on", () => Keymap.Current.SetVimMode(!Keymap.Current.VimMode),
             subtitle: "Query editor", keywords: "vim vi modal normal insert editor keys", id: "toggle-vim");

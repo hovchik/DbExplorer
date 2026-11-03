@@ -24,6 +24,7 @@ public enum NavigatorObjectAction
     Modify,
     DropTable,
     FindUsages,
+    ImportData,
     GenerateTestData
 }
 
@@ -556,6 +557,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [RelayCommand] private void Modify() => RunObjectAction(NavigatorObjectAction.Modify);
     [RelayCommand] private void DropTable() => RunObjectAction(NavigatorObjectAction.DropTable);
     [RelayCommand] private void FindUsages() => RunObjectAction(NavigatorObjectAction.FindUsages);
+    [RelayCommand] private void ImportData() => RunObjectAction(NavigatorObjectAction.ImportData);
     [RelayCommand] private void GenerateTestData() => RunObjectAction(NavigatorObjectAction.GenerateTestData);
 
     private void RunObjectAction(NavigatorObjectAction action)

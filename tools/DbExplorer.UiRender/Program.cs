@@ -151,6 +151,7 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("import", RenderImportAsync);
             await Step("preferences", RenderPreferencesAsync);
             await Step("docs", RenderDocumentationAsync);
             await Step("testdata", RenderTestDataAsync);
@@ -1184,6 +1185,47 @@ namespace DbExplorer.UiRender
                 UnsavedWork.ConfirmText(LeaveReason.Disconnect)), "leave-disconnect");
 
             await doc.EndTransactionAsync(commit: false, reason: "render done");
+        }
+
+        /// <summary>Import data: a CSV into an existing table (one bad row), and a semicolon file with decimal commas
+        /// into a new table with guessed types.</summary>
+        private async Task RenderImportAsync()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "dbx-render-import");
+            Directory.CreateDirectory(dir);
+            var products = Path.Combine(dir, "products.csv");
+            File.WriteAllText(products, "SKU,Name,Price,Stock\nSKU-9001,Desk lamp,24.90,12\nSKU-9002,\"Chair, oak\",129.00,4\nSKU-9003,Monitor arm,59.5,lots\nSKU-9004,Cable tray,9.99,40\n");
+            var sales = Path.Combine(dir, "Sales 2024 (final).csv");
+            File.WriteAllText(sales, "Region;Order date;Amount;Paid;Customer ref\nNorth;2024-01-03;1.234,50;yes;C-0042\nSouth;2024-01-04;99,90;no;C-0007\nEast;2024-01-09;12,00;yes;C-0815\n");
+
+            _vm.SelectedTab = AppTab.Objects;
+            _vm.Objects.SelectedObject = Table("products");
+            await Settle(4);
+            _vm.Objects.ImportDataCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<ImportDataWindow>().Any(), "import window", 10_000);
+            var window = _window.OwnedWindows.OfType<ImportDataWindow>().First();
+            var vm = (ImportDataViewModel)window.DataContext!;
+            await vm.OpenAsync(products);
+            await WaitFor(() => vm.CheckSummary.Contains("rows have", StringComparison.Ordinal) || vm.CheckSummary.StartsWith("All", StringComparison.Ordinal), "import check", 10_000);
+            await Settle(10);
+            await Shot(window, "import-existing");
+            window.Close();
+            await Settle();
+
+            _vm.Objects.ImportNewTableCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<ImportDataWindow>().Any(), "import window", 10_000);
+            window = _window.OwnedWindows.OfType<ImportDataWindow>().First();
+            vm = (ImportDataViewModel)window.DataContext!;
+            await vm.OpenAsync(sales);
+            await WaitFor(() => vm.CheckSummary.StartsWith("All", StringComparison.Ordinal), "import check", 10_000);
+            await Settle(10);
+            await Shot(window, "import-new");
+            window.Width = 980;
+            window.Height = 660;
+            await Settle(6);
+            await Shot(window, "small-import-new");
+            window.Close();
+            await Settle();
         }
 
         private async Task ShowAndShoot(Window dialog, string name, Action<Window>? afterShow = null)

@@ -1,0 +1,201 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:views="using:DbExplorer.Desktop.Views"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
+        x:Class="DbExplorer.Desktop.Views.ImportDataWindow"
+        x:DataType="vm:ImportDataViewModel"
+        Title="{Binding Title}"
+        Width="1200" Height="780" MinWidth="960" MinHeight="640"
+        WindowStartupLocation="CenterOwner"
+        DragDrop.AllowDrop="True">
+  <Window.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+    <Style Selector="TextBlock.step">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Width" Value="64" />
+    </Style>
+    <Style Selector="WrapPanel.line > :is(Control)">
+      <Setter Property="Margin" Value="0,2,10,2" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Grid.header TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ItemsControl.rows TextBox, ItemsControl.rows AutoCompleteBox, ItemsControl.rows ComboBox">
+      <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="12">
+    <!-- 1 File -->
+    <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8">
+      <StackPanel Spacing="4">
+        <WrapPanel Classes="line">
+          <TextBlock Classes="step" Text="1  File" />
+          <Button Content="Choose file…" Command="{Binding BrowseCommand}"
+                  ToolTip.Tip="A CSV, TSV or text file, or an Excel workbook (.xlsx). You can also drop a file on this window." />
+          <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" IsVisible="{Binding HasFile}" />
+          <TextBlock Classes="hint" Text="{Binding FileInfo}" />
+        </WrapPanel>
+        <WrapPanel Classes="line" IsVisible="{Binding HasFile}" Margin="64,0,0,0">
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsText}">
+            <TextBlock Text="Delimiter" VerticalAlignment="Center" />
+            <ComboBox Width="150" ItemsSource="{Binding Delimiters}" SelectedItem="{Binding Delimiter}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsText}">
+            <TextBlock Text="Encoding" VerticalAlignment="Center" />
+            <ComboBox Width="190" ItemsSource="{Binding Encodings}" SelectedItem="{Binding Encoding}"
+                      ToolTip.Tip="Detected from the file. Pick another one if letters such as ä or é look wrong in the preview." />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsExcel}">
+            <TextBlock Text="Sheet" VerticalAlignment="Center" />
+            <ComboBox MinWidth="160" ItemsSource="{Binding Sheets}" SelectedItem="{Binding Sheet}" />
+          </StackPanel>
+          <CheckBox Content="First row holds column names" IsChecked="{Binding HasHeader}" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="Skip rows at the top" VerticalAlignment="Center" />
+            <NumericUpDown Width="96" Minimum="0" Maximum="1000" Increment="1" FormatString="0" Value="{Binding SkipRows}"
+                           ToolTip.Tip="Title or note lines above the column names" />
+          </StackPanel>
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- 2 Target -->
+    <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8">
+      <Grid ColumnDefinitions="64,130,*" RowDefinitions="Auto,Auto">
+        <TextBlock Grid.Row="0" Classes="step" Text="2  Into" />
+        <RadioButton Grid.Row="0" Grid.Column="1" GroupName="target" Content="Existing table" IsChecked="{Binding IsExistingTable}" VerticalAlignment="Center" />
+        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Spacing="10" Margin="0,2">
+          <AutoCompleteBox Width="320" ItemsSource="{Binding Tables}" SelectedItem="{Binding SelectedTable}"
+                           ValueMemberBinding="{Binding Label}" FilterMode="Contains" MinimumPrefixLength="0"
+                           IsTextCompletionEnabled="False" GotFocus="OnPickerFocus" IsEnabled="{Binding IsExistingTable}"
+                           Watermark="Click to browse or type to filter tables…">
+            <AutoCompleteBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ImportTableChoice">
+                <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </AutoCompleteBox.ItemTemplate>
+          </AutoCompleteBox>
+          <CheckBox Content="Delete its rows first" IsChecked="{Binding DeleteExisting}" IsEnabled="{Binding IsExistingTable}"
+                    ToolTip.Tip="Replace the table's rows: a DELETE in the same transaction, undone if the import fails" />
+        </StackPanel>
+        <RadioButton Grid.Row="1" Grid.Column="1" GroupName="target" Content="New table" IsChecked="{Binding IsNewTable}" VerticalAlignment="Center"
+                     ToolTip.Tip="Created with the columns below, in the same transaction as the rows" />
+        <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="0,2" IsEnabled="{Binding IsNewTable}">
+          <controls:DatabasePicker Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding NewDatabase}"
+                                   ToolTip.Tip="Database the table is created in" />
+          <TextBox Width="110" Text="{Binding NewSchema}" Watermark="schema" IsVisible="{Binding !IsMySql}"
+                   ToolTip.Tip="A new schema is created too" />
+          <TextBox Width="200" Text="{Binding NewTableName}" Watermark="table name" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Actions -->
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+      <StackPanel VerticalAlignment="Center" Spacing="4" Margin="0,0,12,0">
+        <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap"
+                   IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <ProgressBar Height="4" MinHeight="4" Minimum="0" Maximum="100" Value="{Binding Progress}" IsVisible="{Binding IsImporting}"
+                     IsIndeterminate="{Binding !ProgressKnown}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Content="Open as script" Command="{Binding OpenScriptCommand}"
+                ToolTip.Tip="The CREATE / DELETE and INSERT statements for the first 5,000 rows, in a new Query tab. Nothing runs from here." />
+        <Button Classes="accent" Content="Import" Command="{Binding ImportCommand}"
+                ToolTip.Tip="Shows what will happen and asks first. Runs in one transaction." />
+        <Button Content="Cancel import" Command="{Binding CancelImportCommand}" IsVisible="{Binding IsImporting}" />
+        <Button Content="Close" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+    </Grid>
+
+    <!-- 3 Values -->
+    <Border DockPanel.Dock="Bottom" Classes="card" Margin="0,8,0,0">
+      <WrapPanel Classes="line">
+        <TextBlock Classes="step" Text="Values" />
+        <CheckBox Content="Empty fields are NULL" IsChecked="{Binding EmptyIsNull}"
+                  ToolTip.Tip="Off: empty fields are empty text in text columns (still NULL in number and date columns)" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="Also NULL" VerticalAlignment="Center" />
+          <TextBox Width="80" Text="{Binding NullText}" Watermark="e.g. NULL" ToolTip.Tip="Text that means NULL, such as NULL, \N or n/a (any case)" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="Decimal" VerticalAlignment="Center" />
+          <ComboBox Width="130" ItemsSource="{Binding DecimalSeparators}" SelectedItem="{Binding DecimalSeparator}"
+                    ToolTip.Tip="Guessed from the file. With a comma, a point or a space groups thousands (1.234,5)." />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="Dates" VerticalAlignment="Center" />
+          <TextBox Width="150" Text="{Binding DateFormat}" Watermark="ISO or your region"
+                   ToolTip.Tip="Empty: 2024-03-31 (ISO) or dates as your computer's region writes them. Or a format such as dd.MM.yyyy, MM/dd/yyyy HH:mm or d/M/yy." />
+        </StackPanel>
+        <CheckBox Content="Trim spaces around text" IsChecked="{Binding TrimText}" />
+        <CheckBox Content="Leave out rows that don't fit" IsChecked="{Binding SkipInvalidRows}"
+                  ToolTip.Tip="Import the other rows instead of stopping. The problems list shows which rows are left out." />
+      </WrapPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="11*,6,10*" MinHeight="0">
+      <!-- Columns -->
+      <DockPanel Grid.Column="0">
+        <TextBlock DockPanel.Dock="Top" Classes="section" Text="Columns" Margin="0,0,0,4" />
+        <Grid DockPanel.Dock="Top" Classes="header" ColumnDefinitions="2*,3*,64" Margin="0,0,0,2">
+          <TextBlock Grid.Column="0" Text="In the file" />
+          <TextBlock Grid.Column="1" Text="Table column" IsVisible="{Binding IsExistingTable}" />
+          <TextBlock Grid.Column="1" Text="New column and type (guessed from the values)" IsVisible="{Binding IsNewTable}" />
+        </Grid>
+        <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="0,8" TextWrapping="Wrap"
+                   Text="Choose a file to see its columns here." IsVisible="{Binding !HasFile}" />
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ItemsControl Classes="rows" ItemsSource="{Binding Mappings}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ImportMappingRow">
+                <Grid ColumnDefinitions="2*,3*,64" Margin="0,0,0,4">
+                  <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <TextBlock Text="{Binding SourceName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourceName}" />
+                    <TextBlock Classes="hint" FontSize="11" Text="{Binding Sample}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Sample}" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Targets}" SelectedItem="{Binding Target}"
+                            IsVisible="{Binding !$parent[ItemsControl].DataContext.IsNewTable}" />
+                  <Grid Grid.Column="1" ColumnDefinitions="Auto,*,*" IsVisible="{Binding $parent[ItemsControl].DataContext.IsNewTable}">
+                    <CheckBox Grid.Column="0" IsChecked="{Binding Include}" MinWidth="0" Margin="0,0,4,0" ToolTip.Tip="Create and fill this column" />
+                    <TextBox Grid.Column="1" Text="{Binding NewName}" Watermark="name" IsEnabled="{Binding Include}" />
+                    <AutoCompleteBox Grid.Column="2" Text="{Binding NewType, Mode=TwoWay}" ItemsSource="{Binding Types}" Watermark="type"
+                                     FilterMode="StartsWith" MinimumPrefixLength="0" GotFocus="OnPickerFocus" IsEnabled="{Binding Include}"
+                                     ToolTip.Tip="Any type the server knows, with its size: varchar(100), numeric(12,2)…" />
+                  </Grid>
+                  <TextBlock Grid.Column="2" Text="{Binding Problems}" Foreground="{DynamicResource AppDangerBrush}"
+                             VerticalAlignment="Center" Margin="4,0,0,0" FontSize="12"
+                             ToolTip.Tip="Values in this column that do not fit its type; see the list under the preview" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+      <!-- Preview and check -->
+      <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto">
+        <TextBlock Grid.Row="0" Classes="section" Text="Preview: the first rows as they will be stored" Margin="0,0,0,4" />
+        <views:ResultGridView Grid.Row="1" ResultSet="{Binding Preview}" />
+        <TextBlock Grid.Row="2" Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding CheckSummary}" />
+        <Expander Grid.Row="3" Margin="0,4,0,0" IsVisible="{Binding HasProblems}" HorizontalAlignment="Stretch"
+                  Header="Values that don't fit (row numbers as in the file)">
+          <ListBox ItemsSource="{Binding Problems}" MaxHeight="150" FontSize="12" />
+        </Expander>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</Window>

@@ -225,6 +225,9 @@ public partial class MainWindowViewModel : ViewModelBase
             case NavigatorObjectAction.FindUsages:
                 command = Objects.FindUsagesCommand;
                 break;
+            case NavigatorObjectAction.ImportData:
+                command = Objects.ImportDataCommand;
+                break;
             case NavigatorObjectAction.GenerateTestData:
                 command = Objects.GenerateTestDataCommand;
                 break;

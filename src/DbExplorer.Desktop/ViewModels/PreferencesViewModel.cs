@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
 using DbExplorer.Application.Assistant;
+using DbExplorer.Application.Updates;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
 
@@ -153,6 +154,70 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // ---- Updates ----
+
+    /// <summary>The running version, shown next to the update settings.</summary>
+    public string CurrentVersion { get; init; } = "";
+
+    /// <summary>Reads the releases now and shows a newer one in the main window's update bar (null in tests without it).</summary>
+    public Func<Task<UpdateCheckResult?>>? CheckForUpdatesNow { get; init; }
+
+    public bool CheckForUpdates
+    {
+        get => _settings.CheckForUpdates;
+        set
+        {
+            _settings.SetCheckForUpdates(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IncludePreReleaseUpdates
+    {
+        get => _settings.IncludePreReleaseUpdates;
+        set
+        {
+            _settings.SetIncludePreReleaseUpdates(value);
+            OnPropertyChanged();
+        }
+    }
+
+    [ObservableProperty] private string? _updateCheckResult;
+    [ObservableProperty] private bool _isCheckingForUpdates;
+
+    public string UpdateStatus
+    {
+        get
+        {
+            var version = string.IsNullOrEmpty(CurrentVersion) ? "This is DB Explorer." : $"This is DB Explorer {CurrentVersion}.";
+            var last = _settings.LastUpdateCheck is { } at ? $" Last checked {at.ToLocalTime():g}." : " Not checked yet.";
+            var skipped = _settings.SkippedUpdateVersion is { } s ? $" Skipped: {s}." : "";
+            return version + last + skipped;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckUpdatesNowAsync()
+    {
+        if (CheckForUpdatesNow is null || IsCheckingForUpdates) return;
+        IsCheckingForUpdates = true;
+        UpdateCheckResult = "Checking…";
+        try
+        {
+            var result = await CheckForUpdatesNow();
+            UpdateCheckResult = result is null ? null : result.Status switch
+            {
+                UpdateCheckStatus.Available => result.Describe() + " See the bar at the top of the main window.",
+                _ => result.Describe()
+            };
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+            OnPropertyChanged(nameof(UpdateStatus));
+        }
+    }
+
     // ---- Experimental features ----
 
     public bool ResultDiff
@@ -209,7 +274,7 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
     {
         if (!await _dialogs.ConfirmAsync(
                 "Put every preference back to its default? Theme, editor zoom and wrap, SQL warnings, new tab defaults, " +
-                "notifications, start-up, rendering and the experimental features are reset. Connections, saved queries, " +
+                "notifications, start-up, updates, rendering and the experimental features are reset. Connections, saved queries, " +
                 "snippets and the AI key are kept.",
                 "Reset")) return;
         _settings.ResetPreferences();

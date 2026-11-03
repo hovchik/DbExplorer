@@ -159,6 +159,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("backup", RenderBackupAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -1003,6 +1004,49 @@ namespace DbExplorer.UiRender
             usages.Close();
             await Settle(4);
             await Shot(_window, "usages-opened");
+        }
+
+        /// <summary>Back up and restore: the Back up tab, a real pg_dump of the sample, and the Restore tab reading that
+        /// file (nothing is restored).</summary>
+        private async Task RenderBackupAsync()
+        {
+            var database = _vm.Session!.Profile.Database;
+            _vm.OpenBackupRestore(database, restore: false);
+            await WaitFor(() => _window.OwnedWindows.OfType<BackupRestoreWindow>().Any(), "backup window", 10_000);
+            var window = _window.OwnedWindows.OfType<BackupRestoreWindow>().First();
+            var bvm = (BackupRestoreViewModel)window.DataContext!;
+            await WaitFor(() => bvm.Support is not null, "backup support", 20_000);
+            var dir = Path.Combine(Path.GetTempPath(), "dbx-render-backup");
+            Directory.CreateDirectory(dir);
+            bvm.BackupPath = Path.Combine(dir, "uirender_shop_20261103_0715.dump");
+            Console.WriteLine("  " + bvm.ToolText + bvm.ProblemText);
+            await Settle(8);
+            await Shot(window, "backup");
+            if (bvm.IsAvailable)
+            {
+                if (File.Exists(bvm.BackupPath)) File.Delete(bvm.BackupPath);
+                await bvm.StartBackupCommand.ExecuteAsync(null);
+                Console.WriteLine("  " + bvm.Status);
+                await Settle(8);
+                await Shot(window, "backup-done");
+
+                bvm.SelectedTabIndex = 1;
+                bvm.RestorePath = bvm.BackupPath;
+                await bvm.ReadFileCommand.ExecuteAsync(null);
+                bvm.RestoreToNew = true;
+                bvm.NewDatabaseName = database + "_copy";
+                await Settle(8);
+                await Shot(window, "restore");
+                bvm.RestoreToNew = false;
+                await Settle(4);
+                await Shot(window, "restore-existing");
+                window.Width = 680;
+                window.Height = 560;
+                await Settle(6);
+                await Shot(window, "small-restore");
+            }
+            window.Close();
+            await Settle(2);
         }
 
         /// <summary>The Generate test data window on a parent table and on a child table with foreign keys.</summary>

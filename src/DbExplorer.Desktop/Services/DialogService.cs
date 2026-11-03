@@ -109,6 +109,12 @@ public interface IDialogService
 
     /// <summary>Lets the user pick where to save a file; its local path, or null when cancelled or not a local file.</summary>
     Task<string?> PickSaveFilePathAsync(string title, string suggestedName, string extension, string typeName);
+
+    /// <summary>Lets the user pick a folder on this computer; its local path, or null when cancelled.</summary>
+    Task<string?> PickFolderPathAsync(string title);
+
+    /// <summary>The Back up and restore window (non-modal); starts checking what the connection can use.</summary>
+    void ShowBackupRestore(BackupRestoreViewModel viewModel);
 }
 
 public sealed class DialogService(ProviderRegistry registry, SshTunnelService tunnels) : IDialogService
@@ -289,6 +295,21 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
             FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = ["*." + extension] }]
         });
         return file?.TryGetLocalPath();
+    }
+
+    public async Task<string?> PickFolderPathAsync(string title)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false });
+        return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
+    }
+
+    public void ShowBackupRestore(BackupRestoreViewModel viewModel)
+    {
+        var window = new BackupRestoreWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+        _ = viewModel.LoadAsync();
     }
 
     public async Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName)

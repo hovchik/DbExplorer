@@ -132,6 +132,10 @@ public partial class MainWindowViewModel
         Command("Connection", "Import connections…", ImportConnectionsCommand, keywords: "load file");
         Command("Connection", "Export database documentation…", ExportDocumentationCommand,
             subtitle: "tables, columns, keys, comments and diagram as HTML or Markdown", keywords: "docs data dictionary schema report wiki");
+        Command("Connection", "Back up a database…", BackupDatabaseCommand,
+            subtitle: "to a .bak file on the server, or a pg_dump / mysqldump file here", keywords: "backup dump export save copy bak pg_dump mysqldump");
+        Command("Connection", "Restore a database…", RestoreDatabaseCommand,
+            subtitle: "from a backup file, into a new or an existing database", keywords: "restore load import bak dump pg_restore");
         Command("Connection", "Team sharing…", OpenTeamCommand, subtitle: "share connections, queries and snippets through a shared folder", keywords: "sync");
         if (!IsBusy)
         {

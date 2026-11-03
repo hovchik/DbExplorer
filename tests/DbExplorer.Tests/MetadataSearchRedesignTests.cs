@@ -316,6 +316,28 @@ public class MetadataSearchRedesignTests
         QuotingProvider.Definition = QuotingProvider.ServerText;
     }
 
+    [AvaloniaFact]
+    public async Task A_new_search_on_the_same_object_redoes_its_highlights()
+    {
+        var (vm, _) = NewViewModel();
+        await SearchAsync(vm, "count");
+        vm.SelectedRow = vm.Rows.First(r => r.IsCode && r.Group.ObjectName == "f");
+        await WaitAsync(() => vm.PreviewLine == 7);
+        Assert.Single(vm.PreviewMatches);
+
+        await SearchAsync(vm, "RETURNS");
+        Assert.Equal("dbo.f", vm.PreviewTitle);
+        await WaitAsync(() => vm.PreviewMatches.Count == 2);
+        Assert.Equal("7 lines · 2 hits", vm.PreviewSummary);
+        Assert.Equal(2, vm.PreviewLine);
+
+        vm.MatchCase = true;
+        vm.Query = "returns";
+        await vm.SearchCommand.ExecuteAsync(null);
+        await WaitAsync(() => !vm.IsSearching);
+        Assert.True(vm.ShowNoResults);
+    }
+
     // ----- View -----
 
     [AvaloniaFact]

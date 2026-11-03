@@ -105,6 +105,9 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
 
     /// <summary>The object whose source <see cref="PreviewText"/> holds; null while another one is loading.</summary>
     private (string, string, string, DbObjectType)? _loadedKey;
+
+    /// <summary>The search the preview's highlights belong to; a new search over the same object redoes them.</summary>
+    private Regex? _highlightedWith;
     private bool _rebuilding;
 
     [ObservableProperty] private string _query = "";
@@ -475,6 +478,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
         _previewCts?.Cancel();
         _previewKey = null;
         _loadedKey = null;
+        _highlightedWith = null;
         PreviewType = null;
         PreviewTitle = "";
         PreviewText = "";
@@ -529,7 +533,14 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
                 PreviewNote = "The server does not show this object's source (encrypted, or no permission).";
             PreviewText = text ?? "";
             _loadedKey = key;
+            _highlightedWith = null;
             OpenInQueryCommand.NotifyCanExecuteChanged();
+        }
+
+        // The source is kept per object; the highlights follow the latest search (another text, Aa, ab, .*).
+        if (_loadedKey == key && !ReferenceEquals(_highlightedWith, _lastRegex))
+        {
+            _highlightedWith = _lastRegex;
             PreviewMatches = _lastRegex is { } regex && PreviewText.Length > 0 ? SearchTextMatcher.Spans(regex, PreviewText) : [];
             var lineCount = PreviewText.Length == 0 ? 0 : PreviewText.Count(ch => ch == '\n') + 1;
             PreviewSummary = lineCount == 0 ? ""

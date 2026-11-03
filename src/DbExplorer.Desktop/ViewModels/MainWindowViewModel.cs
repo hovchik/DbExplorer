@@ -101,6 +101,16 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedTab = AppTab.Objects;
             objects.Reveal(table);
         };
+        search.ShowObjectRequested += obj => OpenObject(obj, PaletteModifier.None);
+        search.OpenSqlRequested += (sql, database, title, offset) =>
+        {
+            SelectedTab = AppTab.Query;
+            query.OpenInNewTab(sql, title, database, caretOffset: offset);
+        };
+        search.CopyRequested += text =>
+        {
+            if (SetClipboardText is { } set) _ = set(text);
+        };
         dataSearch.ShowTableRequested += table =>
         {
             SelectedTab = AppTab.Objects;
@@ -181,6 +191,15 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.BackupRequested += (database, restore, session) => _ = BackupFromNavigatorAsync(database, restore, session);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
         HookWelcome();
+    }
+
+    /// <summary>Ctrl+Shift+N: the Search names &amp; code tab with the caret in its search box.</summary>
+    [RelayCommand]
+    private void OpenSearchNames()
+    {
+        if (!IsConnected) return;
+        SelectedTab = AppTab.SearchNamesAndCode;
+        Search.RequestFocus();
     }
 
     // ----- Database navigator (left of the tabs) -----

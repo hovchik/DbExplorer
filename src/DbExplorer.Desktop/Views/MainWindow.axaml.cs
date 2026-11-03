@@ -28,7 +28,8 @@ public partial class MainWindow : Window
             (ShortcutCommands.CommandList, vm.OpenCommandListCommand),
             (ShortcutCommands.ToggleNavigator, vm.ToggleNavigatorCommand),
             (ShortcutCommands.ShortcutSheet, vm.ShowShortcutsCommand),
-            (ShortcutCommands.Preferences, vm.OpenPreferencesCommand)
+            (ShortcutCommands.Preferences, vm.OpenPreferencesCommand),
+            (ShortcutCommands.SearchNames, vm.OpenSearchNamesCommand)
         ]);
         MainTabs.TemplateApplied += OnMainTabsTemplateApplied;
         MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };

@@ -20,10 +20,6 @@ public interface IDialogService
 {
     Task<ConnectionProfile?> EditConnectionAsync(ConnectionProfile draft, string title, IReadOnlyList<string>? folders = null, bool isNew = false);
 
-    Task ShowSearchResultAsync(
-        DefinitionService definitions, DatabaseSession session,
-        MetadataSearchResult result, MetadataSearchQuery query);
-
     Task ShowRoutineExecutionAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject routine);
 
@@ -134,18 +130,6 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
     }
 
     private static bool NeedsDatabasePassword(ConnectionProfile p) => p.MissingPassword;
-
-    public async Task ShowSearchResultAsync(
-        DefinitionService definitions, DatabaseSession session,
-        MetadataSearchResult result, MetadataSearchQuery query)
-    {
-        var vm = new SearchResultDetailViewModel();
-        var window = new SearchResultDetailWindow { DataContext = vm };
-        await vm.LoadAsync(definitions, session, result, query);
-
-        if (Owner is not null) window.Show(Owner);
-        else window.Show();
-    }
 
     public Task ShowRoutineExecutionAsync(
         QueryExecutionService queryService, DatabaseSession session, DbObject routine)

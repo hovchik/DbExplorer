@@ -26,6 +26,6 @@ Environment variables:
 | `DBX_RENDER_PG` | `host;port;user;password;database` of the PostgreSQL sample | `localhost;5432;postgres;postgres;uirender_shop` |
 | `DBX_RENDER_MSSQL` | same for SQL Server; when set, the engine-specific tabs are rendered on it too | unset |
 | `DBX_RENDER_MYSQL` | same for MySQL / MariaDB | unset |
-| `DBX_RENDER_ONLY` | comma-separated steps to run: `errors`, `navigator`, `tabs`, `small`, `toolbar`, `querytabs`, `pins`, `dialogs`, `leave`, `localhistory`, `reopen`, `sqlfiles`, `offline`, `palette`, `usages`, `import`, `preferences`, `docs`, `testdata`, `migration`, `keys`, `fullresult`, `datasearch`, `updates`, `charts`, `backup`, `jobs`, `multi`, `inline`, `sqlserver`, `mysql`, `sqlite` (seeds `samples/shop.db` under the output folder; needs no server) | all |
+| `DBX_RENDER_ONLY` | comma-separated steps to run: `errors`, `navigator`, `tabs`, `small`, `toolbar`, `querytabs`, `pins`, `dialogs`, `leave`, `localhistory`, `reopen`, `sqlfiles`, `offline`, `palette`, `usages`, `search`, `import`, `preferences`, `docs`, `testdata`, `migration`, `keys`, `fullresult`, `datasearch`, `updates`, `charts`, `backup`, `jobs`, `multi`, `inline`, `sqlserver`, `mysql`, `sqlite` (seeds `samples/shop.db` under the output folder; needs no server) | all |
 
 The frames are deterministic apart from timestamps, so two runs can be diffed to review a UI change.

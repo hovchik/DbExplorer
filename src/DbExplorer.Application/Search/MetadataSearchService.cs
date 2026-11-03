@@ -52,17 +52,25 @@ public sealed class MetadataSearchService
                 if (!IsMatch(regex, c.Name)) continue;
                 var type = types.GetValueOrDefault((c.Database, c.Schema, c.Table), DbObjectType.Table);
                 if (!Add(new MetadataSearchResult(
-                        MetadataMatchKind.Column, c.Database, c.Schema, c.Table, type, $"{c.Name}  {c.DataType}", null)))
+                        MetadataMatchKind.Column, c.Database, c.Schema, c.Table, type, $"{c.Name}  {c.DataType}", null, c.Name)))
                     return results;
             }
         }
 
         if (query.Scope.HasFlag(MetadataSearchScope.Definitions))
         {
+            // Overloads share a name and are shown one after another (blank line between, as DefinitionService joins
+            // them), so a line number counts from the start of that joined text, not from the overload's own start.
+            var nextLine = new Dictionary<(string, string, string, DbObjectType), int>();
             foreach (var m in snapshot.Modules)
             {
                 ct.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(m.Definition) || !IsMatch(regex, m.Definition)) continue;
+                if (m.Definition is null) continue;
+                var key = (m.Database, m.Schema, m.Name, m.Type);
+                var offset = nextLine.GetValueOrDefault(key);
+                var lineCount = m.Definition.Count(ch => ch == '\n') + 1;
+                nextLine[key] = offset + lineCount + 1;
+                if (m.Definition.Length == 0 || !IsMatch(regex, m.Definition)) continue;
 
                 var lines = m.Definition.Split('\n');
                 var found = 0;
@@ -73,7 +81,7 @@ public sealed class MetadataSearchService
                     var detail = lines[i].Trim();
                     if (detail.Length > MaxDetailLength) detail = detail[..MaxDetailLength] + "…";
                     if (!Add(new MetadataSearchResult(
-                            MetadataMatchKind.Definition, m.Database, m.Schema, m.Name, m.Type, detail, i + 1)))
+                            MetadataMatchKind.Definition, m.Database, m.Schema, m.Name, m.Type, detail, offset + i + 1)))
                         return results;
                 }
             }

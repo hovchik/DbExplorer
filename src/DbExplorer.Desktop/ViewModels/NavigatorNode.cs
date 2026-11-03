@@ -43,10 +43,12 @@ public sealed partial class NavigatorNode : ObservableObject
     /// expanded nodes open when the catalog is refreshed.</summary>
     public string Key { get; }
 
-    /// <summary>The faded text after the title: a count, a column type, an index's columns.</summary>
-    public string? Detail { get; init; }
+    /// <summary>The faded text after the title: a count, a column type, an index's columns. It can change on a row
+    /// that stays in the tree (a filter match count).</summary>
+    [ObservableProperty] private string? _detail;
 
-    public string? ToolTip { get; init; }
+    /// <summary>Can change on a row that stays in the tree, like <see cref="Detail"/> (it may name a count).</summary>
+    [ObservableProperty] private string? _toolTip;
 
     /// <summary>Outline icon path (see <see cref="Icons"/>).</summary>
     public string Icon { get; init; } = Icons.Folder;
@@ -142,6 +144,101 @@ public sealed partial class NavigatorNode : ObservableObject
     public static NavigatorNode Message(string text) =>
         new(NavigatorNodeKind.Message, text, "message:" + text) { Icon = Icons.Info, IsDimmed = true, ToolTip = text };
 
+    /// <summary>Whether <paramref name="other"/> shows the same thing as this row (everything but the count and tooltip), so the
+    /// tree can keep this row and what is open under it instead of replacing it.</summary>
+    public bool SameAs(NavigatorNode other) =>
+        Kind == other.Kind && Key == other.Key && Title == other.Title && Icon == other.Icon && ColorKey == other.ColorKey &&
+        IsDimmed == other.IsDimmed && IsEmphasized == other.IsEmphasized &&
+        ReferenceEquals(Profile, other.Profile) && ReferenceEquals(Session, other.Session) && ReferenceEquals(MarkBrush, other.MarkBrush) &&
+        Database == other.Database && Equals(Object, other.Object) && InSessionCatalog == other.InSessionCatalog &&
+        ReferenceEquals(Snapshot, other.Snapshot) && DetailName == other.DetailName;
+
+    /// <summary>
+    /// Makes <paramref name="target"/> show <paramref name="fresh"/> with as few changes as possible: a row that is
+    /// <see cref="SameAs"/> one already there is kept (its count updated, its children merged the same way when the
+    /// fresh row has them), others are inserted or removed. Rows the tree keeps keep their item containers, which is
+    /// what makes typing in the filter cheap: one more letter usually changes a handful of rows, not hundreds.
+    /// New rows are added top to bottom until <paramref name="budget"/> runs out; the rest is left in the budget for
+    /// <see cref="MergeBudget.Continue"/>, so the tree never makes hundreds of rows in one go while the user types.
+    /// </summary>
+    public static void Merge(IList<NavigatorNode> target, IReadOnlyList<NavigatorNode> fresh, NavigatorNode? parent, MergeBudget budget)
+    {
+        var existing = new Dictionary<string, NavigatorNode>();
+        foreach (var node in target) existing.TryAdd(node.Key, node);
+        var wanted = new List<NavigatorNode>(fresh.Count);
+        var keep = new HashSet<NavigatorNode>(ReferenceEqualityComparer.Instance);
+        var mergeKept = new List<(NavigatorNode Old, NavigatorNode Fresh)>();
+        foreach (var node in fresh)
+        {
+            if (existing.TryGetValue(node.Key, out var old) && old.SameAs(node) && keep.Add(old))
+            {
+                old.Detail = node.Detail;
+                old.ToolTip = node.ToolTip;
+                if (node.IsLoaded) mergeKept.Add((old, node));
+                wanted.Add(old);
+            }
+            else
+            {
+                node.Parent = parent;
+                wanted.Add(node);
+            }
+        }
+
+        // Removing rows is cheap; do it all now so nothing stale stays on screen.
+        if (keep.Count == 0) target.Clear();
+        else
+            for (var i = target.Count - 1; i >= 0; i--)
+                if (!keep.Contains(target[i])) target.RemoveAt(i);
+        foreach (var (old, node) in mergeKept)
+        {
+            if (old.IsLoaded) Merge(old.Children, node.Children.ToList(), old, budget);
+            else
+            {
+                old._loader = null;
+                old.Children.Clear();
+                Place(old.Children, node.Children.ToList(), 0, budget);
+            }
+            if (node.IsExpanded && !old.IsExpanded) old.IsExpanded = true;
+        }
+        Place(target, wanted, 0, budget);
+    }
+
+    /// <summary>Puts <paramref name="wanted"/> in <paramref name="target"/> from <paramref name="start"/> on (kept rows
+    /// are moved, new ones inserted), stopping when the budget is spent and leaving the rest to it.</summary>
+    private static void Place(IList<NavigatorNode> target, List<NavigatorNode> wanted, int start, MergeBudget budget)
+    {
+        for (var i = start; i < wanted.Count; i++)
+        {
+            var node = wanted[i];
+            if (i < target.Count && ReferenceEquals(target[i], node)) continue;
+            var at = -1;
+            for (var j = i + 1; j < target.Count; j++)
+                if (ReferenceEquals(target[j], node)) { at = j; break; }
+            if (at >= 0)
+            {
+                target.RemoveAt(at);
+                target.Insert(i, node);
+                continue;
+            }
+            if (budget.Left <= 0)
+            {
+                var from = i;
+                budget.Defer(() => Place(target, wanted, from, budget));
+                return;
+            }
+            budget.Left--;
+            if (node.IsLoaded && node.IsExpanded && node.Children.Count > 0)
+            {
+                // An open row goes in empty and its rows follow under the same budget, top to bottom.
+                var children = node.Children.ToList();
+                node.Children.Clear();
+                target.Insert(i, node);
+                Place(node.Children, children, 0, budget);
+            }
+            else target.Insert(i, node);
+        }
+    }
+
     public IEnumerable<NavigatorNode> SelfAndDescendants()
     {
         yield return this;
@@ -152,3 +249,31 @@ public sealed partial class NavigatorNode : ObservableObject
 
     public override string ToString() => Title;
 }
+
+/// <summary>How many new rows <see cref="NavigatorNode.Merge"/> may still add now, and what it left for later.</summary>
+public sealed class MergeBudget(int rows)
+{
+    private List<Action> _deferred = [];
+
+    public int Left { get; set; } = rows;
+
+    public bool IsDone => _deferred.Count == 0;
+
+    internal void Defer(Action rest) => _deferred.Add(rest);
+
+    /// <summary>Adds up to <paramref name="rows"/> more of the rows left over, in tree order.</summary>
+    public void Continue(int rows)
+    {
+        Left = rows;
+        while (_deferred.Count > 0 && Left > 0)
+        {
+            var queue = _deferred;
+            _deferred = [];
+            var index = 0;
+            while (index < queue.Count && Left > 0) queue[index++]();
+            // What these deferred again comes first: it is higher in the tree than what is still waiting.
+            _deferred.AddRange(queue.Skip(index));
+        }
+    }
+}
+

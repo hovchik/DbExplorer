@@ -159,6 +159,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("charts", RenderChartsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -570,6 +571,69 @@ namespace DbExplorer.UiRender
             await Shot(_window, "fullresult-unavailable");
             if (doc.HasOpenTransaction) await doc.RollbackCommand.ExecuteAsync(null);
             doc.AutoCommit = true;
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
+        }
+
+        /// <summary>Charts of query results: bars, a line split by a column (with the hover tooltip), area, pie and
+        /// scatter, bars split by a column, and the Values picker; then the 1024 px window.</summary>
+        private async Task RenderChartsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab(
+                "SELECT p.name AS product, sum(oi.quantity * oi.unit_price) AS revenue, sum(oi.quantity) AS units\n" +
+                "FROM order_items oi JOIN products p ON p.id = oi.product_id\nGROUP BY p.name ORDER BY revenue DESC LIMIT 12;\n" +
+                "SELECT d::date AS week, s AS status, 20 + abs(hashtext(d::text || s)) % 40 + (extract(month FROM d)::int * 3) AS orders\n" +
+                "FROM generate_series('2026-01-05'::date, '2026-10-26'::date, '1 week') d CROSS JOIN unnest(ARRAY['new','paid','shipped']) s;\n" +
+                "SELECT status, count(*) AS orders FROM orders GROUP BY status;\n" +
+                "SELECT name, price, stock FROM products;\n" +
+                "SELECT p.name AS product, o.status, sum(oi.quantity) AS units FROM order_items oi\n" +
+                "JOIN orders o ON o.id = oi.order_id JOIN products p ON p.id = oi.product_id\n" +
+                "WHERE p.id <= 6 GROUP BY p.id, p.name, o.status ORDER BY p.id, o.status;", "Charts");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count == 5, "chart queries");
+            await Settle(4);
+
+            ResultGridView Grid() => _window.GetVisualDescendants().OfType<ResultGridView>().First(g => g.IsEffectivelyVisible);
+            async Task Show(int result, ChartSpec? spec, string name)
+            {
+                doc.SelectedResult = doc.ResultSets[result];
+                await Settle(4);
+                var grid = Grid();
+                grid.ShowChart(true);
+                if (spec is not null) grid.SetChart(spec);
+                await Settle(6);
+                await Shot(_window, name);
+            }
+
+            await Show(0, null, "chart-bar"); // the default: bars of revenue by product
+            await Show(4, new ChartSpec(ChartKind.Bar, 0, [2], PivotAggregate.Sum, SeriesField: 1), "chart-bar-split");
+            var values = Grid().FindControl<Button>("ChartValuesButton")!;
+            values.Flyout!.ShowAt(values);
+            await Settle(8);
+            await Shot(_window, "chart-values-menu");
+            values.Flyout.Hide();
+            await Settle();
+
+            await Show(1, new ChartSpec(ChartKind.Line, 0, [2], PivotAggregate.Sum, SeriesField: 1), "chart-line");
+            var chart = Grid().FindControl<DbExplorer.Desktop.Controls.ChartControl>("ChartView")!;
+            var at = chart.TranslatePoint(new Point(chart.Bounds.Width * 0.55, chart.Bounds.Height * 0.5), _window)!.Value;
+            _window.MouseMove(at);
+            await Settle(4);
+            await Shot(_window, "chart-line-hover");
+            _window.MouseMove(new Point(2, 2));
+            await Show(1, new ChartSpec(ChartKind.Area, 0, [2], PivotAggregate.Sum), "chart-area");
+            await Show(2, new ChartSpec(ChartKind.Pie, 0, [1], PivotAggregate.Sum), "chart-pie");
+            await Show(3, new ChartSpec(ChartKind.Scatter, 1, [2], PivotAggregate.Sum), "chart-scatter");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Show(1, new ChartSpec(ChartKind.Line, 0, [2], PivotAggregate.Sum, SeriesField: 1), "small-chart-line");
+            await Show(2, new ChartSpec(ChartKind.Pie, 0, [1], PivotAggregate.Sum), "small-chart-pie");
+            _window.Width = 1400;
+            _window.Height = 900;
             _vm.Query.Documents.Remove(doc);
             await Settle(4);
         }

@@ -205,6 +205,7 @@ namespace DbExplorer.UiRender
             await Step("backup", RenderBackupAsync);
             await Step("jobs", () => RenderJobsAsync("postgres"));
             await Step("multi", RenderMultipleConnectionsAsync);
+            await Step("builder", RenderQueryBuilderAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -505,6 +506,49 @@ namespace DbExplorer.UiRender
             _vm.Security.SelectedPrincipal = _vm.Security.Principals.FirstOrDefault(p => p.Name == "postgres") ?? _vm.Security.Principals[0];
             await Settle(4);
             await Shot(_window, "security");
+        }
+
+        /// <summary>The Query builder: empty, a three-table design (related tables listed first, columns with a total,
+        /// a sort and a filter), its Joins panel, and the design at 1024×700. Writes builder-*.png.</summary>
+        private async Task RenderQueryBuilderAsync()
+        {
+            var b = _vm.QueryBuilder;
+            _vm.SelectedTab = AppTab.QueryBuilder;
+            if (b.ClearCommand.CanExecute(null)) b.ClearCommand.Execute(null);
+            await Settle(4);
+            await Shot(_window, "builder-empty");
+
+            var orders = b.AddTable(Table("orders"), null);
+            await Settle(2);
+            await Shot(_window, "builder-related");
+            var customers = b.AddTable(Table("customers"), null);
+            var items = b.AddTable(Table("order_items"), null);
+            if (orders is null || customers is null || items is null) throw new InvalidOperationException("query builder tables");
+            b.ToggleColumn(customers, "name");
+            b.ToggleColumn(orders, "status");
+            b.ToggleColumn(items, "quantity");
+            var quantity = b.Columns.Last();
+            quantity.Aggregate = DbExplorer.Application.QueryBuilder.ColumnAggregate.Sum;
+            quantity.Sort = DbExplorer.Application.QueryBuilder.SortDirection.Descending;
+            b.Columns.First(c => c.Column == "status").Filter = "<> 'cancelled'";
+            b.SelectedTable = items;
+            await Settle(6);
+            await Shot(_window, "builder");
+
+            var tabs = _window.GetVisualDescendants().OfType<TabControl>().First(t => t.Classes.Contains("design"));
+            tabs.SelectedIndex = 1;
+            await Settle(4);
+            await Shot(_window, "builder-joins");
+            tabs.SelectedIndex = 0;
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-builder");
+            _window.Width = 1400;
+            _window.Height = 900;
+            if (b.ClearCommand.CanExecute(null)) b.ClearCommand.Execute(null);
+            await Settle(2);
         }
 
         private async Task RenderSmallAsync()

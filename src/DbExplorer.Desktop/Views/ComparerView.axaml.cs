@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Controls;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 
@@ -38,7 +39,7 @@ public partial class ComparerView : UserControl
     /// browsed with a click alone (no typing required) instead of only filtering as-you-type.</summary>
     private void OnObjectPickerGotFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is AutoCompleteBox box) box.IsDropDownOpen = true;
+        PickerDropDown.OpenOnFocus(sender);
     }
 
     private void OnOverviewDoubleTapped(object? sender, TappedEventArgs e)

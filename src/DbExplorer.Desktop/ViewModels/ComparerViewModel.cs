@@ -81,7 +81,7 @@ public partial class ComparerViewModel(
     [ObservableProperty] private DatabaseSession? _rightSession;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _status = "";
-    [ObservableProperty] private int _selectedTabIndex = SchemaTab;
+    [ObservableProperty] private int _selectedTabIndex = OverviewTab;
 
     [ObservableProperty] private IReadOnlyList<string> _leftDatabases = [];
     [ObservableProperty] private IReadOnlyList<string> _rightDatabases = [];
@@ -155,7 +155,8 @@ public partial class ComparerViewModel(
         : MissingRightDatabase is { } missing && SelectedRightObject is null
             ? $"Database {missing} does not exist on the right: create it first, or pick another right database."
         : SelectedLeftObject is null && SelectedRightObject is null
-            ? "Pick an object to compare, or run Compare all objects on the Overview tab."
+            ? (IsObjectTab ? "Pick the left object to compare, or open one from the Overview." : "")
+        : !IsObjectTab ? ""
         : SelectedLeftObject is null ? "Pick the left object."
         : SelectedRightObject is null ? $"No object named {SelectedLeftObject.FullName} on the right; pick one manually, or create it on the Copy & sync tab."
         : "";
@@ -212,16 +213,55 @@ public partial class ComparerViewModel(
     [ObservableProperty] private bool _showOverviewIdentical;
     [ObservableProperty] private bool _showOverviewNotCompared;
 
+    [ObservableProperty] private OverviewTypeGroup _selectedOverviewType = OverviewTypeGroup.AllTypes;
+
+    public IReadOnlyList<OverviewTypeGroup> OverviewTypes { get; } = Enum.GetValues<OverviewTypeGroup>();
+
     public string OverviewDifferentLabel => $"Different ({CountOf(ObjectCompareStatus.Different):N0})";
     public string OverviewOnlyLeftLabel => $"Only in left ({CountOf(ObjectCompareStatus.OnlyLeft):N0})";
     public string OverviewOnlyRightLabel => $"Only in right ({CountOf(ObjectCompareStatus.OnlyRight):N0})";
     public string OverviewIdenticalLabel => $"Identical ({CountOf(ObjectCompareStatus.Identical):N0})";
     public string OverviewNotComparedLabel => $"Not compared ({CountOf(ObjectCompareStatus.NotCompared):N0})";
+
+    /// <summary>The counts on the Overview's status tiles (after the type and name filters).</summary>
+    public int OverviewDifferentCount => CountOf(ObjectCompareStatus.Different);
+    public int OverviewOnlyLeftCount => CountOf(ObjectCompareStatus.OnlyLeft);
+    public int OverviewOnlyRightCount => CountOf(ObjectCompareStatus.OnlyRight);
+    public int OverviewIdenticalCount => CountOf(ObjectCompareStatus.Identical);
+    public int OverviewNotComparedCount => CountOf(ObjectCompareStatus.NotCompared);
+
     public bool HasOverview => _allOverview.Count > 0;
 
-    private int CountOf(ObjectCompareStatus status) => _allOverview.Count(e => e.Status == status);
+    /// <summary>Shown over the empty grid when the filters hide every row of a comparison that has some.</summary>
+    public bool IsOverviewFilteredEmpty => HasOverview && OverviewEntries.Count == 0;
+
+    public string OverviewFilteredEmptyText =>
+        _allOverview.All(e => e.Status == ObjectCompareStatus.Identical)
+            ? $"The two databases match: all {_allOverview.Count:N0} object(s) are identical. Click Identical to list them."
+            : _allOverview.All(e => e.Status is ObjectCompareStatus.Identical or ObjectCompareStatus.NotCompared)
+                ? $"No differences found, but {_allOverview.Count(e => e.Status == ObjectCompareStatus.NotCompared):N0} object(s) could not be compared " +
+                  "(their definition is not in the cached metadata). Click Not compared to list them."
+                : "No object matches the filters. Click a tile to show more statuses, or clear the name and type filters.";
+
+    private OverviewFilter CurrentOverviewFilter => new()
+    {
+        Different = ShowOverviewDifferent,
+        OnlyLeft = ShowOverviewOnlyLeft,
+        OnlyRight = ShowOverviewOnlyRight,
+        Identical = ShowOverviewIdentical,
+        NotCompared = ShowOverviewNotCompared,
+        Type = SelectedOverviewType,
+        Text = OverviewFilterText
+    };
+
+    private int CountOf(ObjectCompareStatus status)
+    {
+        var filter = CurrentOverviewFilter;
+        return _allOverview.Count(e => e.Status == status && filter.MatchesIgnoringStatus(e));
+    }
 
     partial void OnOverviewFilterTextChanged(string value) => ApplyOverviewFilter();
+    partial void OnSelectedOverviewTypeChanged(OverviewTypeGroup value) => ApplyOverviewFilter();
     partial void OnShowOverviewDifferentChanged(bool value) => ApplyOverviewFilter();
     partial void OnShowOverviewOnlyLeftChanged(bool value) => ApplyOverviewFilter();
     partial void OnShowOverviewOnlyRightChanged(bool value) => ApplyOverviewFilter();
@@ -233,12 +273,14 @@ public partial class ComparerViewModel(
         CopyOverviewEntryCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanCompareOverview => LeftSession is not null && RightSession is not null && !IsBusy;
+    private bool CanCompareOverview => LeftSession is not null && RightSession is not null && !IsBusy &&
+                                       IsCatalogReady(isLeft: true) && IsCatalogReady(isLeft: false);
 
     [RelayCommand(CanExecute = nameof(CanCompareOverview))]
     private void CompareOverview()
     {
         if (LeftSession is null || RightSession is null) return;
+        _overviewStale = false;
         try
         {
             _allOverview = DatabaseSchemaComparer.Compare(
@@ -260,24 +302,21 @@ public partial class ComparerViewModel(
 
     private void ApplyOverviewFilter()
     {
-        var text = OverviewFilterText.Trim();
-        OverviewEntries = _allOverview.Where(e => e.Status switch
-            {
-                ObjectCompareStatus.Different => ShowOverviewDifferent,
-                ObjectCompareStatus.OnlyLeft => ShowOverviewOnlyLeft,
-                ObjectCompareStatus.OnlyRight => ShowOverviewOnlyRight,
-                ObjectCompareStatus.Identical => ShowOverviewIdentical,
-                _ => ShowOverviewNotCompared
-            })
-            .Where(e => text.Length == 0 || e.FullName.Contains(text, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        OverviewEntries = CurrentOverviewFilter.Apply(_allOverview);
 
         OnPropertyChanged(nameof(OverviewDifferentLabel));
         OnPropertyChanged(nameof(OverviewOnlyLeftLabel));
         OnPropertyChanged(nameof(OverviewOnlyRightLabel));
         OnPropertyChanged(nameof(OverviewIdenticalLabel));
         OnPropertyChanged(nameof(OverviewNotComparedLabel));
+        OnPropertyChanged(nameof(OverviewDifferentCount));
+        OnPropertyChanged(nameof(OverviewOnlyLeftCount));
+        OnPropertyChanged(nameof(OverviewOnlyRightCount));
+        OnPropertyChanged(nameof(OverviewIdenticalCount));
+        OnPropertyChanged(nameof(OverviewNotComparedCount));
         OnPropertyChanged(nameof(HasOverview));
+        OnPropertyChanged(nameof(IsOverviewFilteredEmpty));
+        OnPropertyChanged(nameof(OverviewFilteredEmptyText));
     }
 
     private bool CanOpenOverviewEntry => SelectedOverviewEntry is not null && !IsBusy;
@@ -509,6 +548,7 @@ public partial class ComparerViewModel(
         OnPropertyChanged(nameof(IsSideBySideView));
         OnPropertyChanged(nameof(IsFullDataSetsView));
         OnPropertyChanged(nameof(ShowDataFilters));
+        RaiseActionFlags();
     }
 
     /// <summary>Lets either side's connection panel be hidden to give the other side more room.</summary>
@@ -574,6 +614,8 @@ public partial class ComparerViewModel(
         ForgetReportSources();
         RefreshHints();
         RefreshCopyAnalysis();
+        RefreshSetupSteps();
+        MarkOverviewStale();
     }
 
     partial void OnRightSessionChanged(DatabaseSession? value)
@@ -587,6 +629,8 @@ public partial class ComparerViewModel(
         ForgetReportSources();
         RefreshHints();
         RefreshCopyAnalysis();
+        RefreshSetupSteps();
+        MarkOverviewStale();
     }
 
     /// <summary>A report must not re-query a session that has since been swapped out or disposed.</summary>
@@ -607,6 +651,7 @@ public partial class ComparerViewModel(
     partial void OnIsBusyChanged(bool value)
     {
         RefreshCommands();
+        if (!value) AutoCompareOverview();
         OnPropertyChanged(nameof(CanExportSchemaReport));
         OnPropertyChanged(nameof(CanExportDataReport));
     }
@@ -669,6 +714,7 @@ public partial class ComparerViewModel(
         UpdateLeftObjects();
         RefreshHints();
         RefreshMissingDatabase();
+        MarkOverviewStale();
         _ = ScopeToDatabaseAsync(isLeft: true);
     }
 
@@ -680,6 +726,7 @@ public partial class ComparerViewModel(
         UpdateRightObjects();
         RefreshHints();
         RefreshCopyAnalysis();
+        MarkOverviewStale();
         _ = ScopeToDatabaseAsync(isLeft: false);
     }
 
@@ -712,6 +759,7 @@ public partial class ComparerViewModel(
         catch (Exception ex)
         {
             Status = $"{side}: could not read the objects of {database}: {ex.Message}";
+            OverviewStatus = $"Cannot compare: the objects of {database} ({side.ToLowerInvariant()}) could not be read. {ex.Message}";
         }
     }
 
@@ -741,6 +789,7 @@ public partial class ComparerViewModel(
             RefreshCopyAnalysis();
         }
         RefreshHints();
+        MarkOverviewStale();
     }
 
     /// <summary>
@@ -996,6 +1045,7 @@ public partial class ComparerViewModel(
         ClearResults();
         Status = "Sides swapped";
         RefreshCommands();
+        MarkOverviewStale();
     }
 
     private void ClearResults()

@@ -195,6 +195,7 @@ namespace DbExplorer.UiRender
             await Step("docs", RenderDocumentationAsync);
             await Step("testdata", RenderTestDataAsync);
             await Step("migration", RenderMigrationAsync);
+            await Step("comparer", RenderComparerAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
             await Step("inline", RenderInlineResultsAsync);
@@ -400,6 +401,7 @@ namespace DbExplorer.UiRender
             await _vm.Comparer.UseCurrentAsLeftCommand.ExecuteAsync(null);
             await _vm.Comparer.UseCurrentAsRightCommand.ExecuteAsync(null);
             await WaitFor(() => _vm.Comparer.LeftObjects.Count > 0 && _vm.Comparer.RightObjects.Count > 0, "comparer objects");
+            _vm.Comparer.SelectedTabIndex = ComparerViewModel.SchemaTab;
             _vm.Comparer.SelectedLeftObject = _vm.Comparer.LeftObjects.First(o => o.Name == "v_order_totals");
             await Settle(4);
             await _vm.Comparer.CompareSchemaCommand.ExecuteAsync(null);
@@ -1837,6 +1839,66 @@ namespace DbExplorer.UiRender
             _vm.DismissConnectionFailureCommand.Execute(null);
             _vm.Profiles.Remove(wrong);
             _vm.Profiles.Remove(closed);
+            await Settle();
+        }
+
+        /// <summary>The Comparer's sections: setup steps, the Overview of the shop against its older copy, and one object's diffs.</summary>
+        private async Task RenderComparerAsync()
+        {
+            var c = _vm.Comparer;
+            _vm.SelectedTab = AppTab.Comparer;
+            if (c.LeftSession is not null) await c.DisconnectLeftCommand.ExecuteAsync(null);
+            if (c.RightSession is not null) await c.DisconnectRightCommand.ExecuteAsync(null);
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            await Settle(4);
+            await Shot(_window, "comparer-setup");
+            await c.UseCurrentAsLeftCommand.ExecuteAsync(null);
+            await Settle(4);
+            await Shot(_window, "comparer-setup-left");
+
+            await c.UseCurrentAsRightCommand.ExecuteAsync(null);
+            await WaitFor(() => c.RightDatabases.Contains("uirender_shop_old"), "right databases");
+            c.SelectedRightDatabase = "uirender_shop_old";
+            await WaitFor(() => !c.IsBusy && c.RightObjects.Any(o => o.Name == "legacy_import") && c.OverviewEntries.Count > 0,
+                "overview against the old shop", 30_000);
+            await Settle(4);
+            await Shot(_window, "comparer-overview-diff");
+
+            c.ShowOverviewIdentical = true;
+            c.SelectedOverviewType = DbExplorer.Application.Compare.OverviewTypeGroup.Tables;
+            c.SelectedOverviewEntry = c.OverviewEntries.First(e => e.Name == "customers");
+            c.SelectedOverviewEntries = [c.SelectedOverviewEntry];
+            await Settle(4);
+            await Shot(_window, "comparer-overview-tables");
+
+            await c.OpenOverviewEntryCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "structure of customers");
+            await Settle(4);
+            await Shot(_window, "comparer-structure");
+
+            c.SelectedTabIndex = ComparerViewModel.SchemaTab;
+            c.SelectedLeftObject = c.LeftObjects.First(o => o.Name == "v_order_totals");
+            await Settle(2);
+            await c.CompareSchemaCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "definition of v_order_totals");
+            c.ShowOnlySchemaChanges = false;
+            await Settle(4);
+            await Shot(_window, "comparer-definition");
+
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            c.ShowOverviewIdentical = false;
+            c.SelectedOverviewType = DbExplorer.Application.Compare.OverviewTypeGroup.AllTypes;
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-comparer-overview");
+            c.SelectedTabIndex = ComparerViewModel.SchemaTab;
+            await Settle(4);
+            await Shot(_window, "small-comparer-definition");
+            _window.Width = 1400;
+            _window.Height = 900;
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            c.SelectedRightDatabase = "uirender_shop";
             await Settle();
         }
 

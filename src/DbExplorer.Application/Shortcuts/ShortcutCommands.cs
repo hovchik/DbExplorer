@@ -92,6 +92,7 @@ public static class ShortcutCommands
     public const string NextDifference = "comparer.next";
     public const string PreviousDifference = "comparer.previous";
     public const string CancelComparison = "comparer.cancel";
+    public const string RunComparison = "comparer.run";
 
     public const string BuilderRun = "builder.run";
     public const string BuilderOpen = "builder.open";
@@ -233,6 +234,7 @@ public static class ShortcutCommands
         Add(GridDeleteRows, g, "Delete the selected rows", "Ctrl+Delete");
 
         var c = ShortcutAreas.Comparer;
+        Add(RunComparison, c, "Run the section's main action (compare, generate, preview)", "F5");
         Add(NextDifference, c, "Next difference", "F8");
         Add(PreviousDifference, c, "Previous difference", "Shift+F8");
         Add(CancelComparison, c, "Cancel the comparison", "Esc");

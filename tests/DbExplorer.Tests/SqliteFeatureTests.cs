@@ -167,6 +167,119 @@ public sealed class SqliteFeatureTests : IAsyncLifetime
         Assert.Contains(TableAlterAdvisor.SqliteLimits(original, notNullAdd), l => l.Key == "sqlite-add:code");
     }
 
+    /// <summary>What <see cref="TableCreator.CreateAsync"/> does: the whole script in one transactional session, then commit.</summary>
+    private static async Task RunInOneTransaction(DbExplorer.Core.Abstractions.IDatabaseProvider provider, string script)
+    {
+        await using var run = await provider.BeginScriptSessionAsync(null, transactional: true);
+        await run.ExecuteAsync(script, 30);
+        await run.CommitAsync();
+    }
+
+    private static TableDesign Customers() => new()
+    {
+        Schema = "main", Name = "customers",
+        Columns =
+        [
+            new ColumnDesign { Name = "id", OriginalName = "id", Type = "INTEGER", IsNullable = false, IsPrimaryKey = true },
+            new ColumnDesign { Name = "name", OriginalName = "name", Type = "TEXT", IsNullable = false },
+            new ColumnDesign { Name = "city", OriginalName = "city", Type = "TEXT" }
+        ],
+        Indexes = [new IndexDesign { Name = "ix_customers_city", Columns = ["city"] }]
+    };
+
+    [Fact]
+    public void A_change_alter_table_cannot_make_is_written_as_a_rebuild()
+    {
+        var original = Customers();
+        var edited = original with { Columns = [original.Columns[0], original.Columns[1], original.Columns[2] with { IsNullable = false, Default = "'Unknown'" }] };
+        var steps = TableAlterScriptBuilder.Steps(original, edited, SqlDialect.SqliteKey);
+
+        Assert.StartsWith("-- SQLite can't make this change", steps[0]);
+        Assert.EndsWith("PRAGMA foreign_keys = OFF;", steps[0]);
+        Assert.StartsWith("CREATE TABLE \"_dbx_rebuild_customers\"", steps[1]);
+        Assert.Contains("CONSTRAINT \"PK_customers\" PRIMARY KEY", steps[1]);
+        Assert.Contains("\"city\" TEXT NOT NULL DEFAULT 'Unknown'", steps[1]);
+        Assert.DoesNotContain("CREATE INDEX", steps[1]);
+        Assert.Equal("INSERT INTO \"_dbx_rebuild_customers\" (\"id\", \"name\", \"city\")\n    SELECT \"id\", \"name\", COALESCE(\"city\", 'Unknown') FROM \"customers\";", steps[2]);
+        Assert.Equal(
+        [
+            "DROP TABLE \"customers\";",
+            "PRAGMA legacy_alter_table = ON;",
+            "ALTER TABLE \"_dbx_rebuild_customers\" RENAME TO \"customers\";",
+            "PRAGMA legacy_alter_table = OFF;",
+            "CREATE INDEX \"ix_customers_city\" ON \"customers\" (\"city\");",
+            "PRAGMA foreign_key_check;",
+            "PRAGMA foreign_keys = ON;"
+        ], steps.Skip(3));
+
+        var review = TableAlterAdvisor.Review(original, edited, new DesignContext { ProviderKey = SqlDialect.SqliteKey });
+        Assert.DoesNotContain(review, s => s.Severity == DesignSeverity.Error);
+        Assert.Contains(review, s => s.Key == "sqlite-rebuild");
+        Assert.Contains(review, s => s.Key == "sqlite-rebuild-loses" && s.Severity == DesignSeverity.Warning);
+    }
+
+    [Fact]
+    public void A_unique_constraint_index_gets_a_name_sqlite_allows()
+    {
+        var original = Customers() with { Indexes = [new IndexDesign { Name = "sqlite_autoindex_customers_1", Columns = ["name"], IsUnique = true, IsConstraint = true }] };
+        var edited = original with { Columns = [original.Columns[0], original.Columns[1] with { Type = "VARCHAR(200)" }, original.Columns[2]] };
+        var steps = TableAlterScriptBuilder.Steps(original, edited, SqlDialect.SqliteKey);
+        Assert.Contains("CREATE UNIQUE INDEX \"UX_customers_name\" ON \"customers\" (\"name\");", steps);
+    }
+
+    [Fact]
+    public async Task A_rebuild_keeps_rows_indexes_views_and_references()
+    {
+        await using var provider = new SqliteProviderFactory().Create(Profile());
+        await provider.ExecuteScriptAsync("""
+            CREATE INDEX ix_customers_city ON customers (city);
+            CREATE VIEW customer_cities AS SELECT name, city FROM customers;
+            INSERT INTO customers (name, city) VALUES ('Initech', NULL);
+            """, null, 30);
+        var original = Customers();
+        var edited = original with { Columns = [original.Columns[0], original.Columns[1] with { Type = "VARCHAR(200)" }, original.Columns[2] with { IsNullable = false, Default = "'Unknown'" }] };
+
+        await RunInOneTransaction(provider, TableAlterScriptBuilder.Build(original, edited, SqlDialect.SqliteKey));
+
+        var rows = await provider.QueryReadOnlyAsync("SELECT c.id, c.name, v.city FROM customers c JOIN customer_cities v ON v.name = c.name ORDER BY c.id;", null, new DbExplorer.Core.Search.DataSearchOptions(10, 30, 1000));
+        Assert.Equal(["Oslo", "Rome", "Unknown"], rows.Rows.Select(r => (string)r[2]!));
+        var columns = (await provider.GetColumnsAsync()).Where(c => c.Table == "customers").ToList();
+        Assert.Contains(columns, c => c.Name == "city" && !c.IsNullable);
+        Assert.Contains((await provider.GetIndexesAsync(false)), i => i.Name == "ix_customers_city");
+        Assert.DoesNotContain((await provider.GetObjectsAsync()), o => o.Name.StartsWith("_dbx_rebuild_", StringComparison.Ordinal));
+        // orders still references customers, and foreign keys are on again afterwards.
+        await Assert.ThrowsAnyAsync<Exception>(() => provider.ExecuteScriptAsync("INSERT INTO orders (customer_id, total) VALUES (99, 1);", null, 30));
+    }
+
+    [Fact]
+    public async Task A_rebuild_that_breaks_a_reference_changes_nothing()
+    {
+        await using var provider = new SqliteProviderFactory().Create(Profile());
+        await provider.ExecuteScriptAsync("""
+            CREATE TABLE notes (id INTEGER PRIMARY KEY, customer_id INTEGER, body TEXT);
+            INSERT INTO notes (customer_id, body) VALUES (1, 'fine'), (42, 'orphan');
+            """, null, 30);
+        var original = new TableDesign
+        {
+            Schema = "main", Name = "notes",
+            Columns =
+            [
+                new ColumnDesign { Name = "id", OriginalName = "id", Type = "INTEGER", IsNullable = false, IsPrimaryKey = true },
+                new ColumnDesign { Name = "customer_id", OriginalName = "customer_id", Type = "INTEGER" },
+                new ColumnDesign { Name = "body", OriginalName = "body", Type = "TEXT" }
+            ]
+        };
+        var edited = original.AddForeignKey(new ForeignKeyDesign { Column = "customer_id", ReferencedSchema = "main", ReferencedTable = "customers", ReferencedColumn = "id" });
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(async () =>
+            await RunInOneTransaction(provider, TableAlterScriptBuilder.Build(original, edited, SqlDialect.SqliteKey)));
+        Assert.Contains("notes", error.Message);
+        Assert.Contains("Nothing was changed", error.Message);
+        Assert.DoesNotContain((await provider.GetForeignKeysAsync()), f => f.Table == "notes");
+        Assert.Equal(2L, (await provider.QueryReadOnlyAsync("SELECT count(*) FROM notes;", null, new DbExplorer.Core.Search.DataSearchOptions(10, 30, 1000))).Rows[0][0]);
+        Assert.DoesNotContain((await provider.GetObjectsAsync()), o => o.Name.StartsWith("_dbx_rebuild_", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Alter_steps_run_on_a_real_file()
     {

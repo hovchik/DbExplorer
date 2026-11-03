@@ -25,6 +25,9 @@ public static class TableAlterScriptBuilder
     /// <summary>The statements, one per entry, without batch separators.</summary>
     public static IReadOnlyList<string> Steps(TableDesign original, TableDesign edited, string providerKey, bool createSchema = false)
     {
+        if (providerKey == SqlDialect.SqliteKey && TableAlterAdvisor.SqliteLimits(original, edited).Any())
+            return SqliteRebuild(original, edited);
+
         var d = SqlDialect.For(providerKey);
         var sqlServer = providerKey == SqlDialect.SqlServerKey;
         var mySql = providerKey == SqlDialect.MySqlKey;
@@ -204,6 +207,77 @@ public static class TableAlterScriptBuilder
             steps.Add($"CREATE {(index.IsUnique ? "UNIQUE " : "")}INDEX {d.Quote(TableScriptBuilder.IndexName(edited, index, d))} ON {table} " +
                       $"({string.Join(", ", index.Columns.Select(c => d.Quote(c.Trim())))});");
 
+        return steps;
+    }
+
+    /// <summary>
+    /// SQLite's documented way to make a change its ALTER TABLE can't: create the new shape under a temporary name, copy
+    /// the rows, drop the old table, rename the new one and recreate the indexes, with foreign keys off for the copy
+    /// and checked at the end. Run in one transaction (the app turns foreign keys off before it begins, since SQLite
+    /// ignores the pragma inside one), nothing is left behind when a step or the check fails.
+    /// </summary>
+    private static IReadOnlyList<string> SqliteRebuild(TableDesign original, TableDesign edited)
+    {
+        var d = SqlDialect.For(SqlDialect.SqliteKey);
+        var schema = TableScriptBuilder.SchemaOf(edited, SqlDialect.SqliteKey);
+        var name = TableScriptBuilder.NameOf(edited);
+        var temporary = "_dbx_rebuild_" + name;
+        var columns = edited.Columns.Where(c => c.Name.Trim().Length > 0).ToList();
+        var kept = columns.Where(c => c.OriginalName is not null && original.Column(c.OriginalName) is not null).ToList();
+
+        // Names fixed now, so the CREATE under the temporary name doesn't derive PK_/FK_ names from it.
+        var shape = edited with
+        {
+            Name = temporary,
+            PrimaryKeyName = TableScriptBuilder.PrimaryKeyName(edited, d),
+            ForeignKeys = edited.ForeignKeys.Where(f => f.Column.Trim().Length > 0 && f.ReferencedTable.Trim().Length > 0)
+                .Select(f => f with
+                {
+                    Name = TableScriptBuilder.ForeignKeyName(edited, f, d),
+                    // A key to the table itself names the final table, which the temporary one becomes.
+                    ReferencedTable = TableDesign.Same(f.ReferencedTable.Trim(), original.Name) || TableDesign.Same(f.ReferencedTable.Trim(), name)
+                        ? name : f.ReferencedTable
+                }).ToList(),
+            Indexes = []
+        };
+
+        var steps = new List<string>
+        {
+            "-- SQLite can't make this change with ALTER TABLE, so the table is rebuilt (sqlite.org/lang_altertable.html).\n" +
+            "PRAGMA foreign_keys = OFF;",
+            TableScriptBuilder.Build(shape, SqlDialect.SqliteKey).TrimEnd('\n')
+        };
+
+        if (kept.Count > 0)
+        {
+            var into = string.Join(", ", kept.Select(c => d.Quote(c.Name.Trim())));
+            var from = string.Join(", ", kept.Select(c =>
+            {
+                var before = original.Column(c.OriginalName!)!;
+                var source = d.Quote(before.Name);
+                // A column that becomes NOT NULL with a default gets the default where it was empty.
+                return !before.WritesNotNull && c.WritesNotNull && !c.IsIdentity && !string.IsNullOrWhiteSpace(c.Default)
+                    ? $"COALESCE({source}, {c.Default.Trim()})" : source;
+            }));
+            steps.Add($"INSERT INTO {d.Table(schema, temporary)} ({into})\n    SELECT {from} FROM {d.Table(schema, original.Name)};");
+        }
+
+        steps.Add($"DROP TABLE {d.Table(schema, original.Name)};");
+        // Legacy mode renames without re-checking views and triggers that still name the dropped table.
+        steps.Add("PRAGMA legacy_alter_table = ON;");
+        steps.Add($"ALTER TABLE {d.Table(schema, temporary)} RENAME TO {d.Quote(name)};");
+        steps.Add("PRAGMA legacy_alter_table = OFF;");
+
+        foreach (var index in edited.Indexes.Where(i => i.Columns.Count > 0))
+        {
+            // The index behind a UNIQUE constraint has a name SQLite reserves (sqlite_autoindex_…), so it gets a UX_ name.
+            var named = index.Name.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase) ? index with { Name = "" } : index;
+            steps.Add($"CREATE {(index.IsUnique ? "UNIQUE " : "")}INDEX {d.Quote(TableScriptBuilder.IndexName(edited, named, d))} ON {d.Table(schema, name)} " +
+                      $"({string.Join(", ", index.Columns.Select(c => d.Quote(c.Trim())))});");
+        }
+
+        steps.Add("PRAGMA foreign_key_check;");
+        steps.Add("PRAGMA foreign_keys = ON;");
         return steps;
     }
 

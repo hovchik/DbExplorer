@@ -82,6 +82,14 @@ public partial class MainWindowViewModel
         {
             Add("Query tabs", "New query tab", () => { SelectedTab = AppTab.Query; Query.NewTab(); }, "Ctrl+N", keywords: "new script sql editor");
             Add("Query tabs", "Open SQL file…", () => RunInWorkspace(QueryFileAction.Open), "Ctrl+O", keywords: "load script");
+            foreach (var recent in Query.RecentFiles)
+            {
+                Add("Query tabs", $"Open recent: {recent.Name}", () =>
+                {
+                    SelectedTab = AppTab.Query;
+                    Query.OpenRecentCommand.Execute(recent);
+                }, subtitle: recent.Folder, keywords: "recent file sql script mru", id: "open-recent:" + recent.Path);
+            }
             // Closed Query tabs: the newest first (Ctrl+Shift+T), then each one by name.
             foreach (var (closed, i) in Query.RecentlyClosed.Select((c, i) => (c, i)))
             {
@@ -101,6 +109,8 @@ public partial class MainWindowViewModel
                 Command("Query tabs", "Duplicate query tab", Query.DuplicateTabCommand, subtitle: tab.Title, keywords: "copy clone");
                 Command("Query tabs", "Rename query tab…", Query.RenameTabCommand, subtitle: tab.Title);
                 Command("Query tabs", "Local history…", Query.ShowLocalHistoryCommand, "Ctrl+Shift+H", $"earlier versions of {tab.Title}", "versions restore diff");
+                if (tab.FilePath is not null)
+                    Command("Query tabs", "Show file in folder", Query.ShowInFolderCommand, subtitle: tab.FilePath, keywords: "explorer reveal finder");
             }
         }
 
@@ -154,6 +164,7 @@ public partial class MainWindowViewModel
             () => ReconnectOnStart = !ReconnectOnStart, keywords: "restore workspace startup", id: "toggle-reconnect");
         Add("Settings", SoftwareRendering ? "Use GPU rendering (after restart)" : "Use software rendering (after restart)",
             () => SoftwareRendering = !SoftwareRendering, keywords: "blank window graphics", id: "toggle-software-rendering");
+        Add("Settings", "Preferences…", OpenPreferences, "Ctrl+,", keywords: "settings options configure theme font row limit auto-commit notifications");
         Add("Help", "Keyboard shortcuts", ShowShortcuts, "F1", keywords: "keys hotkeys keybindings cheat sheet help");
 
         // ----- Tabs -----

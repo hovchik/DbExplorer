@@ -17,7 +17,8 @@ public enum ExperimentalFeature
 }
 
 /// <summary>Small app-wide preferences persisted as JSON: the UI theme, the SQL editor's zoom, word wrap and live SQL
-/// warnings, and which experimental features are on.</summary>
+/// warnings, the defaults of new Query tabs, when a long run notifies, and which experimental features are on. Most of
+/// them are edited in the Preferences window (Ctrl+,).</summary>
 public sealed class AppSettingsService
 {
     public const double DefaultEditorFontSize = 13;
@@ -35,10 +36,13 @@ public sealed class AppSettingsService
         EditorFontSize = ClampFontSize(stored.EditorFontSize ?? DefaultEditorFontSize);
         EditorWordWrap = stored.EditorWordWrap;
         SqlInspections = !stored.SqlInspectionsOff;
-        SoftwareRendering = stored.SoftwareRendering;
+        SoftwareRendering = SoftwareRenderingAtStart = stored.SoftwareRendering;
         ShowNavigator = !stored.NavigatorHidden;
         ReconnectOnStart = !stored.ReconnectOnStartOff;
         NavigatorWidth = ClampNavigatorWidth(stored.NavigatorWidth ?? DefaultNavigatorWidth);
+        DefaultRowLimit = ClampRowLimit(stored.DefaultRowLimit ?? DefaultRowLimitValue);
+        DefaultAutoCommit = !stored.DefaultAutoCommitOff;
+        LongRunNotifySeconds = ClampNotifySeconds(stored.LongRunNotifySeconds ?? DefaultLongRunNotifySeconds);
         _recentCommands = (stored.RecentCommands ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().Take(MaxRecentCommands).ToList();
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
@@ -46,6 +50,9 @@ public sealed class AppSettingsService
     }
 
     private readonly HashSet<ExperimentalFeature> _disabled;
+
+    /// <summary>Where the preferences are saved (settings.json in the app's data folder).</summary>
+    public string FilePath => _file;
 
     public AppThemeMode Theme { get; private set; }
 
@@ -62,6 +69,9 @@ public sealed class AppSettingsService
     /// <summary>Whether the window is drawn by the CPU instead of the graphics card (read at start-up, so a change
     /// applies after a restart). A way out when the GPU path stops repainting, for example after a long minimize.</summary>
     public bool SoftwareRendering { get; private set; }
+
+    /// <summary>The software rendering setting as it was read when the app started, i.e. the one in use now.</summary>
+    public bool SoftwareRenderingAtStart { get; }
 
     public const double DefaultNavigatorWidth = 260;
     public const double MinNavigatorWidth = 180;
@@ -82,6 +92,70 @@ public sealed class AppSettingsService
     {
         if (ReconnectOnStart == on) return;
         ReconnectOnStart = on;
+        Save();
+    }
+
+    public const int DefaultRowLimitValue = 10_000;
+    public const int MaxRowLimit = 10_000_000;
+
+    /// <summary>The row limit a new Query tab starts with (0 = no limit); each tab can still change its own.</summary>
+    public int DefaultRowLimit { get; private set; }
+
+    public void SetDefaultRowLimit(int rows)
+    {
+        rows = ClampRowLimit(rows);
+        if (DefaultRowLimit == rows) return;
+        DefaultRowLimit = rows;
+        Save();
+    }
+
+    public static int ClampRowLimit(int rows) => Math.Clamp(rows, 0, MaxRowLimit);
+
+    /// <summary>Whether a new Query tab starts with Auto-commit on (off: runs stay in a transaction until Commit or
+    /// Rollback); each tab can still switch its own.</summary>
+    public bool DefaultAutoCommit { get; private set; }
+
+    public void SetDefaultAutoCommit(bool on)
+    {
+        if (DefaultAutoCommit == on) return;
+        DefaultAutoCommit = on;
+        Save();
+    }
+
+    public const int DefaultLongRunNotifySeconds = 10;
+    public const int MaxLongRunNotifySeconds = 3600;
+
+    /// <summary>A run that took at least this many seconds shows a notification (and flashes the taskbar button) when
+    /// it finishes while the user looks elsewhere; 0 turns the notification off.</summary>
+    public int LongRunNotifySeconds { get; private set; }
+
+    public void SetLongRunNotifySeconds(int seconds)
+    {
+        seconds = ClampNotifySeconds(seconds);
+        if (LongRunNotifySeconds == seconds) return;
+        LongRunNotifySeconds = seconds;
+        Save();
+    }
+
+    public static int ClampNotifySeconds(int seconds) => Math.Clamp(seconds, 0, MaxLongRunNotifySeconds);
+
+    /// <summary>Puts every preference shown in the Preferences window back to its default (theme, editor, new tab
+    /// defaults, notifications, start-up, rendering and experiments). The navigator's width and visibility and the
+    /// command palette's recent list are left alone.</summary>
+    public void ResetPreferences()
+    {
+        SetTheme(AppThemeMode.System);
+        var editorChanged = !EditorFontSize.Equals(DefaultEditorFontSize) || EditorWordWrap || !SqlInspections;
+        EditorFontSize = DefaultEditorFontSize;
+        EditorWordWrap = false;
+        SqlInspections = true;
+        if (editorChanged) EditorChanged?.Invoke();
+        DefaultRowLimit = DefaultRowLimitValue;
+        DefaultAutoCommit = true;
+        LongRunNotifySeconds = DefaultLongRunNotifySeconds;
+        ReconnectOnStart = true;
+        SoftwareRendering = false;
+        foreach (var feature in _disabled.ToList()) SetEnabled(feature, true);
         Save();
     }
 
@@ -205,6 +279,9 @@ public sealed class AppSettingsService
                 NavigatorHidden = !ShowNavigator,
                 ReconnectOnStartOff = !ReconnectOnStart,
                 NavigatorWidth = Math.Abs(NavigatorWidth - DefaultNavigatorWidth) < 1 ? null : NavigatorWidth,
+                DefaultRowLimit = DefaultRowLimit == DefaultRowLimitValue ? null : DefaultRowLimit,
+                DefaultAutoCommitOff = !DefaultAutoCommit,
+                LongRunNotifySeconds = LongRunNotifySeconds == DefaultLongRunNotifySeconds ? null : LongRunNotifySeconds,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList(),
                 RecentCommands = _recentCommands.Count == 0 ? null : _recentCommands.ToList()
             };
@@ -234,6 +311,13 @@ public sealed class AppSettingsService
 
         /// <summary>Stored as "off" so reconnecting starts on.</summary>
         public bool ReconnectOnStartOff { get; set; }
+
+        public int? DefaultRowLimit { get; set; }
+
+        /// <summary>Stored as "off" so new tabs start with auto-commit on.</summary>
+        public bool DefaultAutoCommitOff { get; set; }
+
+        public int? LongRunNotifySeconds { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

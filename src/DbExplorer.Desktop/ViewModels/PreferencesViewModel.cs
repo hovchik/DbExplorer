@@ -1,0 +1,236 @@
+using System.Diagnostics;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using DbExplorer.Application;
+using DbExplorer.Application.Assistant;
+using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
+
+namespace DbExplorer.Desktop.ViewModels;
+
+/// <summary>
+/// The Preferences window (Ctrl+,): every app-wide setting in one place. Each change is saved and applied at once, like
+/// the toolbar menus and shortcuts that change the same settings; those keep working and the window follows them.
+/// </summary>
+public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
+{
+    private readonly AppSettingsService _settings;
+    private readonly AssistantSettings _assistant;
+    private readonly IDialogService _dialogs;
+
+    public PreferencesViewModel(AppSettingsService settings, AssistantSettings assistant, IDialogService dialogs)
+    {
+        _settings = settings;
+        _assistant = assistant;
+        _dialogs = dialogs;
+        _settings.ThemeChanged += OnThemeChanged;
+        _settings.EditorChanged += OnEditorChanged;
+        _settings.ExperimentChanged += OnExperimentChanged;
+        _assistant.Changed += OnAssistantChanged;
+    }
+
+    public void Dispose()
+    {
+        _settings.ThemeChanged -= OnThemeChanged;
+        _settings.EditorChanged -= OnEditorChanged;
+        _settings.ExperimentChanged -= OnExperimentChanged;
+        _assistant.Changed -= OnAssistantChanged;
+    }
+
+    // ---- Appearance ----
+
+    public IReadOnlyList<AppThemeMode> ThemeModes { get; } = Enum.GetValues<AppThemeMode>();
+
+    public AppThemeMode Theme
+    {
+        get => _settings.Theme;
+        set => _settings.SetTheme(value);
+    }
+
+    public bool SoftwareRendering
+    {
+        get => _settings.SoftwareRendering;
+        set
+        {
+            if (value == _settings.SoftwareRendering) return;
+            _settings.SetSoftwareRendering(value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RestartNeeded));
+        }
+    }
+
+    /// <summary>The rendering choice differs from the one this run started with, and only takes effect after a restart.</summary>
+    public bool RestartNeeded => SoftwareRendering != _settings.SoftwareRenderingAtStart;
+
+    // ---- SQL editor ----
+
+    public decimal MinFontSize => (decimal)AppSettingsService.MinEditorFontSize;
+    public decimal MaxFontSize => (decimal)AppSettingsService.MaxEditorFontSize;
+
+    public decimal EditorFontSize
+    {
+        get => (decimal)_settings.EditorFontSize;
+        set => _settings.SetEditorFontSize((double)value);
+    }
+
+    public bool EditorWordWrap
+    {
+        get => _settings.EditorWordWrap;
+        set => _settings.SetEditorWordWrap(value);
+    }
+
+    public bool SqlInspections
+    {
+        get => _settings.SqlInspections;
+        set => _settings.SetSqlInspections(value);
+    }
+
+    // ---- New Query tabs ----
+
+    public decimal MaxRowLimit => AppSettingsService.MaxRowLimit;
+
+    /// <summary>Rows kept per result set in a new tab; 0 = no limit.</summary>
+    public decimal DefaultRowLimit
+    {
+        get => _settings.DefaultRowLimit;
+        set
+        {
+            _settings.SetDefaultRowLimit((int)Math.Clamp(value, 0, AppSettingsService.MaxRowLimit));
+            OnPropertyChanged();
+        }
+    }
+
+    public bool DefaultAutoCommit
+    {
+        get => _settings.DefaultAutoCommit;
+        set
+        {
+            _settings.SetDefaultAutoCommit(value);
+            OnPropertyChanged();
+        }
+    }
+
+    // ---- Notifications ----
+
+    public decimal MaxNotifySeconds => AppSettingsService.MaxLongRunNotifySeconds;
+
+    /// <summary>Notify when a long run finishes while the user looks elsewhere.</summary>
+    public bool NotifyLongRuns
+    {
+        get => _settings.LongRunNotifySeconds > 0;
+        set
+        {
+            if (value == NotifyLongRuns) return;
+            _settings.SetLongRunNotifySeconds(value ? _lastNotifySeconds : 0);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LongRunNotifySeconds));
+        }
+    }
+
+    private int _lastNotifySeconds = AppSettingsService.DefaultLongRunNotifySeconds;
+
+    public decimal LongRunNotifySeconds
+    {
+        get => NotifyLongRuns ? _settings.LongRunNotifySeconds : _lastNotifySeconds;
+        set
+        {
+            var seconds = (int)Math.Clamp(value, 1, AppSettingsService.MaxLongRunNotifySeconds);
+            _lastNotifySeconds = seconds;
+            if (NotifyLongRuns) _settings.SetLongRunNotifySeconds(seconds);
+            OnPropertyChanged();
+        }
+    }
+
+    // ---- Start-up ----
+
+    public bool ReconnectOnStart
+    {
+        get => _settings.ReconnectOnStart;
+        set
+        {
+            _settings.SetReconnectOnStart(value);
+            OnPropertyChanged();
+        }
+    }
+
+    // ---- Experimental features ----
+
+    public bool ResultDiff
+    {
+        get => _settings.IsEnabled(ExperimentalFeature.ResultDiff);
+        set => _settings.SetEnabled(ExperimentalFeature.ResultDiff, value);
+    }
+
+    public bool Expectations
+    {
+        get => _settings.IsEnabled(ExperimentalFeature.Expectations);
+        set => _settings.SetEnabled(ExperimentalFeature.Expectations, value);
+    }
+
+    public bool CostLens
+    {
+        get => _settings.IsEnabled(ExperimentalFeature.CostLens);
+        set => _settings.SetEnabled(ExperimentalFeature.CostLens, value);
+    }
+
+    // ---- AI assistant ----
+
+    public string AssistantStatus => _assistant.IsConfigured
+        ? "API key saved: " + AssistantSettings.Mask(_assistant.ApiKey)
+        : "No API key yet: the assistant is hidden in the Query tabs.";
+
+    public string AssistantButtonText => _assistant.IsConfigured ? "Change or remove key…" : "Add API key…";
+
+    [RelayCommand]
+    private Task EditAssistantKeyAsync() => _dialogs.EditAssistantSettingsAsync(_assistant);
+
+    // ---- Files ----
+
+    public string SettingsFile => _settings.FilePath;
+
+    [RelayCommand]
+    private void OpenSettingsFolder()
+    {
+        try
+        {
+            var folder = Path.GetDirectoryName(_settings.FilePath)!;
+            Directory.CreateDirectory(folder);
+            Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Nothing to open on this system; the path is shown in the window anyway.
+        }
+    }
+
+    /// <summary>Puts every setting in this window back to its default, after asking.</summary>
+    [RelayCommand]
+    private async Task ResetAsync()
+    {
+        if (!await _dialogs.ConfirmAsync(
+                "Put every preference back to its default? Theme, editor zoom and wrap, SQL warnings, new tab defaults, " +
+                "notifications, start-up, rendering and the experimental features are reset. Connections, saved queries, " +
+                "snippets and the AI key are kept.",
+                "Reset")) return;
+        _settings.ResetPreferences();
+        _lastNotifySeconds = AppSettingsService.DefaultLongRunNotifySeconds;
+        OnPropertyChanged(string.Empty);
+    }
+
+    private void OnThemeChanged(AppThemeMode _) => OnPropertyChanged(nameof(Theme));
+
+    private void OnEditorChanged()
+    {
+        OnPropertyChanged(nameof(EditorFontSize));
+        OnPropertyChanged(nameof(EditorWordWrap));
+        OnPropertyChanged(nameof(SqlInspections));
+    }
+
+    private void OnExperimentChanged(ExperimentalFeature feature) => OnPropertyChanged(feature.ToString());
+
+    private void OnAssistantChanged()
+    {
+        OnPropertyChanged(nameof(AssistantStatus));
+        OnPropertyChanged(nameof(AssistantButtonText));
+    }
+}

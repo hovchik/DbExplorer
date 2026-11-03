@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.VisualTree;
 using DbExplorer.Application.QueryBuilder;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.ViewModels;
@@ -14,8 +15,9 @@ namespace DbExplorer.Desktop.Controls;
 /// <summary>
 /// The query builder's canvas: placed tables as boxes with a tick per column, joins as curves between columns.
 /// Click a column to select it, drag a header to move the table, drag a column onto another table's column to join
-/// them, click a join's label to select it, Delete removes the selected join or table. Tables dropped from the
-/// table list land where they are dropped. Drawn in the schema diagram's style.
+/// them, click a join's label to select it, Delete removes the selected join or table. Double-click a title to tick
+/// (or untick) every column. Right-click a table, a join's label or the empty canvas for their actions. Tables dropped
+/// from the table list land where they are dropped. Drawn in the schema diagram's style.
 /// </summary>
 public sealed class QueryCanvasControl : Control
 {
@@ -31,11 +33,13 @@ public sealed class QueryCanvasControl : Control
     private (QueryTableItem Table, string Column)? _pressedColumn;
     private Point _pressPoint;
     private Point? _dragPoint;
+    private (QueryTableItem Table, int Row)? _hover;
 
     static QueryCanvasControl()
     {
         AutomationProperties.NameProperty.OverrideDefaultValue<QueryCanvasControl>("Query builder tables");
-        AutomationProperties.HelpTextProperty.OverrideDefaultValue<QueryCanvasControl>("Delete removes the selected table or join");
+        AutomationProperties.HelpTextProperty.OverrideDefaultValue<QueryCanvasControl>(
+            "Delete removes the selected table or join. Shift+F10 or the menu key opens the selected table's or join's actions.");
         AffectsMeasure<QueryCanvasControl>(BuilderProperty);
         AffectsRender<QueryCanvasControl>(BuilderProperty);
     }
@@ -60,6 +64,17 @@ public sealed class QueryCanvasControl : Control
         if (change.NewValue is QueryBuilderViewModel vm) vm.CanvasChanged += OnCanvasChanged;
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // Re-measure when the visible area changes, so the empty canvas fills it and its hint stays centred.
+        if (this.FindAncestorOfType<ScrollViewer>() is { } viewer)
+            viewer.PropertyChanged += (_, args) =>
+            {
+                if (args.Property == ScrollViewer.ViewportProperty) OnCanvasChanged();
+            };
+    }
+
     private void OnCanvasChanged()
     {
         InvalidateMeasure();
@@ -72,9 +87,19 @@ public sealed class QueryCanvasControl : Control
         var width = tables.Count == 0 ? 0 : tables.Max(t => t.X + QueryTableItem.Width) + 80;
         var height = tables.Count == 0 ? 0 : tables.Max(t => t.Y + t.Height) + 80;
         // Fill the viewport so the whole area takes drops, and grow past it so the scroll bars reach every table.
+        var view = ViewportSize();
         return new Size(
-            Math.Max(width, double.IsInfinity(availableSize.Width) ? 900 : availableSize.Width),
-            Math.Max(height, double.IsInfinity(availableSize.Height) ? 500 : availableSize.Height));
+            Math.Max(width, double.IsInfinity(availableSize.Width) ? view.Width : availableSize.Width),
+            Math.Max(height, double.IsInfinity(availableSize.Height) ? view.Height : availableSize.Height));
+    }
+
+    /// <summary>The visible part of the canvas: the scroll viewer's viewport when it has one.</summary>
+    private Size ViewportSize()
+    {
+        var viewer = this.FindAncestorOfType<ScrollViewer>();
+        var size = viewer?.Viewport ?? default;
+        if (size.Width <= 0 || size.Height <= 0) size = viewer?.Bounds.Size ?? default;
+        return size.Width > 0 && size.Height > 0 ? size : new Size(900, 500);
     }
 
     // ----- Drag from the table list -----
@@ -99,11 +124,13 @@ public sealed class QueryCanvasControl : Control
         if (Builder is not { } vm) return;
         var p = e.GetPosition(this);
         _pressPoint = p;
+        var right = e.GetCurrentPoint(this).Properties.IsRightButtonPressed;
 
         if (JoinAt(vm, p) is { } join)
         {
             vm.SelectedJoin = join;
             vm.SelectedTable = null;
+            if (right) OpenMenu(JoinMenu(vm, join));
             e.Handled = true;
             return;
         }
@@ -111,7 +138,20 @@ public sealed class QueryCanvasControl : Control
         var table = TableAt(vm, p);
         vm.SelectedJoin = null;
         vm.SelectedTable = table;
+        if (right)
+        {
+            OpenMenu(table is null ? CanvasMenu(vm) : TableMenu(vm, table));
+            e.Handled = true;
+            return;
+        }
         if (table is null) return;
+
+        if (e.ClickCount == 2 && table.RowAt(p.Y) is -1 && !CloseRect(table).Contains(p))
+        {
+            vm.SetAllColumns(table, !AllTicked(vm, table));
+            e.Handled = true;
+            return;
+        }
 
         if (CloseRect(table).Contains(p))
         {
@@ -145,15 +185,34 @@ public sealed class QueryCanvasControl : Control
             _dragPoint = p;
             InvalidateVisual();
         }
+        else
+        {
+            var over = TableAt(vm, p);
+            (QueryTableItem, int)? hover = over is not null && over.RowAt(p.Y) is { } row and >= 0 ? (over, row) : null;
+            if (hover != _hover)
+            {
+                _hover = hover;
+                InvalidateVisual();
+            }
+        }
         Cursor = _moving is not null ? new Cursor(StandardCursorType.SizeAll)
             : _dragPoint is not null ? new Cursor(StandardCursorType.Cross)
             : TableAt(vm, p) is { } t && t.RowAt(p.Y) is -1 && !CloseRect(t).Contains(p) ? new Cursor(StandardCursorType.SizeAll)
             : Cursor.Default;
     }
 
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (_hover is null) return;
+        _hover = null;
+        InvalidateVisual();
+    }
+
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_moving is not null) Builder?.EndMove();
         if (Builder is { } vm && _pressedColumn is { } pressed)
         {
             var p = e.GetPosition(this);
@@ -177,11 +236,91 @@ public sealed class QueryCanvasControl : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (Builder is not { } vm || e.Key is not (Key.Delete or Key.Back)) return;
+        if (Builder is not { } vm) return;
+        if (e.Key == Key.Apps || (e.Key == Key.F10 && e.KeyModifiers == KeyModifiers.Shift))
+        {
+            OpenMenu(vm.SelectedJoin is { } j ? JoinMenu(vm, j) : vm.SelectedTable is { } t ? TableMenu(vm, t) : CanvasMenu(vm));
+            e.Handled = true;
+            return;
+        }
+        if (e.Key is not (Key.Delete or Key.Back)) return;
         if (vm.SelectedJoin is { } join) vm.RemoveJoin(join);
         else if (vm.SelectedTable is { } table) vm.RemoveTable(table);
         e.Handled = true;
     }
+
+    // ----- Menus -----
+
+    private static bool AllTicked(QueryBuilderViewModel vm, QueryTableItem table) =>
+        table.Columns.Count > 0 && table.Columns.All(c => vm.IsOutput(table, c.Name));
+
+    private void OpenMenu(ContextMenu menu)
+    {
+        menu.PlacementTarget = this;
+        menu.Open(this);
+    }
+
+    private static MenuItem Item(string header, Action action, bool enabled = true, bool? check = null)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled };
+        if (check is { } on)
+        {
+            item.ToggleType = MenuItemToggleType.Radio;
+            item.IsChecked = on;
+        }
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private static ContextMenu TableMenu(QueryBuilderViewModel vm, QueryTableItem table)
+    {
+        var related = vm.RelatedTo(table);
+        var add = new MenuItem { Header = "Add a related table", IsEnabled = related.Count > 0 };
+        foreach (var other in related)
+            add.Items.Add(Item(other.FullName, () => vm.AddTable(other, null)));
+        return new ContextMenu
+        {
+            ItemsSource = new Control[]
+            {
+                Item("Select every column", () => vm.SetAllColumns(table, true), !AllTicked(vm, table)),
+                Item("Clear its columns", () => vm.SetAllColumns(table, false), table.Columns.Any(c => vm.IsOutput(table, c.Name)) || vm.IsOutput(table, QueryBuilderViewModel.AllColumns)),
+                add,
+                new Separator(),
+                Item($"Remove {table.Alias}", () => vm.RemoveTable(table))
+            }
+        };
+    }
+
+    private static ContextMenu JoinMenu(QueryBuilderViewModel vm, JoinItem join)
+    {
+        var items = new List<Control>();
+        foreach (var kind in QueryBuilderViewModel.JoinKinds)
+        {
+            var label = kind switch
+            {
+                JoinKind.Left => $"Left: every {join.LeftAlias} row",
+                JoinKind.Right => $"Right: every {join.RightAlias} row",
+                JoinKind.Full => "Full: every row of both",
+                _ => "Inner: matching rows only"
+            };
+            items.Add(Item(label, () => vm.SetJoinKind(join, kind), check: join.Kind == kind));
+        }
+        items.Add(new Separator());
+        items.Add(Item("Remove this join", () => vm.RemoveJoin(join)));
+        return new ContextMenu { ItemsSource = items };
+    }
+
+    private static ContextMenu CanvasMenu(QueryBuilderViewModel vm) => new()
+    {
+        ItemsSource = new Control[]
+        {
+            Item("Arrange tables", () => vm.ArrangeCommand.Execute(null), vm.HasTables),
+            Item("Undo", () => vm.UndoCommand.Execute(null), vm.CanUndo),
+            Item("Redo", () => vm.RedoCommand.Execute(null), vm.CanRedo),
+            new Separator(),
+            Item("Clear everything", () => vm.ClearCommand.Execute(null), vm.HasTables)
+        }
+    };
 
     /// <summary>The selected table is drawn last (on top) and hit first; the list's own order is the FROM order.</summary>
     private static IEnumerable<QueryTableItem> DrawOrder(QueryBuilderViewModel vm) =>
@@ -254,12 +393,6 @@ public sealed class QueryCanvasControl : Control
         var bg = Brush("AppCodeBackgroundBrush", Brushes.WhiteSmoke);
         context.FillRectangle(bg, new Rect(Bounds.Size));
         var hint = Brush("AppHintForegroundBrush", Brushes.Gray);
-        if (Builder is not { } vm || vm.Tables.Count == 0)
-        {
-            DrawText(context, "Drag tables here from the list on the left (or double-click them).", new Point(24, 24), hint, 13, FontWeight.Normal, 600);
-            return;
-        }
-
         var fg = Brush("AppForegroundBrush", Brushes.Black);
         var border = Brush("AppBorderBrush", Brushes.Gray);
         var surface = Brush("AppPopupBackgroundBrush", Brushes.White);
@@ -267,6 +400,13 @@ public sealed class QueryCanvasControl : Control
         var accentColor = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color col ? col : Colors.SteelBlue;
         var accent = new ImmutableSolidColorBrush(accentColor);
         var accentSoft = new ImmutableSolidColorBrush(accentColor, 0.16);
+        var accentHover = new ImmutableSolidColorBrush(accentColor, 0.08);
+
+        if (Builder is not { } vm || vm.Tables.Count == 0)
+        {
+            DrawEmptyState(context, fg, hint, border, surface, accent);
+            return;
+        }
         var edge = new ImmutableSolidColorBrush(((ISolidColorBrush)hint).Color, 0.75);
 
         // Joins under the tables, labels on top of everything (drawn after the boxes).
@@ -300,9 +440,12 @@ public sealed class QueryCanvasControl : Control
                 var name = t.ColumnAtRow(row);
                 var y = t.Y + QueryTableItem.HeaderHeight + QueryTableItem.Padding + row * QueryTableItem.RowHeight;
                 var ticked = vm.IsOutput(t, name);
-                var hovered = _pressedColumn is { } pc && pc.Table == t && pc.Column == name;
-                if (ticked || hovered)
+                var pressed = _pressedColumn is { } pc && pc.Table == t && pc.Column == name;
+                var hovered = _hover is { } h && h.Table == t && h.Row == row;
+                if (ticked || pressed)
                     context.DrawRectangle(accentSoft, null, new Rect(t.X + 1, y, QueryTableItem.Width - 2, QueryTableItem.RowHeight));
+                else if (hovered)
+                    context.DrawRectangle(accentHover, null, new Rect(t.X + 1, y, QueryTableItem.Width - 2, QueryTableItem.RowHeight));
 
                 var box = new Rect(t.X + 10, y + 5, 12, 12);
                 context.DrawRectangle(ticked ? accent : null, RenderPens.Create(ticked ? accent : hint, 1), box, 2, 2);
@@ -344,6 +487,45 @@ public sealed class QueryCanvasControl : Control
             context.DrawLine(RenderPens.Create(accent, 2, DashStyle.Dash), start, to);
             context.DrawEllipse(accent, null, to, 4, 4);
         }
+    }
+
+    /// <summary>What to do first, centred on the empty canvas: three numbered steps.</summary>
+    private void DrawEmptyState(DrawingContext context, IBrush fg, IBrush hint, IBrush border, IBrush surface, IBrush accent)
+    {
+        string[] steps =
+        [
+            "Add tables: double-click them in the list, press +, or drag them here. They join on their foreign keys.",
+            "Tick the columns you want. Right-click a table to select all of them or to add a related table.",
+            "Set aliases, sorts, filters and totals below, then Run (F5) to see the rows in a Query tab."
+        ];
+        const double width = 460, rowHeight = 46;
+        var height = 60 + steps.Length * rowHeight;
+        var view = ViewportSize();
+        var x = Math.Max(16, (view.Width - width) / 2);
+        var y = Math.Max(16, (view.Height - height) / 2 - 20);
+        var card = new Rect(x, y, width, height);
+        context.DrawRectangle(surface, RenderPens.Create(border, 1, DashStyle.Dash), card, 10, 10);
+        DrawText(context, "Build a query without writing SQL", new Point(x + 20, y + 18), fg, 15, FontWeight.SemiBold, width - 40);
+        for (var i = 0; i < steps.Length; i++)
+        {
+            var top = y + 54 + i * rowHeight;
+            context.DrawEllipse(accent, null, new Point(x + 31, top + 10), 10, 10);
+            DrawText(context, (i + 1).ToString(CultureInfo.InvariantCulture), new Point(x + 21, top + 3), AccentForeground(), 12, FontWeight.Bold, 20, TextAlignment.Center);
+            DrawWrapped(context, steps[i], new Point(x + 52, top + 1), hint, 12.5, width - 72, 2);
+        }
+    }
+
+    private IBrush AccentForeground() => Brush("AppAccentForegroundBrush", Brushes.White);
+
+    private static void DrawWrapped(DrawingContext context, string text, Point origin, IBrush brush, double size, double maxWidth, int lines)
+    {
+        var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface(FontFamily.Default), size, brush)
+        {
+            MaxTextWidth = Math.Max(1, maxWidth),
+            MaxLineCount = lines,
+            Trimming = TextTrimming.CharacterEllipsis
+        };
+        context.DrawText(formatted, origin);
     }
 
     private IBrush Brush(string key, IBrush fallback) =>

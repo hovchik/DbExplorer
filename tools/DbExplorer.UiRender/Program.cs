@@ -147,10 +147,15 @@ namespace DbExplorer.UiRender
             await Step("leave", RenderLeavePromptAsync);
             await Step("localhistory", RenderLocalHistoryAsync);
             await Step("reopen", RenderReopenClosedTabsAsync);
+            await Step("sqlfiles", RenderSqlFilesAsync);
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
             await Step("import", RenderImportAsync);
+            await Step("preferences", RenderPreferencesAsync);
+            await Step("docs", RenderDocumentationAsync);
+            await Step("testdata", RenderTestDataAsync);
+            await Step("migration", RenderMigrationAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -258,6 +263,28 @@ namespace DbExplorer.UiRender
             _window.Width = 1400;
             _window.Height = 900;
             _vm.SelectedTab = AppTab.Objects;
+            await Settle();
+        }
+
+        /// <summary>Export documentation: the navigator menu on a schema row, then the dialog it opens.</summary>
+        private async Task RenderDocumentationAsync()
+        {
+            var nav = _vm.Navigator;
+            _vm.ShowNavigator = true;
+            _vm.SelectedTab = AppTab.Objects;
+            await nav.RevealAsync(Table("orders"));
+            for (var n = nav.SelectedNode; n is not null; n = n.Parent)
+                if (n.Kind == NavigatorNodeKind.Schema) { nav.SelectedNode = n; break; }
+            await Settle(2);
+            var tree = _window.GetVisualDescendants().OfType<TreeView>().First(t => t.Name == "Tree");
+            tree.ContextMenu!.Open(tree);
+            await Settle(4);
+            await Shot(_window, "navigator-schema-menu");
+            tree.ContextMenu.Close();
+
+            nav.ExportDocumentationCommand.Execute(null);
+            await ShootOwned<ExportDocumentationWindow>("export-documentation", 12);
+            nav.SelectedNode = null;
             await Settle();
         }
 
@@ -753,6 +780,41 @@ namespace DbExplorer.UiRender
                               string.Join(", ", query.RecentlyClosed.Select(c => c.Title)));
         }
 
+        /// <summary>.sql files: the Recent list under Open, and the bar shown when another program changed a file the tab has edits in.</summary>
+        private async Task RenderSqlFilesAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            foreach (var d in query.Documents.Skip(1).ToList()) query.Documents.Remove(d);
+            var dir = Directory.CreateTempSubdirectory("dbx-sqlfiles-").FullName;
+            string[] names = ["daily-orders.sql", "refund-audit.sql", "customer-cleanup.sql"];
+            foreach (var name in names)
+            {
+                var path = Path.Combine(dir, name);
+                await File.WriteAllTextAsync(path, $"-- {name}\nselect id, status, total\nfrom orders\nwhere ordered_at >= current_date - 7;");
+                await _vm.OpenFilesAsync([path]);
+            }
+            await Settle(4);
+            var view = _window.GetVisualDescendants().OfType<QueryWorkspaceView>().First();
+            var open = view.FindControl<SplitButton>("OpenButton")!;
+            open.Flyout!.ShowAt(open);
+            await Settle(8);
+            await Shot(_window, "sqlfiles-recent");
+            open.Flyout.Hide();
+            await Settle();
+
+            var tab = query.Documents.First(d => d.Title == "daily-orders.sql");
+            query.SelectedDocument = tab;
+            tab.Document.Insert(tab.Document.TextLength, "\n-- my edit");
+            var file = tab.FilePath!;
+            await File.WriteAllTextAsync(file, "-- changed by a teammate\nselect 1;");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(1));
+            await query.CheckFilesOnDiskAsync();
+            await Settle(4);
+            await Shot(_window, "sqlfiles-changed");
+            Console.WriteLine("  disk notice: " + tab.DiskNotice);
+        }
+
         private async Task RenderLocalHistoryAsync()
         {
             _vm.SelectedTab = AppTab.Query;
@@ -888,8 +950,73 @@ namespace DbExplorer.UiRender
             await Shot(_window, "usages-opened");
         }
 
+        /// <summary>The Generate test data window on a parent table and on a child table with foreign keys.</summary>
+        private async Task RenderTestDataAsync()
+        {
+            _vm.SelectedTab = AppTab.Objects;
+            foreach (var name in new[] { "customers", "orders" })
+            {
+                _vm.Objects.SelectedObject = _vm.Objects.Objects.First(o => o.Type == DbObjectType.Table && o.Name == name);
+                await Settle(2);
+                _vm.Objects.GenerateTestDataCommand.Execute(null);
+                await WaitFor(() => _window.OwnedWindows.OfType<TestDataWindow>().Any(), "test data window", 10_000);
+                var window = _window.OwnedWindows.OfType<TestDataWindow>().First();
+                var tvm = (TestDataViewModel)window.DataContext!;
+                await WaitFor(() => !tvm.IsBusy, "test data plan", 20_000);
+                tvm.Seed = 12345;
+                Console.WriteLine("  " + tvm.Status);
+                await Settle(8);
+                await Shot(window, "testdata-" + name);
+                window.Close();
+                await Settle(2);
+            }
+        }
+
         /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it
         /// against the real editor, and the F1 shortcut sheet.</summary>
+        /// <summary>The Preferences window (Ctrl+,) at the top and scrolled to its last sections, and the theme menu
+        /// that now leads to it.</summary>
+        private async Task RenderPreferencesAsync()
+        {
+            var themeButton = _window.GetVisualDescendants().OfType<Button>()
+                .First(b => ToolTip.GetTip(b) as string == "Theme and preferences");
+            themeButton.Flyout!.ShowAt(themeButton);
+            await Settle(8);
+            await Shot(_window, "preferences-theme-menu");
+            themeButton.Flyout.Hide();
+            await Settle();
+
+            _vm.OpenPreferencesCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);
+            var window = _window.OwnedWindows.OfType<PreferencesWindow>().First();
+            await Settle(8);
+            await Shot(window, "preferences");
+
+            var prefs = (PreferencesViewModel)window.DataContext!;
+            prefs.SoftwareRendering = true; // shows the restart note
+            prefs.NotifyLongRuns = false;
+            var list = window.FindControl<ListBox>("SectionList")!;
+            list.SelectedIndex = 2;
+            await Settle(8);
+            await Shot(window, "preferences-middle");
+            list.SelectedIndex = list.ItemCount - 2;
+            await Settle(8);
+            await Shot(window, "preferences-scrolled");
+            prefs.SoftwareRendering = false;
+            prefs.NotifyLongRuns = true;
+
+            window.Width = 600;
+            window.Height = 480;
+            list.SelectedIndex = 0;
+            await Settle(8);
+            await Shot(window, "preferences-small");
+            list.SelectedIndex = 3;
+            await Settle(8);
+            await Shot(window, "preferences-small-notifications");
+            window.Close();
+            await Settle();
+        }
+
         private async Task RenderPaletteAsync()
         {
             _vm.SelectedTab = AppTab.Query;
@@ -1001,6 +1128,37 @@ namespace DbExplorer.UiRender
             _vm.DismissConnectionFailureCommand.Execute(null);
             _vm.Profiles.Remove(wrong);
             _vm.Profiles.Remove(closed);
+            await Settle();
+        }
+
+        /// <summary>The Comparer's Migration tab: the shop against its older copy (uirender_shop_old from the seed script).</summary>
+        private async Task RenderMigrationAsync()
+        {
+            var c = _vm.Comparer;
+            _vm.SelectedTab = AppTab.Comparer;
+            if (c.LeftSession is null) await c.UseCurrentAsLeftCommand.ExecuteAsync(null);
+            if (c.RightSession is null) await c.UseCurrentAsRightCommand.ExecuteAsync(null);
+            await WaitFor(() => c.RightDatabases.Contains("uirender_shop_old"), "right databases");
+            c.SelectedTabIndex = ComparerViewModel.MigrationTab;
+            await Settle(4);
+            await Shot(_window, "migration-empty");
+            c.SelectedRightDatabase = "uirender_shop_old";
+            await WaitFor(() => !c.IsBusy && c.RightObjects.Any(o => o.Name == "legacy_import"), "old shop catalog", 30_000);
+            await c.GenerateMigrationCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy && c.HasMigration, "migration script", 30_000);
+            await Settle(4);
+            await Shot(_window, "migration");
+            c.MigrationDropExtras = true;
+            await c.GenerateMigrationCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "migration script with drops", 30_000);
+            await Shot(_window, "migration-drops");
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-migration");
+            _window.Width = 1400;
+            _window.Height = 900;
+            c.MigrationDropExtras = false;
             await Settle();
         }
 

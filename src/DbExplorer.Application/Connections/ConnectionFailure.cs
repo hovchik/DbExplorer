@@ -53,6 +53,7 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
     public static ConnectionFailure Classify(Exception error, ConnectionProfile? profile = null)
     {
         var detail = DetailOf(error);
+        if (FileFailure(error, detail) is { } file) return file;
         var kind = KindOf(error);
         var host = string.IsNullOrWhiteSpace(profile?.Host) ? "the server" : $"\"{profile!.Host.Trim()}\"";
         var endpoint = profile is null || string.IsNullOrWhiteSpace(profile.Host)
@@ -61,6 +62,7 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
         var user = string.IsNullOrWhiteSpace(profile?.UserName) ? "this user" : $"\"{profile!.UserName}\"";
         var database = string.IsNullOrWhiteSpace(profile?.Database) ? "The database" : $"Database \"{profile!.Database}\"";
         var integrated = profile?.IntegratedSecurity == true;
+        var entra = profile?.EntraAuth ?? EntraAuthMode.None;
 
         return kind switch
         {
@@ -70,6 +72,8 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
                 $"{endpoint} answered, but nothing is accepting connections on that port. Check the port, and that the database server is running and accepts network connections.", detail),
             ConnectionFailureKind.Timeout => new(kind, "No answer from the server",
                 $"{endpoint} did not answer in time. A firewall may be blocking the port, the server may be down, or you may need a VPN or an SSH tunnel.", detail),
+            ConnectionFailureKind.Login when entra != EntraAuthMode.None || EntraError(error) is not null => new(kind, "Microsoft sign-in failed",
+                EntraError(error)?.Message ?? EntraAdvice(entra, user), detail),
             ConnectionFailureKind.Login => new(kind, "Sign-in failed",
                 integrated
                     ? "The server did not accept your Windows account. Check that this login exists on the server, or switch to a user name and password."
@@ -84,6 +88,42 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
             _ => new(kind, "Connection failed", "", detail)
         };
     }
+
+    /// <summary>SQLite: the connection is a file, so a failure is about the path, the file's permissions or its content.</summary>
+    private static ConnectionFailure? FileFailure(Exception error, string detail)
+    {
+        for (var e = error; e is not null; e = e.InnerException)
+        {
+            if (e is FileNotFoundException)
+                return new(ConnectionFailureKind.DatabaseMissing, "Database file not found",
+                    "Check the path, or create an empty database with New file… in the connection settings.", detail);
+            if (e.GetType().Name != "SqliteException") continue;
+            if (Mentions(e.Message, "file is not a database", "file is encrypted"))
+                return new(ConnectionFailureKind.Other, "Not a SQLite database",
+                    "The file exists but is not a SQLite 3 database, or it is encrypted (SQLCipher), which the app can't open.", detail);
+            if (Mentions(e.Message, "unable to open database file", "attempt to write a readonly database"))
+                return new(ConnectionFailureKind.Other, "Can't open the database file",
+                    "Check that you may read and write the file and its folder, or tick Read-only to open it without writing.", detail);
+        }
+        return null;
+    }
+
+    private static EntraSignInException? EntraError(Exception error)
+    {
+        for (var e = error; e is not null; e = e.InnerException)
+            if (e is EntraSignInException entra) return entra;
+        return null;
+    }
+
+    private static string EntraAdvice(EntraAuthMode mode, string user) => mode switch
+    {
+        EntraAuthMode.Interactive => $"The server did not accept the Microsoft account. Check that {user} (or a group it is in) has been added to the database as an Entra user, and that you picked the right account in the browser.",
+        EntraAuthMode.Integrated => "The server did not accept this Windows account through Microsoft Entra. The computer must be joined to the directory, and the account added to the database as an Entra user. Browser sign-in works on any computer.",
+        EntraAuthMode.Password => $"Microsoft did not accept {user} with this password. Accounts with MFA can't use it: switch to browser sign-in.",
+        EntraAuthMode.Default => "No usable Microsoft sign-in was found on this computer, or the server did not accept it. Run `az login`, or pick browser sign-in.",
+        EntraAuthMode.ServicePrincipal => "Microsoft did not accept the app. Check the client ID, the client secret (it may have expired) and the directory ID, and that the app was added to the database as a user.",
+        _ => "The server did not accept the Microsoft sign-in."
+    };
 
     /// <summary>The most useful message in the chain: the SSH explanation, or the outermost driver message.</summary>
     private static string DetailOf(Exception error)
@@ -103,6 +143,7 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
         for (var e = error; e is not null && chain.Count < 10; e = e.InnerException) chain.Add(e);
 
         if (chain.Any(e => e is SshTunnelException)) return ConnectionFailureKind.Ssh;
+        if (chain.Any(e => e is EntraSignInException)) return ConnectionFailureKind.Login;
 
         // Codes first: they do not depend on the server's language.
         foreach (var e in chain)
@@ -133,6 +174,9 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
         if (ConnectionSecurity.ExplainFailure(error) is not null) return ConnectionFailureKind.Tls;
         if (Mentions(all, "is not allowed to connect to this", "no pg_hba.conf entry"))
             return ConnectionFailureKind.NotAllowed;
+        // Entra ID: MSAL's AADSTS codes, SqlClient's "… in Active Directory", Azure PostgreSQL's token check.
+        if (Mentions(all, "AADSTS", "in Active Directory", "Azure AD", "Microsoft Entra", "access token", "token has expired"))
+            return ConnectionFailureKind.Login;
         if (Mentions(all, "password authentication failed", "Login failed for user", "Access denied for user",
                 "authentication failed", "No password has been provided", "Invalid password"))
             return ConnectionFailureKind.Login;

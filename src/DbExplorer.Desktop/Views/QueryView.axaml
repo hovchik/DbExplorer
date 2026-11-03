@@ -131,6 +131,9 @@
 			<MenuItem Header="Fix the warning at the caret" services:Keymap.Command="editor.fixes" Click="OnShowFixes" />
 			<MenuItem Header="Next warning" services:Keymap.Command="editor.next-warning" Click="OnNextProblem" />
 			<Separator />
+			<MenuItem x:Name="InlineResultsItem" Header="Show results under statements" ToggleType="CheckBox" Click="OnToggleInlineResults"
+					  ToolTip.Tip="The first 10 rows of each result also appear in the editor, right under the statement that produced them. The grid below still shows every result." />
+			<MenuItem Header="Clear results in the editor" Click="OnClearInlineResults" />
 			<MenuItem x:Name="WordWrapItem" Header="Word wrap" services:Keymap.Command="editor.word-wrap" ToggleType="CheckBox" Click="OnToggleWordWrap" />
 			<MenuItem Header="Zoom in (also Ctrl+wheel)" services:Keymap.Command="editor.zoom-in" Click="OnZoomIn" />
 			<MenuItem Header="Zoom out" services:Keymap.Command="editor.zoom-out" Click="OnZoomOut" />

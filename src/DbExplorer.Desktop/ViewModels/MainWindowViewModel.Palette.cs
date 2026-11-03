@@ -76,6 +76,10 @@ public partial class MainWindowViewModel
             Editor("Reset editor and results split", EditorAction.ResetLayout, keywords: "layout");
             Add("Query", _settings.SqlInspections ? "Turn SQL warnings off" : "Turn SQL warnings on",
                 () => _settings.SetSqlInspections(!_settings.SqlInspections), keywords: "inspections lint problems", id: "toggle-sql-warnings");
+            Add("Query", _settings.InlineResults ? "Stop showing results under statements" : "Show results under statements",
+                () => _settings.SetInlineResults(!_settings.InlineResults), keywords: "inline results editor rows", id: "toggle-inline-results");
+            if (doc.InlineResults.Count > 0)
+                Add("Query", "Clear results in the editor", doc.ClearInlineResults, subtitle: doc.Title, keywords: "inline results close", id: "clear-inline-results");
             if (doc.IsAssistantAvailable)
                 Command("Query", doc.IsAssistantOpen ? "Hide AI assistant" : "Show AI assistant", doc.ToggleAssistantCommand, keywords: "ai claude chat");
             Command("Query", "AI assistant settings…", doc.OpenAssistantSettingsCommand, keywords: "ai claude api key");
@@ -132,6 +136,10 @@ public partial class MainWindowViewModel
         Command("Connection", "Import connections…", ImportConnectionsCommand, keywords: "load file");
         Command("Connection", "Export database documentation…", ExportDocumentationCommand,
             subtitle: "tables, columns, keys, comments and diagram as HTML or Markdown", keywords: "docs data dictionary schema report wiki");
+        Command("Connection", "Back up a database…", BackupDatabaseCommand,
+            subtitle: "to a .bak file on the server, or a pg_dump / mysqldump file here", keywords: "backup dump export save copy bak pg_dump mysqldump");
+        Command("Connection", "Restore a database…", RestoreDatabaseCommand,
+            subtitle: "from a backup file, into a new or an existing database", keywords: "restore load import bak dump pg_restore");
         Command("Connection", "Team sharing…", OpenTeamCommand, subtitle: "share connections, queries and snippets through a shared folder", keywords: "sync");
         if (!IsBusy)
         {
@@ -158,6 +166,12 @@ public partial class MainWindowViewModel
             Command("Comparer", "Compare data", Comparer.CompareDataCommand, keywords: "diff rows");
             Command("Locks", "Refresh locks", Locks.RefreshCommand, keywords: "blocking");
             Command("Activity", "Refresh activity", Activity.RefreshRequestsCommand, keywords: "sessions requests");
+            if (Jobs.NewJobCommand.CanExecute(null))
+                Add("Jobs", "New scheduled job…", () =>
+                {
+                    SelectedTab = AppTab.Jobs;
+                    Jobs.NewJobCommand.Execute(null);
+                }, keywords: "agent cron schedule event create", id: "new-job");
         }
         Command("ER model", "New ER model", ErModel.NewModelCommand, keywords: "diagram design");
         Command("ER model", "Open ER model…", ErModel.OpenModelCommand, keywords: "dbxmodel file");
@@ -174,6 +188,12 @@ public partial class MainWindowViewModel
         Add("Settings", SoftwareRendering ? "Use GPU rendering (after restart)" : "Use software rendering (after restart)",
             () => SoftwareRendering = !SoftwareRendering, keywords: "blank window graphics", id: "toggle-software-rendering");
         Add("Settings", "Preferences…", OpenPreferences, K(ShortcutCommands.Preferences), keywords: "settings options configure theme font row limit auto-commit notifications");
+        if (_updates is not null)
+            Add("Help", "Check for updates", () => _ = CheckForUpdatesNowAsync(), keywords: "update upgrade new version release download latest",
+                id: "check-for-updates");
+        if (AvailableUpdate is { } update)
+            Add("Help", $"Download DB Explorer {update.Version}", () => DownloadUpdateCommand.Execute(null), keywords: "update upgrade install",
+                id: "download-update");
         Add("Help", "Keyboard shortcuts", ShowShortcuts, K(ShortcutCommands.ShortcutSheet), keywords: "keys hotkeys keybindings cheat sheet help customize change remap");
         Add("Settings", Keymap.Current.VimMode ? "Turn Vim keys off" : "Turn Vim keys on", () => Keymap.Current.SetVimMode(!Keymap.Current.VimMode),
             subtitle: "Query editor", keywords: "vim vi modal normal insert editor keys", id: "toggle-vim");

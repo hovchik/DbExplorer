@@ -113,7 +113,62 @@ public static class TableAlterAdvisor
             Add("alter-order", DesignSeverity.Tip, "Column order is not changed",
                 "ALTER TABLE cannot move columns: existing ones keep their place and new ones are added at the end. Select lists decide the order queries show.");
 
+        if (provider == SqlDialect.SqliteKey)
+            foreach (var (key, title, detail) in SqliteLimits(original, design))
+                Add(key, DesignSeverity.Error, title, detail);
+
         return result;
+    }
+
+    private const string SqliteRebuild =
+        " Copy the table to a new one with the shape you want (CREATE TABLE … then INSERT … SELECT), drop the old one and rename the new one.";
+
+    /// <summary>
+    /// What SQLite's ALTER TABLE cannot do in place. It renames tables and columns, adds columns and drops them; a
+    /// changed type, NULL rule, default, key or foreign key needs the table rebuilt, which the designer doesn't do for you.
+    /// </summary>
+    public static IEnumerable<(string Key, string Title, string Detail)> SqliteLimits(TableDesign original, TableDesign design)
+    {
+        var columns = design.Columns.Where(c => c.Name.Trim().Length > 0).ToList();
+        foreach (var column in columns.Where(c => c.OriginalName is { } n && original.Column(n) is not null))
+        {
+            var before = original.Column(column.OriginalName!)!;
+            var changes = new List<string>();
+            if (ColumnTypes.Canonical(SqlDialect.SqliteKey, before.FullType) != ColumnTypes.Canonical(SqlDialect.SqliteKey, column.FullType)) changes.Add("type");
+            if (before.WritesNotNull != column.WritesNotNull) changes.Add("NULL rule");
+            if (!TableAlterScriptBuilder.SameDefault(before.Default, column.Default)) changes.Add("default");
+            if (before.IsIdentity != column.IsIdentity) changes.Add("identity");
+            if (changes.Count > 0)
+                yield return ($"sqlite-alter:{column.OriginalName}", $"SQLite can't change the {string.Join(", ", changes)} of {column.OriginalName}",
+                    "SQLite's ALTER TABLE only renames, adds and drops columns." + SqliteRebuild);
+        }
+
+        foreach (var column in columns.Where(c => c.OriginalName is null || original.Column(c.OriginalName) is null))
+        {
+            if (column.IsPrimaryKey || column.IsIdentity)
+                yield return ($"sqlite-add:{column.Name}", $"SQLite can't add {column.Name.Trim()} as a key column",
+                    "ALTER TABLE ADD COLUMN can't add a PRIMARY KEY or identity column." + SqliteRebuild);
+            else if (column.WritesNotNull && string.IsNullOrWhiteSpace(column.Default))
+                yield return ($"sqlite-add:{column.Name}", $"{column.Name.Trim()} is NOT NULL without a default",
+                    "SQLite adds a NOT NULL column only with a default for the rows already there. Give it a default or allow NULL.");
+        }
+
+        var oldKey = original.PrimaryKey.Select(c => c.Name).ToList();
+        var newKey = design.PrimaryKey.Select(c => c.OriginalName ?? "\u0001" + c.Name).ToList();
+        if (!oldKey.SequenceEqual(newKey, StringComparer.OrdinalIgnoreCase) && !newKey.Any(k => k.StartsWith('\u0001')))
+            yield return ("sqlite-key", "SQLite can't change the primary key in place", "The key is part of the table's definition." + SqliteRebuild);
+
+        static string Key(ForeignKeyDesign f) => $"{f.Column.Trim()}→{f.ReferencedTable.Trim()}.{f.ReferencedColumn.Trim()}".ToLowerInvariant();
+        var oldKeys = original.ForeignKeys.Select(Key).ToHashSet();
+        var newKeys = design.ForeignKeys.Where(f => f.Column.Trim().Length > 0 && f.ReferencedTable.Trim().Length > 0)
+            .Select(f => Key(f with { Column = design.Column(f.Column)?.OriginalName ?? f.Column })).ToHashSet();
+        if (!oldKeys.SetEquals(newKeys))
+            yield return ("sqlite-fk", "SQLite can't add or drop a foreign key in place",
+                "Foreign keys are part of the table's definition." + SqliteRebuild);
+
+        foreach (var index in original.Indexes.Where(i => i.IsConstraint && !design.Indexes.Any(e => TableDesign.Same(e.Name.Trim(), i.Name))))
+            yield return ($"sqlite-unique:{index.Name}", $"{index.Name} belongs to a UNIQUE constraint",
+                "SQLite drops it only with the table." + SqliteRebuild);
     }
 
     /// <summary>True when the server would see no difference in the column (name, type, nullability, key, identity, default).</summary>

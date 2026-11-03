@@ -80,6 +80,8 @@ public partial class QueryView : UserControl
     private FoldingManager? _folding;
     private CompletionWindow? _completion;
     private QueryViewModel? _vm;
+    private readonly InlineResultCards _inlineCards;
+    private bool _inlineRefreshPending;
 
     public QueryView()
     {
@@ -100,6 +102,7 @@ public partial class QueryView : UserControl
         Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.TextView.BackgroundRenderers.Add(_decorations);
         _carets = new MultiCaretSession(Editor.TextArea);
+        _inlineCards = new InlineResultCards(Editor.TextArea);
 
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
@@ -151,6 +154,7 @@ public partial class QueryView : UserControl
         }
         HookSettings();
         _vm?.OnAssistantSettingsChanged();
+        _inlineCards.Bind(_vm);
 
         _carets.Clear();
         ResetVim();
@@ -180,7 +184,28 @@ public partial class QueryView : UserControl
         _foldingTimer.Stop();
         _foldingTimer.Start();
         RestartCostLens();
+        QueueInlineRefresh();
     }
+
+    /// <summary>After an edit: cards of deleted statements go, and the others follow their statement's line.</summary>
+    private void QueueInlineRefresh()
+    {
+        if (_inlineRefreshPending || _vm is not { InlineResults.Count: > 0 }) return;
+        _inlineRefreshPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _inlineRefreshPending = false;
+            _vm?.PruneInlineResults();
+            _inlineCards.Refresh();
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnToggleInlineResults(object? sender, RoutedEventArgs e)
+    {
+        if (_vm?.Settings is { } settings) settings.SetInlineResults(!settings.InlineResults);
+    }
+
+    private void OnClearInlineResults(object? sender, RoutedEventArgs e) => _vm?.ClearInlineResults();
 
     private void ApplyHighlighting() =>
         Editor.SyntaxHighlighting = SqlHighlighting.Get(dark: ActualThemeVariant == ThemeVariant.Dark);
@@ -823,7 +848,7 @@ public partial class QueryView : UserControl
 
     private void OnPointerHover(object? sender, PointerEventArgs e)
     {
-        if (_vm is null) return;
+        if (_vm is null || _inlineCards.IsOverCard(e.GetPosition(Editor.TextArea.TextView))) return;
         var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
         if (position is null) return;
         var offset = Editor.Document.GetOffset(position.Value.Location);
@@ -854,7 +879,7 @@ public partial class QueryView : UserControl
     {
         var caret = Editor.TextArea.Caret;
         var selected = Editor.SelectionLength;
-        var dialect = _vm?.ProviderKey switch { "SqlServer" => " · SQL Server", "Postgres" => " · PostgreSQL", "MySql" => " · MySQL", _ => "" };
+        var dialect = _vm?.ProviderKey switch { "SqlServer" => " · SQL Server", "Postgres" => " · PostgreSQL", "MySql" => " · MySQL", "Sqlite" => " · SQLite", _ => "" };
         CaretInfo.Text = $"Ln {caret.Line}, Col {caret.Column}" + (selected > 0 ? $" · {selected:N0} selected" : "") + dialect;
     }
 
@@ -910,6 +935,8 @@ public partial class QueryView : UserControl
         Editor.WordWrap = settings.EditorWordWrap;
         WordWrapItem.IsChecked = settings.EditorWordWrap;
         SqlWarningsItem.IsChecked = settings.SqlInspections;
+        InlineResultsItem.IsChecked = settings.InlineResults;
+        if (!settings.InlineResults) _vm.ClearInlineResults();
         RestartInspections();
         ResultDiffItem.IsChecked = settings.IsEnabled(ExperimentalFeature.ResultDiff);
         ExpectationsItem.IsChecked = settings.IsEnabled(ExperimentalFeature.Expectations);

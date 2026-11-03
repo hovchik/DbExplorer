@@ -19,8 +19,8 @@ public sealed class PostgresProviderFactory : IDatabaseProviderFactory
 
     public async Task<IReadOnlyList<string>> ListDatabasesAsync(ConnectionProfile profile, CancellationToken ct = default)
     {
-        await using var cn = new NpgsqlConnection(PostgresSql.BuildConnectionString(profile));
-        await cn.OpenAsync(ct);
+        await using var dataSource = PostgresSql.CreateDataSource(profile);
+        await using var cn = await dataSource.OpenConnectionAsync(ct);
         var rows = await cn.QueryAsync<string>(new CommandDefinition(
             PostgresQueries.Databases, commandTimeout: 30, cancellationToken: ct));
         return rows.AsList();

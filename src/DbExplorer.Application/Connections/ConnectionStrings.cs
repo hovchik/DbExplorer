@@ -19,6 +19,10 @@ public sealed record ParsedConnection
     public string? UserName { get; init; }
     public string? Password { get; init; }
     public bool? IntegratedSecurity { get; init; }
+
+    /// <summary>Microsoft Entra ID sign-in from "Authentication=Active Directory …" (SQL Server); null when not said.</summary>
+    public EntraAuthMode? EntraAuth { get; init; }
+
     public bool? Encrypt { get; init; }
     public bool? TrustServerCertificate { get; init; }
     public bool? ReadOnlyIntent { get; init; }
@@ -49,12 +53,14 @@ public static class ConnectionStrings
     public const string Postgres = "Postgres";
     public const string SqlServer = "SqlServer";
     public const string MySql = "MySql";
+    public const string Sqlite = "Sqlite";
 
     public static string EngineName(string providerKey) => providerKey switch
     {
         Postgres => "PostgreSQL",
         SqlServer => "SQL Server",
         MySql => "MySQL",
+        Sqlite => "SQLite",
         _ => providerKey
     };
 
@@ -63,6 +69,7 @@ public static class ConnectionStrings
     {
         if (string.IsNullOrWhiteSpace(text)) return false;
         var t = text.Trim();
+        if (SqliteFile(t) is not null) return true;
         if (UrlPattern.IsMatch(t)) return SchemeEngine(UrlPattern.Match(t).Groups["scheme"].Value) is not null;
         return t.Contains('=') && (t.Contains(';') || IsLibpq(t));
     }
@@ -80,6 +87,12 @@ public static class ConnectionStrings
 
         // The whole string was copied with its quotes, from code or a config file.
         if (t.Length > 1 && (t[0] == '"' && t[^1] == '"' || t[0] == '\'' && t[^1] == '\'')) t = t[1..^1].Trim();
+
+        if (SqliteFile(t) is { } file)
+        {
+            result = new ParsedConnection { ProviderKey = Sqlite, Host = file };
+            return true;
+        }
 
         try
         {
@@ -103,6 +116,43 @@ public static class ConnectionStrings
             error = ex.Message;
             return false;
         }
+    }
+
+    // ---- SQLite: a file, not a server -------------------------------------------------------------------------
+
+    private static readonly Regex SqliteUrl = new(@"^(?:jdbc:sqlite:|sqlite:///?|sqlite3:///?|file:)(?<path>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex SqliteDataSource = new(@"^\s*(?:Data\s*Source|Filename)\s*=\s*(?<path>""[^""]+""|'[^']+'|[^;]+)\s*(?:;(?<rest>.*))?$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    private static readonly string[] SqliteExtensions = [".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".sl3"];
+
+    /// <summary>
+    /// The database file a SQLite connection string or URL names: Data Source=shop.db (Microsoft.Data.Sqlite,
+    /// System.Data.SQLite), sqlite:///shop.db (SQLAlchemy), jdbc:sqlite:shop.db, file:shop.db. Data Source alone is
+    /// SQL Server's key too, so it counts as SQLite only when the value is a file (an extension SQLite files use, or a
+    /// path) and no server key follows.
+    /// </summary>
+    internal static string? SqliteFile(string text)
+    {
+        if (SqliteUrl.Match(text) is { Success: true } url)
+        {
+            var path = url.Groups["path"].Value;
+            var query = path.IndexOf('?');
+            if (query >= 0) path = path[..query];
+            path = Uri.UnescapeDataString(path);
+            // sqlite:////abs/path and sqlite:///C:/path: the third slash only ends the empty host.
+            if (text.StartsWith("sqlite", StringComparison.OrdinalIgnoreCase) && path.Length > 2 && path[0] == '/' && path[2] == ':') path = path[1..];
+            return path.Length > 0 ? path : null;
+        }
+        if (SqliteDataSource.Match(text) is not { Success: true } m) return null;
+        var value = m.Groups["path"].Value.Trim().Trim('"', '\'');
+        var rest = m.Groups["rest"].Value;
+        var serverKeys = Regex.IsMatch(rest, @"\b(Initial\s*Catalog|Database|User\s*ID|UID|Integrated\s*Security|Trusted_Connection|Server|Port)\s*=", RegexOptions.IgnoreCase);
+        var looksLikeFile = SqliteExtensions.Any(e => value.EndsWith(e, StringComparison.OrdinalIgnoreCase)) ||
+                            value.Contains('/') || (value.Contains('\\') && value.Contains(':')) || value == ":memory:";
+        return looksLikeFile && !serverKeys ? value : null;
     }
 
     // ---- URLs -------------------------------------------------------------------------------------------------
@@ -355,7 +405,7 @@ public static class ConnectionStrings
 
     private static readonly HashSet<string> SqlServerKeys =
     [
-        "datasource", "initialcatalog", "integratedsecurity", "trustedconnection", "trustservercertificate", "encrypt",
+        "datasource", "initialcatalog", "integratedsecurity", "authentication", "trustedconnection", "trustservercertificate", "encrypt",
         "applicationintent", "multisubnetfailover", "multipleactiveresultsets", "addr", "networkaddress", "failoverpartner",
         "attachdbfilename", "workstationid", "wsid", "packetsize", "connectretrycount", "connectretryinterval",
         "authentication", "hostnameincertificate", "servercertificate", "columnencryptionsetting", "transactionbinding",
@@ -436,6 +486,7 @@ public static class ConnectionStrings
         public string? Host, Instance, Database, UserName, Password;
         public int? Port;
         public bool? Integrated, Encrypt, Trust, ReadOnlyIntent, UseSsl, VerifyServerCertificate;
+        public EntraAuthMode? Entra;
         private readonly List<string> _ignored = [];
         private readonly List<string> _notes = [];
 
@@ -463,6 +514,9 @@ public static class ConnectionStrings
                     break;
                 case "integratedsecurity" or "trustedconnection":
                     Integrated = value.Trim().ToLowerInvariant() is "sspi" || Bool(key, value);
+                    break;
+                case "authentication":
+                    Entra = EntraOf(key, value);
                     break;
                 case "encrypt":
                     Encrypt = value.Trim().ToLowerInvariant() switch
@@ -580,6 +634,20 @@ public static class ConnectionStrings
             throw new FormatException($"\"{v}\" isn't a port (a number from 1 to 65535).");
         }
 
+        /// <summary>SqlClient's and JDBC's Authentication values ("Active Directory Interactive", ActiveDirectoryMSI…).</summary>
+        private static EntraAuthMode EntraOf(string key, string value) => Normalize(value) switch
+        {
+            "sqlpassword" or "" => EntraAuthMode.None,
+            "activedirectoryinteractive" => EntraAuthMode.Interactive,
+            "activedirectoryintegrated" => EntraAuthMode.Integrated,
+            "activedirectorypassword" => EntraAuthMode.Password,
+            // Managed identity and workload identity are both among the sources the default chain tries.
+            "activedirectorydefault" or "activedirectorymsi" or "activedirectorymanagedidentity" or "activedirectoryworkloadidentity"
+                => EntraAuthMode.Default,
+            "activedirectoryserviceprincipal" => EntraAuthMode.ServicePrincipal,
+            _ => throw new FormatException($"{key} \"{value}\" isn't a sign-in method DB Explorer knows.")
+        };
+
         private static bool Bool(string key, string value) => value.Trim().ToLowerInvariant() switch
         {
             "true" or "yes" or "1" or "on" => true,
@@ -619,6 +687,12 @@ public static class ConnectionStrings
             // A string that asks for encryption but says nothing about the certificate gets the drivers' default: check it.
             if (encrypt == true && trust is null) trust = false;
 
+            if (Entra is { } entra && entra != EntraAuthMode.None && engine != SqlServer)
+            {
+                _notes.Add("Pick the Microsoft Entra sign-in in the dialog; this engine's strings don't carry it.");
+                Entra = null;
+            }
+
             if (Integrated == true && engine == MySql)
             {
                 _notes.Add("MySQL has no integrated sign-in here; enter a user and password.");
@@ -633,7 +707,8 @@ public static class ConnectionStrings
                 Database = Database,
                 UserName = UserName,
                 Password = Password,
-                IntegratedSecurity = engine == MySql ? null : Integrated,
+                IntegratedSecurity = engine == MySql ? null : Entra is { } e && e != EntraAuthMode.None ? false : Integrated,
+                EntraAuth = Entra,
                 Encrypt = encrypt,
                 TrustServerCertificate = trust,
                 ReadOnlyIntent = engine == SqlServer ? ReadOnlyIntent : null,
@@ -667,10 +742,13 @@ public static class ConnectionStrings
     /// </summary>
     public static string Format(ConnectionProfile p, ConnectionStringStyle style, bool includePassword = false)
     {
-        var password = includePassword && !p.IntegratedSecurity ? p.Password : null;
-        var user = p.IntegratedSecurity ? null : p.UserName;
+        var password = includePassword && p.NeedsPassword ? p.Password : null;
+        var user = p.IntegratedSecurity || p.EntraAuth is EntraAuthMode.Integrated or EntraAuthMode.Default && p.ProviderKey == SqlServer
+            ? null : p.UserName;
         return (p.ProviderKey, style) switch
         {
+            (Sqlite, ConnectionStringStyle.KeyValue) => Pairs(("Data Source", p.Host), ("Mode", p.ReadOnly ? "ReadOnly" : null)),
+            (Sqlite, ConnectionStringStyle.Url) => "sqlite:///" + p.Host.Replace('\\', '/'),
             (SqlServer, ConnectionStringStyle.KeyValue) => SqlServerKeyValue(p, user, password),
             (SqlServer, ConnectionStringStyle.Url) => SqlServerJdbc(p, user, password),
             (MySql, ConnectionStringStyle.KeyValue) => Pairs(
@@ -691,11 +769,23 @@ public static class ConnectionStrings
     private static string SqlServerKeyValue(ConnectionProfile p, string? user, string? password) => Pairs(
         ("Server", p.Port is int port ? $"{p.Host},{port.ToString(CultureInfo.InvariantCulture)}" : p.Host),
         ("Database", p.Database),
-        ("Integrated Security", p.IntegratedSecurity ? "True" : null),
+        ("Integrated Security", p.IntegratedSecurity && p.EntraAuth == EntraAuthMode.None ? "True" : null),
+        ("Authentication", SqlClientAuthentication(p.EntraAuth)),
         ("User ID", user), ("Password", password),
         ("Encrypt", p.Encrypt ? "True" : "False"),
         ("TrustServerCertificate", p.TrustServerCertificate ? "True" : "False"),
         ("ApplicationIntent", p.ReadOnlyIntent ? "ReadOnly" : null));
+
+    /// <summary>The Authentication value SqlClient writes for an Entra method (JDBC: the same without spaces).</summary>
+    private static string? SqlClientAuthentication(EntraAuthMode mode) => mode switch
+    {
+        EntraAuthMode.Interactive => "Active Directory Interactive",
+        EntraAuthMode.Integrated => "Active Directory Integrated",
+        EntraAuthMode.Password => "Active Directory Password",
+        EntraAuthMode.Default => "Active Directory Default",
+        EntraAuthMode.ServicePrincipal => "Active Directory Service Principal",
+        _ => null
+    };
 
     private static string SqlServerJdbc(ConnectionProfile p, string? user, string? password)
     {
@@ -709,7 +799,8 @@ public static class ConnectionStrings
                 .Append(value.IndexOfAny([';', '{', '}', '=']) >= 0 || value[0] is '"' or '\'' || value != value.Trim() ? "{" + value.Replace("}", "}}") + "}" : value);
         }
         Add("databaseName", p.Database);
-        Add("integratedSecurity", p.IntegratedSecurity ? "true" : null);
+        Add("integratedSecurity", p.IntegratedSecurity && p.EntraAuth == EntraAuthMode.None ? "true" : null);
+        Add("authentication", SqlClientAuthentication(p.EntraAuth)?.Replace(" ", ""));
         Add("user", user);
         Add("password", password);
         Add("encrypt", p.Encrypt ? "true" : "false");

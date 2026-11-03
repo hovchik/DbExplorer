@@ -59,6 +59,7 @@
         <ListBoxItem Content="New Query tabs" Tag="QueryTabsSection" />
         <ListBoxItem Content="Notifications" Tag="NotificationsSection" />
         <ListBoxItem Content="Start-up" Tag="StartupSection" />
+        <ListBoxItem Content="Updates" Tag="UpdatesSection" />
         <ListBoxItem Content="Experimental" Tag="ExperimentalSection" />
         <ListBoxItem Content="AI assistant" Tag="AssistantSection" />
         <ListBoxItem Content="Settings file" Tag="FileSection" />
@@ -96,6 +97,9 @@
             <CheckBox Content="Show SQL warnings while typing" IsChecked="{Binding SqlInspections}" />
             <TextBlock Classes="hint indented" TextWrapping="Wrap"
                        Text="Unknown names, ambiguous columns and GROUP BY mistakes, checked against the cached catalog, never on the server. Alt+Enter offers fixes, F8 goes to the next one." />
+            <CheckBox Content="Show results under the statement that produced them" IsChecked="{Binding InlineResults}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="The first 10 rows of each result appear in the editor, right below the statement, until you run it again or close them. The grid below still shows every result." />
           </StackPanel>
         </Border>
 
@@ -135,6 +139,24 @@
             <CheckBox Content="Reopen the last connection at start" IsChecked="{Binding ReconnectOnStart}" />
             <TextBlock Classes="hint indented" TextWrapping="Wrap"
                        Text="Production connections and ones without a saved password are only selected, never opened by themselves." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="UpdatesSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="Updates" />
+            <CheckBox Content="Check for updates at start (once a day)" IsChecked="{Binding CheckForUpdates}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap"
+                       Text="Reads the list of releases from GitHub, without sending anything about you or your databases. A newer version shows a bar with a download link; nothing is installed without you." />
+            <CheckBox Content="Include pre-releases" IsChecked="{Binding IncludePreReleaseUpdates}" />
+            <TextBlock Classes="hint indented" TextWrapping="Wrap" Text="Release candidates such as 1.2.0-rc1, which may still have rough edges." />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding UpdateStatus}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Button Grid.Column="1" Content="Check now" Command="{Binding CheckUpdatesNowCommand}" Margin="12,0,0,0"
+                      IsEnabled="{Binding !IsCheckingForUpdates}" IsVisible="{Binding CheckForUpdatesNow, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </Grid>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding UpdateCheckResult}"
+                       IsVisible="{Binding UpdateCheckResult, Converter={x:Static ObjectConverters.IsNotNull}}" />
           </StackPanel>
         </Border>
 

@@ -171,6 +171,11 @@ public partial class RoutineDebuggerViewModel : ViewModelBase, IAsyncDisposable
                "statement by statement (select a statement and press F5); add SELECT lines to see intermediate values.\n" +
                "• Wrap that in START TRANSACTION … ROLLBACK to keep InnoDB data unchanged (DDL commits on its own).\n" +
                "PostgreSQL PL/pgSQL functions and procedures can be stepped through here.")
+            : providerKey.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+            ? ("SQLite has no stored procedures or functions to debug.",
+               "Triggers are the only code SQLite stores. To follow one, run the statement that fires it in a Query tab inside " +
+               "BEGIN … ROLLBACK and SELECT the rows it changed before rolling back.\n" +
+               "PostgreSQL PL/pgSQL functions and procedures can be stepped through here.")
             : ($"Debugging is not available for {providerKey} connections.", "PostgreSQL PL/pgSQL functions and procedures can be stepped through.");
 
     partial void OnSelectedTargetChanged(DebugTarget? value)

@@ -77,6 +77,8 @@ public partial class ResultGridView : UserControl
         public int FrozenColumnCount;
         public bool PivotOn;
         public PivotSpec? Pivot;
+        public bool ChartOn;
+        public ChartSpec? Chart;
     }
 
     private static readonly ConditionalWeakTable<ResultSetView, ViewState> States = new();
@@ -191,6 +193,7 @@ public partial class ResultGridView : UserControl
             menu.Opening += (_, _) => UpdateCellMenu();
         }
         InitPivot();
+        InitChart();
         InitExport();
     }
 
@@ -234,6 +237,7 @@ public partial class ResultGridView : UserControl
                 UpdateEditInfo();
                 UpdateRowButtons();
                 SyncPivotControls();
+                SyncChartControls();
                 return;
             }
 
@@ -283,6 +287,7 @@ public partial class ResultGridView : UserControl
             UpdateEditInfo();
             UpdateRowButtons();
             SyncPivotControls();
+            SyncChartControls();
         }
         finally
         {
@@ -772,6 +777,7 @@ public partial class ResultGridView : UserControl
         UpdateCountText();
         UpdateDetails();
         UpdatePivot();
+        UpdateChart();
     }
 
     private void SetFilter(int column, ColumnFilter? filter)

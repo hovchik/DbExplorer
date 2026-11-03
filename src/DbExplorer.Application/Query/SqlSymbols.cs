@@ -141,7 +141,7 @@ public sealed class SqlSymbolFinder
     public static Func<string, string> QuoteFor(string? providerKey) => providerKey switch
     {
         SqlDialect.MySqlKey => id => "`" + id.Replace("`", "``") + "`",
-        SqlDialect.PostgresKey => id => "\"" + id.Replace("\"", "\"\"") + "\"",
+        SqlDialect.PostgresKey or SqlDialect.SqliteKey => id => "\"" + id.Replace("\"", "\"\"") + "\"",
         _ => id => "[" + id.Replace("]", "]]") + "]"
     };
 
@@ -325,6 +325,7 @@ public sealed class SqlSymbolFinder
         SqlDialect.SqlServerKey => Same(schema, "dbo"),
         SqlDialect.PostgresKey => Same(schema, "public"),
         SqlDialect.MySqlKey => _databases.Count <= 1,
+        SqlDialect.SqliteKey => Same(schema, "main"),
         _ => Same(schema, "dbo") || Same(schema, "public")
     };
 

@@ -77,6 +77,7 @@ public static class TestDataScript
     {
         SqlDialect.SqlServerKey => "SET XACT_ABORT ON;\nBEGIN TRANSACTION;",
         SqlDialect.MySqlKey => "START TRANSACTION;",
+        SqlDialect.SqliteKey => "BEGIN;",
         _ => "BEGIN;"
     };
 }

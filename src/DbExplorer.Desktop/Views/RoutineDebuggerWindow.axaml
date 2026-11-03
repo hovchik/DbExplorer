@@ -14,7 +14,7 @@
     <!-- Title, overloads and the run options. -->
     <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
       <TextBlock Classes="section" Margin="0,0,12,4" Text="{Binding Title}" VerticalAlignment="Center" />
-      <ComboBox MinWidth="260" ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
+      <ComboBox AutomationProperties.Name="Routine" MinWidth="260" ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}"
                 IsVisible="{Binding HasOverloads}" IsEnabled="{Binding CanEditParameters}" ToolTip.Tip="Overload">
         <ComboBox.ItemTemplate>
           <DataTemplate x:DataType="dbg:DebugTarget">
@@ -123,7 +123,7 @@
       <!-- Notices raised by the routine, and its results once it finishes. -->
       <TabControl Grid.Row="2" x:Name="OutputTabs">
         <TabItem Header="Output">
-          <TextBox Text="{Binding OutputText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+          <TextBox AutomationProperties.Name="Output" Text="{Binding OutputText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
                    FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
         </TabItem>
         <TabItem Header="Results">

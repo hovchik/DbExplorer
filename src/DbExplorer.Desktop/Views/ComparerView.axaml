@@ -677,7 +677,7 @@
 			  <DataGridTemplateColumn Header="" Width="40">
 				<DataGridTemplateColumn.CellTemplate>
 				  <DataTemplate x:DataType="vm:BatchCopyItem">
-					<CheckBox IsChecked="{Binding Include}" IsEnabled="{Binding CanCopy}" HorizontalAlignment="Center" Margin="8,0,0,0" />
+					<CheckBox AutomationProperties.Name="Include" IsChecked="{Binding Include}" IsEnabled="{Binding CanCopy}" HorizontalAlignment="Center" Margin="8,0,0,0" />
 				  </DataTemplate>
 				</DataGridTemplateColumn.CellTemplate>
 			  </DataGridTemplateColumn>

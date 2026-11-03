@@ -41,7 +41,7 @@
       <TextBlock Text="Read tables from" />
       <controls:DatabasePicker Width="170" ItemsSource="{Binding Databases}" SelectedItem="{Binding SourceDatabase}"
                                ToolTip.Tip="Database to read tables from. Type to filter the list." />
-      <ComboBox Width="150" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SourceSchema}" />
+      <ComboBox AutomationProperties.Name="Source schema" Width="150" ItemsSource="{Binding Schemas}" SelectedItem="{Binding SourceSchema}" />
       <Button Content="Read tables" Command="{Binding ReadFromDatabaseCommand}"
               ToolTip.Tip="Replace the model with these tables as they are now, to model changes to them" />
       <Border Width="16" />
@@ -84,7 +84,7 @@
                       ToolTip.Tip="Open the script in a new query tab to edit or run it there" />
               <Button Content="Copy script" Command="{Binding CopyScriptCommand}" />
             </WrapPanel>
-            <TextBox Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+            <TextBox AutomationProperties.Name="Generated script" Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                      MinHeight="160" MaxHeight="360" />
           </DockPanel>
         </Border>

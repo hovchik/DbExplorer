@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -75,6 +76,8 @@ public sealed class StrokeIcon : Control
         AffectsRender<StrokeIcon>(DataProperty, ForegroundProperty, StrokeWidthProperty);
         WidthProperty.OverrideDefaultValue<StrokeIcon>(16);
         HeightProperty.OverrideDefaultValue<StrokeIcon>(16);
+        // Decoration only: the button it sits in carries the name, so screen readers skip the icon itself.
+        AutomationProperties.AccessibilityViewProperty.OverrideDefaultValue<StrokeIcon>(AccessibilityView.Raw);
     }
 
     public string? Data

@@ -19,7 +19,7 @@
     </WrapPanel>
 
     <Grid Grid.Row="2" IsVisible="{Binding ShowTree}" RowDefinitions="*">
-      <TreeView ItemsSource="{Binding BlockingTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+      <TreeView AutomationProperties.Name="Blocking chains" ItemsSource="{Binding BlockingTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
                 BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
         <TreeView.Styles>
           <Style Selector="TreeViewItem">
@@ -51,7 +51,7 @@
             <Button Content="Clear" Command="{Binding ClearRecordingCommand}" />
           </StackPanel>
         </StackPanel>
-        <ListBox ItemsSource="{Binding Incidents}" SelectedItem="{Binding SelectedIncident, Mode=TwoWay}"
+        <ListBox AutomationProperties.Name="Incidents" ItemsSource="{Binding Incidents}" SelectedItem="{Binding SelectedIncident, Mode=TwoWay}"
                  BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="diag:BlockingIncident">
@@ -66,12 +66,12 @@
       <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
       <DockPanel Grid.Column="2">
         <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="4,0,0,4">
-          <Slider Minimum="0" Maximum="{Binding ReplayMaximum}" Value="{Binding ReplayIndex}" IsSnapToTickEnabled="True" TickFrequency="1"
+          <Slider AutomationProperties.Name="Replay position" Minimum="0" Maximum="{Binding ReplayMaximum}" Value="{Binding ReplayIndex}" IsSnapToTickEnabled="True" TickFrequency="1"
                   IsEnabled="{Binding SelectedIncident, Converter={x:Static ObjectConverters.IsNotNull}}" />
           <TextBlock Classes="hint" Text="{Binding ReplayInfo}" />
         </StackPanel>
         <Grid>
-          <TreeView ItemsSource="{Binding ReplayTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+          <TreeView AutomationProperties.Name="Blocking chains at this moment" ItemsSource="{Binding ReplayTree}" SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
             <TreeView.Styles>
               <Style Selector="TreeViewItem">

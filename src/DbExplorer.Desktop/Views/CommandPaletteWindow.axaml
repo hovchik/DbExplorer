@@ -30,7 +30,7 @@
   <Border Padding="10" Background="{DynamicResource AppPopupBackgroundBrush}"
           BorderBrush="{DynamicResource AppPopupBorderBrush}" BorderThickness="1">
     <DockPanel>
-      <TextBox x:Name="QueryBox" DockPanel.Dock="Top" Text="{Binding Query}" FontSize="15"
+      <TextBox AutomationProperties.Name="Search commands, objects and tabs" x:Name="QueryBox" DockPanel.Dock="Top" Text="{Binding Query}" FontSize="15"
                Watermark="{Binding Watermark}" Margin="0,0,0,8" />
       <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="2,8,0,0"
                  TextTrimming="CharacterEllipsis"

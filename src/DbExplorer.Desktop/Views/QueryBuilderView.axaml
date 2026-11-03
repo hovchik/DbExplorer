@@ -46,7 +46,7 @@
         <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="2,0,0,4"
                    Text="Drag onto the canvas, or double-click." />
         <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-          <ListBox x:Name="TableList" ItemsSource="{Binding AvailableTables}" SelectedItem="{Binding SelectedAvailableTable}"
+          <ListBox AutomationProperties.Name="Tables" x:Name="TableList" ItemsSource="{Binding AvailableTables}" SelectedItem="{Binding SelectedAvailableTable}"
                    Background="Transparent" DoubleTapped="OnTableDoubleTapped">
             <ListBox.Styles>
               <Style Selector="ListBoxItem">

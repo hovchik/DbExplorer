@@ -63,7 +63,7 @@
                                ToolTip.Tip="Database whose users, roles and permissions are shown. Type to filter the list." />
       <Button Content="Refresh" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsBusy}" ToolTip.Tip="Read logins, users, roles and permissions again" />
       <TextBox Width="180" Text="{Binding Filter}" Watermark="Filter by name" />
-      <ComboBox Width="140" ItemsSource="{Binding KindFilters}" SelectedItem="{Binding KindFilter}" />
+      <ComboBox AutomationProperties.Name="Kind" Width="140" ItemsSource="{Binding KindFilters}" SelectedItem="{Binding KindFilter}" />
       <CheckBox Content="Show built-in" IsChecked="{Binding ShowSystem}"
                 ToolTip.Tip="Also list built-in principals such as sa, dbo, public, fixed roles and pg_* roles" />
       <Button Content="＋ New login…" Command="{Binding NewLoginCommand}" IsEnabled="{Binding !IsBusy}" ToolTip.Tip="A login with a password (PostgreSQL: a role WITH LOGIN)" />
@@ -88,7 +88,7 @@
       </Grid.ColumnDefinitions>
       <!-- Principals -->
       <Panel Grid.Column="0">
-      <ListBox ItemsSource="{Binding Principals}" SelectedItem="{Binding SelectedPrincipal}"
+      <ListBox AutomationProperties.Name="Users and roles" ItemsSource="{Binding Principals}" SelectedItem="{Binding SelectedPrincipal}"
                BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:PrincipalItem">
@@ -266,7 +266,7 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBox Grid.Row="1" Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+            <TextBox AutomationProperties.Name="Script" Grid.Row="1" Classes="code" Text="{Binding Script}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                      Margin="0,8,0,0" IsVisible="{Binding HasPending}" VerticalContentAlignment="Top" />
           </Grid>
         </DockPanel>

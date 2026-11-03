@@ -15,6 +15,7 @@ using DbExplorer.Application.Query;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
 using DbExplorer.UiRender;
@@ -102,6 +103,39 @@ namespace DbExplorer.UiRender
         }
     }
 
+    /// <summary>
+    /// Lists, for every rendered frame, the name a screen reader would read for each visible button and input
+    /// (accessibility-names.txt) and the ones it would read as just "button" or "edit" (accessibility-missing.txt).
+    /// </summary>
+    internal static class Accessibility
+    {
+        private static readonly SortedSet<string> Names = new(StringComparer.Ordinal);
+        private static readonly SortedSet<string> Missing = new(StringComparer.Ordinal);
+
+        public static void Audit(TopLevel window, string shot)
+        {
+            foreach (var c in window.GetVisualDescendants().OfType<Control>().Where(AccessibleNames.IsLabelled))
+            {
+                if (!c.IsEffectivelyVisible || c.TemplatedParent is not null) continue;
+                var peer = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(c);
+                var name = peer.GetName();
+                var view = c.GetVisualAncestors().OfType<UserControl>().FirstOrDefault()?.GetType().Name ?? window.GetType().Name;
+                var content = (c as ContentControl)?.Content is string s ? s : "";
+                var line = $"{view}: {c.GetType().Name} \"{name}\"" + (content.Length > 0 && content != name ? $"  [shows \"{content}\"]" : "")
+                           + (peer.GetAcceleratorKey() is { Length: > 0 } k ? $"  [{k}]" : "");
+                Names.Add(line);
+                if (!AccessibleNames.HasWords(name)) Missing.Add($"{line}  (first seen in {shot})");
+            }
+        }
+
+        public static void Write(string outDir)
+        {
+            File.WriteAllLines(Path.Combine(outDir, "accessibility-names.txt"), Names);
+            File.WriteAllLines(Path.Combine(outDir, "accessibility-missing.txt"), Missing);
+            Console.WriteLine($"Accessibility: {Names.Count} distinct control names, {Missing.Count} without a name → {outDir}");
+        }
+    }
+
     internal sealed class RenderScript(string outDir, string[] pg, string[]? mssql, string[]? mysql)
     {
         private MainWindow _window = null!;
@@ -165,6 +199,7 @@ namespace DbExplorer.UiRender
 
             await _vm.ShutdownAsync();
             await _provider.DisposeAsync();
+            Accessibility.Write(outDir);
             if (_failures.Count > 0)
             {
                 Console.WriteLine("Steps that failed:");
@@ -1373,6 +1408,7 @@ namespace DbExplorer.UiRender
         /// <summary>Captures <paramref name="window"/> in the light and the dark theme.</summary>
         private async Task Shot(TopLevel window, string name)
         {
+            Accessibility.Audit(window, name);
             foreach (var (variant, suffix) in new[] { (ThemeVariant.Light, "light"), (ThemeVariant.Dark, "dark") })
             {
                 Avalonia.Application.Current!.RequestedThemeVariant = variant;

@@ -50,7 +50,7 @@
 	  <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4" IsEnabled="{Binding IsConnected}"
 				  ToolTip.Tip="Re-run the last query at this interval. Only queries that read data are repeated; a tick is skipped while a run is still going, and auto refresh stops when the query fails.">
 		<ToggleButton Content="⟳ Auto refresh" IsChecked="{Binding AutoRefresh}" MinHeight="28" Padding="10,2" />
-		<ComboBox ItemsSource="{Binding AutoRefreshIntervals}" SelectedItem="{Binding AutoRefreshInterval}" MinWidth="80"
+		<ComboBox AutomationProperties.Name="Auto refresh interval" ItemsSource="{Binding AutoRefreshIntervals}" SelectedItem="{Binding AutoRefreshInterval}" MinWidth="80"
 				  IsVisible="{Binding AutoRefresh}" />
 		<TextBlock Classes="hint" Text="{Binding AutoRefreshInfo}" VerticalAlignment="Center" IsVisible="{Binding AutoRefresh}" />
 	  </StackPanel>
@@ -193,7 +193,7 @@
 			  BorderThickness="1" CornerRadius="4" Padding="8">
 		<StackPanel Orientation="Horizontal" Spacing="6">
 		  <TextBlock Text="Go to line" VerticalAlignment="Center" />
-		  <TextBox x:Name="GoToLineBox" Width="90" KeyDown="OnGoToLineKeyDown" />
+		  <TextBox AutomationProperties.Name="Go to line" x:Name="GoToLineBox" Width="90" KeyDown="OnGoToLineKeyDown" />
 		</StackPanel>
 	  </Border>
 	</Popup>
@@ -202,7 +202,7 @@
 			  BorderThickness="1" CornerRadius="6" Padding="10,8" Width="380">
 		<StackPanel Spacing="6">
 		  <TextBlock x:Name="RenameTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-		  <TextBox x:Name="RenameBox" KeyDown="OnRenameKeyDown" TextChanged="OnRenameTextChanged"
+		  <TextBox AutomationProperties.Name="New name" x:Name="RenameBox" KeyDown="OnRenameKeyDown" TextChanged="OnRenameTextChanged"
 				   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
 		  <TextBlock x:Name="RenameMessage" Classes="hint" FontSize="12" TextWrapping="Wrap" />
 		</StackPanel>
@@ -388,7 +388,7 @@
 		  <TextBlock Text="✨ AI assistant" FontWeight="SemiBold" VerticalAlignment="Center" />
 		  <Button Grid.Column="1" Classes="layout" Content="✕" Command="{Binding ToggleAssistantCommand}" ToolTip.Tip="Hide the assistant" />
 		</Grid>
-		<TextBox Grid.Row="1" x:Name="AssistantRequestBox" Text="{Binding AssistantRequest}" AcceptsReturn="True" TextWrapping="Wrap"
+		<TextBox AutomationProperties.Name="Ask the assistant" Grid.Row="1" x:Name="AssistantRequestBox" Text="{Binding AssistantRequest}" AcceptsReturn="True" TextWrapping="Wrap"
 				 MinHeight="56" MaxHeight="140" KeyDown="OnAssistantRequestKeyDown"
 				 Watermark="Describe the query, e.g. top 10 customers by order total this year" />
 		<WrapPanel Grid.Row="2" Margin="0,6,0,0">
@@ -408,7 +408,7 @@
 			<SelectableTextBlock Text="{Binding AssistantAnswer}" TextWrapping="Wrap" />
 		  </ScrollViewer>
 		</StackPanel>
-		<TextBox Grid.Row="4" Text="{Binding AssistantSql}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+		<TextBox AutomationProperties.Name="Suggested SQL" Grid.Row="4" Text="{Binding AssistantSql}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
 				 VerticalContentAlignment="Top" IsVisible="{Binding HasAssistantSql}"
 				 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
 				 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12"

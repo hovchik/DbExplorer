@@ -281,7 +281,7 @@ public partial class MainWindow : Window
     {
         if (_vm is null) return;
         var tabVisible = _vm.SelectedTab == AppTab.Query && ReferenceEquals(_vm.Query.SelectedDocument, tab);
-        if (!RunNotification.ShouldNotify(elapsed, IsActive, tabVisible)) return;
+        if (!RunNotification.ShouldNotify(elapsed, IsActive, tabVisible, _vm.LongRunNotifyThreshold)) return;
 
         _notifications ??= new WindowNotificationManager(this) { Position = NotificationPosition.BottomRight, MaxItems = 3 };
         var type = outcome switch

@@ -133,6 +133,7 @@ public class CommandPaletteTests : IDisposable
         var keys = CatalogKeys();
         var missing = Directory.EnumerateFiles(Desktop, "*.axaml", SearchOption.AllDirectories)
             .SelectMany(f => Regex.Matches(File.ReadAllText(f), "<KeyBinding Gesture=\"([^\"]+)\"").Select(m => (File: Path.GetFileName(f), Keys: m.Groups[1].Value)))
+            .Select(x => x with { Keys = x.Keys.Replace("OemComma", ",") })
             .Where(x => x.Keys != "Escape" ? !keys.Contains(x.Keys) : !keys.Contains("Esc"))
             .ToList();
         Assert.Empty(missing);

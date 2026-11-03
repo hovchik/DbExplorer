@@ -24,6 +24,7 @@ public static class ShortcutCatalog
         new(Anywhere, "Ctrl+Shift+P", "Command palette, commands only"),
         new(Anywhere, "Ctrl+B", "Show or hide the database navigator"),
         new(Anywhere, "F1", "Keyboard shortcuts (this sheet)"),
+        new(Anywhere, "Ctrl+,", "Preferences"),
 
         new(Palette, ">", "Type first to list commands only"),
         new(Palette, "Enter", "Open or run the selected item"),

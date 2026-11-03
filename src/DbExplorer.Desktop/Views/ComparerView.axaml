@@ -635,7 +635,7 @@
 			  <TextBlock Grid.Row="1" Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
 						 Text="{Binding CopyNotesText}" IsVisible="{Binding HasCopyNotes}" />
 			</Grid>
-			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
+			<GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns" Background="Transparent" />
 			<TextBox AutomationProperties.Name="Copy script" Grid.Column="2" Classes="code" Text="{Binding CopyScriptPreview}" IsReadOnly="True"
 					 AcceptsReturn="True" TextWrapping="NoWrap"
 					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
@@ -788,7 +788,7 @@
 				</ItemsControl>
 			  </ScrollViewer>
 			</Grid>
-			<GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
+			<GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns" Background="Transparent" />
 			<TextBox AutomationProperties.Name="Migration script" Grid.Column="2" Classes="code" Text="{Binding MigrationScript}" IsReadOnly="True"
 					 AcceptsReturn="True" TextWrapping="NoWrap"
 					 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />

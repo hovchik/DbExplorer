@@ -236,9 +236,12 @@ public partial class ComparerViewModel(
     public bool IsOverviewFilteredEmpty => HasOverview && OverviewEntries.Count == 0;
 
     public string OverviewFilteredEmptyText =>
-        _allOverview.All(e => e.Status is ObjectCompareStatus.Identical or ObjectCompareStatus.NotCompared)
-            ? $"The two databases match: all {_allOverview.Count:N0} object(s) are identical or not comparable. Click Identical to list them."
-            : "No object matches the filters. Click a tile to show more statuses, or clear the name and type filters.";
+        _allOverview.All(e => e.Status == ObjectCompareStatus.Identical)
+            ? $"The two databases match: all {_allOverview.Count:N0} object(s) are identical. Click Identical to list them."
+            : _allOverview.All(e => e.Status is ObjectCompareStatus.Identical or ObjectCompareStatus.NotCompared)
+                ? $"No differences found, but {_allOverview.Count(e => e.Status == ObjectCompareStatus.NotCompared):N0} object(s) could not be compared " +
+                  "(their definition is not in the cached metadata). Click Not compared to list them."
+                : "No object matches the filters. Click a tile to show more statuses, or clear the name and type filters.";
 
     private OverviewFilter CurrentOverviewFilter => new()
     {
@@ -270,7 +273,8 @@ public partial class ComparerViewModel(
         CopyOverviewEntryCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanCompareOverview => LeftSession is not null && RightSession is not null && !IsBusy;
+    private bool CanCompareOverview => LeftSession is not null && RightSession is not null && !IsBusy &&
+                                       IsCatalogReady(isLeft: true) && IsCatalogReady(isLeft: false);
 
     [RelayCommand(CanExecute = nameof(CanCompareOverview))]
     private void CompareOverview()
@@ -755,6 +759,7 @@ public partial class ComparerViewModel(
         catch (Exception ex)
         {
             Status = $"{side}: could not read the objects of {database}: {ex.Message}";
+            OverviewStatus = $"Cannot compare: the objects of {database} ({side.ToLowerInvariant()}) could not be read. {ex.Message}";
         }
     }
 

@@ -122,8 +122,25 @@ public partial class ComparerViewModel
 
     private void AutoCompareOverview()
     {
+        CompareOverviewCommand.NotifyCanExecuteChanged();
         if (!_overviewStale || IsBusy || LeftSession is null || RightSession is null) return;
+        if (!IsCatalogReady(isLeft: true) || !IsCatalogReady(isLeft: false))
+        {
+            // A database outside the session's snapshot is still loading: comparing now would treat it as empty.
+            _allOverview = [];
+            OverviewStatus = "Loading the objects of the selected database…";
+            ApplyOverviewFilter();
+            return;
+        }
         CompareOverview();
+    }
+
+    /// <summary>The side's selected database is covered by the catalog its comparisons read (its own snapshot, or a loaded scope).</summary>
+    private bool IsCatalogReady(bool isLeft)
+    {
+        var session = isLeft ? LeftSession : RightSession;
+        var database = isLeft ? SelectedLeftDatabase : SelectedRightDatabase;
+        return session is not null && (!NeedsOwnCatalog(session, database) || IsScopedTo(isLeft, session, database!));
     }
 
     /// <summary>"3 selected": the Overview's action bar.</summary>

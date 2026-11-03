@@ -114,6 +114,40 @@ public class ComparerLayoutTests
     }
 
     [Fact]
+    public async Task Overview_waits_for_a_database_outside_the_snapshot_instead_of_treating_it_as_empty()
+    {
+        var vm = NewViewModel();
+        var session = Shop("shop", ("Customers", DbObjectType.Table));
+        vm.Attach(session);
+        await vm.UseCurrentAsLeftCommand.ExecuteAsync(null);
+        await vm.UseCurrentAsRightCommand.ExecuteAsync(null);
+        Assert.True(vm.HasOverview);
+
+        // "archive" is not in the snapshot, so its catalog must be read first (here the read fails).
+        vm.SelectedRightDatabase = "archive";
+        await Task.Delay(50);
+        Assert.False(vm.HasOverview);
+        Assert.Equal(0, vm.OverviewOnlyLeftCount);
+        Assert.False(vm.CompareOverviewCommand.CanExecute(null));
+        Assert.Contains("could not be read", vm.OverviewStatus);
+    }
+
+    [Fact]
+    public async Task Objects_that_could_not_be_compared_are_not_reported_as_a_match()
+    {
+        var vm = NewViewModel();
+        var session = Shop("shop", ("order_seq", DbObjectType.Sequence));
+        vm.Attach(session);
+        await vm.UseCurrentAsLeftCommand.ExecuteAsync(null);
+        await vm.UseCurrentAsRightCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, vm.OverviewNotComparedCount);
+        Assert.True(vm.IsOverviewFilteredEmpty);
+        Assert.DoesNotContain("match", vm.OverviewFilteredEmptyText);
+        Assert.Contains("Not compared", vm.OverviewFilteredEmptyText);
+    }
+
+    [Fact]
     public void F5_runs_the_comparer_section()
     {
         var shortcut = ShortcutCommands.All.Single(s => s.Id == ShortcutCommands.RunComparison);

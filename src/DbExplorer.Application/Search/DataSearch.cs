@@ -24,6 +24,10 @@ public sealed record DataSearchRequest
 
     /// <summary>Skip tables whose estimated row count exceeds this; null = no limit.</summary>
     public long? MaxTableRows { get; init; }
+
+    /// <summary>Only these tables (schema, name), e.g. to retry the ones a previous search skipped; null = every table
+    /// the other filters allow.</summary>
+    public IReadOnlyCollection<(string Schema, string Table)>? OnlyTables { get; init; }
 }
 
 public abstract record DataSearchEvent;

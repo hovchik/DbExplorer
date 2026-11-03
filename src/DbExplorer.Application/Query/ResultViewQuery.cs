@@ -124,6 +124,18 @@ public static class ResultViewQuery
         return result.ToList();
     }
 
+    /// <summary>Whether one row passes the quick filter and every active column filter (what <see cref="Apply{T}"/>
+    /// keeps); for rows that are never held in a list, such as a full export streamed from the database.</summary>
+    public static Func<IReadOnlyList<object?>, bool> RowFilter(string? quickFilter, IReadOnlyCollection<ColumnFilter> filters)
+    {
+        var quick = quickFilter?.Trim() ?? "";
+        var active = filters.Where(f => f.IsActive).ToList();
+        if (quick.Length == 0 && active.Count == 0) return _ => true;
+        return cells =>
+            (quick.Length == 0 || cells.Any(v => DisplayText(v)?.Contains(quick, StringComparison.OrdinalIgnoreCase) == true)) &&
+            active.All(f => Matches(f, f.Column < cells.Count ? cells[f.Column] : null));
+    }
+
     /// <summary>Text a cell is matched against: what the grid shows, or <c>null</c> for NULL.</summary>
     public static string? DisplayText(object? value) => value switch
     {

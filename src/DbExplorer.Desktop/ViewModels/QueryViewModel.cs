@@ -732,7 +732,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     /// <summary>A run of this tab ended (not auto refresh): the workspace may tell the user if they looked away.</summary>
     public event Action<QueryViewModel, TimeSpan, RunOutcome>? RunFinished;
 
-    private int RowLimit => MaxRows <= 0 ? int.MaxValue : (int)Math.Min(MaxRows, int.MaxValue);
+    private int RowLimit => _rowLimitOverride ?? TabRowLimit;
+
+    /// <summary>The row limit set on the tab; <see cref="RowLimit"/> differs only during a Fetch more run.</summary>
+    private int TabRowLimit => MaxRows <= 0 ? int.MaxValue : (int)Math.Min(MaxRows, int.MaxValue);
 
     private async Task RunOnceAsync(DatabaseSession session, string sql, CancellationToken ct)
     {
@@ -755,6 +758,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         var sources = ResolveSources(session, sql, result);
         ResultSets = result.ResultSets
             .Select((rs, i) => WithSource(session, ResultSetView.From($"Result {i + 1}", rs, session), sources[i]))
+            .Select((v, i) => WithRerun(session, sql, v, i))
             .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();
 
@@ -765,8 +769,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                  (result.ResultSets.Count > 0 ? $" · {result.ResultSets.Count} result set(s)" : "") +
                  (truncated.Count == 0 ? "" :
                   truncated.All(r => !r.TotalRowCountIsExact)
-                      ? $" · stopped at the row limit ({RowLimit:N0}) without reading the rest (raise the limit to see more)"
-                      : $" · showing the first {RowLimit:N0} rows (raise the row limit to see more)");
+                      ? $" · stopped at the row limit ({RowLimit:N0}) without reading the rest" + MoreHint(sql)
+                      : $" · showing the first {RowLimit:N0} rows" + MoreHint(sql));
     }
 
     private async Task<bool> RunOnDatabasesAsync(DatabaseSession session, string sql, IReadOnlyList<string> databases, CancellationToken ct)
@@ -787,7 +791,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
                 TotalRowCountIsExact = m.TotalRowCountIsExact,
                 Connection = ResultSetView.DescribeConnection(session),
                 Dialect = ResultExporter.DialectFor(session.Provider.ProviderKey),
-                Quote = session.Provider.QuoteIdentifier
+                Quote = session.Provider.QuoteIdentifier,
+                RerunUnavailable = m.IsTruncated
+                    ? "Results merged from several databases are not run again from here. Raise the row limit and run again to see more."
+                    : null
             })
             .Select(v => v.IsTruncated ? v with { Title = $"{v.Title} (first {v.Rows.Count:N0} of {v.TotalRowsText})" } : v)
             .ToList();

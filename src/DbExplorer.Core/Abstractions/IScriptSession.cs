@@ -15,6 +15,13 @@ public interface IScriptSession : IAsyncDisposable
     Task<Models.QueryExecutionResult> QueryAsync(
         string sql, int timeoutSeconds, int maxRows = int.MaxValue, CancellationToken ct = default, Models.ReadOnlyScript? readOnly = null);
 
+    /// <summary>Like <see cref="IDatabaseProvider.StreamScriptAsync"/>, inside this session (and its open transaction).</summary>
+    async Task<long> StreamAsync(string sql, Models.ResultSetStream stream, CancellationToken ct = default)
+    {
+        stream.Feed(await QueryAsync(sql, timeoutSeconds: 0, ct: ct));
+        return stream.RowCount;
+    }
+
     Task CommitAsync(CancellationToken ct = default);
 
     /// <summary>Undoes the transaction's changes; the session is then only good for disposing.</summary>

@@ -158,6 +158,7 @@ namespace DbExplorer.UiRender
             await Step("testdata", RenderTestDataAsync);
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
+            await Step("fullresult", RenderFullResultAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -519,6 +520,58 @@ namespace DbExplorer.UiRender
             _window.Width = 1400;
             _window.Height = 900;
             await Settle(6);
+        }
+
+        /// <summary>A result cut off at the row limit: the bar with Fetch more / Export full result, the export menus, a
+        /// fetch, and a script that writes (not run again).</summary>
+        private async Task RenderFullResultAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("SELECT g AS id, 'order ' || g AS label, round(g * 1.5, 2) AS amount\nFROM generate_series(1, 25000) g;", "Big result");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count > 0, "big result");
+            await Settle(6);
+            await Shot(_window, "fullresult-bar");
+
+            ResultGridView Grid() => _window.GetVisualDescendants().OfType<ResultGridView>()
+                .First(g => g.IsEffectivelyVisible && ReferenceEquals(g.ResultSet, doc.ResultSets[0]));
+            var export = Grid().FindControl<Button>("ExportButton")!;
+            export.Flyout!.ShowAt(export);
+            await Settle(8);
+            await Shot(_window, "fullresult-export-menu");
+            export.Flyout.Hide();
+            await Settle();
+            var full = Grid().FindControl<Button>("ExportFullButton")!;
+            full.Flyout!.ShowAt(full);
+            await Settle(8);
+            await Shot(_window, "fullresult-full-menu");
+            full.Flyout.Hide();
+            await Settle();
+
+            await doc.ResultSets[0].Rerun!.FetchAsync(20_000);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count > 0, "fetch more");
+            await Settle(6);
+            await Shot(_window, "fullresult-fetched");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-fullresult");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            doc.SetText("INSERT INTO orders SELECT * FROM orders WHERE false;\nSELECT g AS id FROM generate_series(1, 25000) g;", markClean: true);
+            doc.AutoCommit = false; // rolled back below
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count > 0, "write script");
+            await Settle(6);
+            await Shot(_window, "fullresult-unavailable");
+            if (doc.HasOpenTransaction) await doc.RollbackCommand.ExecuteAsync(null);
+            doc.AutoCommit = true;
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
         }
 
         /// <summary>Pinned results: a run's result pinned, then the same query run again after a change, so both are on screen.</summary>

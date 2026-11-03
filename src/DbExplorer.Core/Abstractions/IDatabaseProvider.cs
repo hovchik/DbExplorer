@@ -77,6 +77,19 @@ public interface IDatabaseProvider : IAsyncDisposable
         string sql, string? database, int timeoutSeconds, CancellationToken ct = default, int maxRows = int.MaxValue,
         ReadOnlyScript? readOnly = null);
 
+    /// <summary>
+    /// Runs the script again with no row limit and no timeout, handing the rows of one result set to
+    /// <paramref name="stream"/> as they arrive instead of keeping them; the other result sets are read and discarded.
+    /// Used to export a result that is larger than the row limit. Only call it for scripts that only read.
+    /// </summary>
+    /// <returns>Rows handed to the stream.</returns>
+    async Task<long> StreamScriptAsync(string sql, string? database, ResultSetStream stream, CancellationToken ct = default)
+    {
+        // Fallback for providers without a streaming path: reads everything into memory first.
+        stream.Feed(await ExecuteScriptAsync(sql, database, timeoutSeconds: 0, ct));
+        return stream.RowCount;
+    }
+
     /// <summary>Executes a stored procedure or function call with the given argument values.</summary>
     Task<QueryExecutionResult> ExecuteRoutineAsync(
         DbObject routine, IReadOnlyList<DbRoutineParameter> parameters, IReadOnlyDictionary<string, object?> arguments,

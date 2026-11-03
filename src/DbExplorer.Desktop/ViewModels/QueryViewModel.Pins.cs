@@ -22,7 +22,7 @@ public partial class QueryViewModel
     private ResultSetView? _selectNext;
 
     partial void OnResultSetsChanged(IReadOnlyList<ResultSetView> oldValue, IReadOnlyList<ResultSetView> newValue) =>
-        RefreshShownResults(oldValue, newValue, keepPosition: _isRefreshRun);
+        RefreshShownResults(oldValue, newValue, keepPosition: _isRefreshRun || _isFetchMoreRun);
 
     /// <param name="keepPosition">Keep the selected tab's position among the run's results (auto refresh, pin changes).</param>
     private void RefreshShownResults(IReadOnlyList<ResultSetView> oldRunResults, IReadOnlyList<ResultSetView> newRunResults, bool keepPosition)

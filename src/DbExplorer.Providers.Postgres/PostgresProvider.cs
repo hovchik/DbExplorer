@@ -318,6 +318,20 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
         return result with { Elapsed = sw.Elapsed };
     }
 
+    public async Task<long> StreamScriptAsync(string sql, string? database, ResultSetStream stream, CancellationToken ct = default)
+    {
+        var targetDatabase = database ?? _profile.Database;
+        var useOwnDataSource = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database;
+
+        await using var scopedDataSource = useOwnDataSource
+            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            : null;
+        await using var cn = await (scopedDataSource ?? _dataSource).OpenConnectionAsync(ct);
+        // No timeout (a large export takes as long as it takes; Cancel stops it) and no rows kept from other result sets.
+        await RunAsync(cn, null, sql, timeoutSeconds: 0, maxRows: 0, ct, stream);
+        return stream.RowCount;
+    }
+
     private static Task<QueryExecutionResult> RunAsync(
         NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, ReadOnlyScript? readOnly, CancellationToken ct) =>
         readOnly is not null && maxRows is > 0 and < int.MaxValue
@@ -400,7 +414,8 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
 
     /// <summary>Reads every result set of the command, keeping at most <paramref name="maxRows"/> rows of each.</summary>
     private static async Task<int> ReadResultSetsAsync(
-        NpgsqlCommand cmd, int maxRows, bool stoppedOnServer, List<QueryResultSet> resultSets, CancellationToken ct)
+        NpgsqlCommand cmd, int maxRows, bool stoppedOnServer, List<QueryResultSet> resultSets, CancellationToken ct,
+        ResultSetStream? stream = null)
     {
         var rowsAffected = 0;
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -409,6 +424,19 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             if (reader.FieldCount > 0)
             {
                 var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+                if (stream?.Takes(resultSets.Count) == true)
+                {
+                    stream.Begin(columns);
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var values = new object?[reader.FieldCount];
+                        for (var i = 0; i < values.Length; i++)
+                            values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        stream.Write(values);
+                    }
+                    resultSets.Add(new QueryResultSet { Columns = columns, TotalRowCount = stream.RowCount });
+                    continue;
+                }
                 var rows = new List<IReadOnlyList<object?>>();
                 long total = 0;
                 while (await reader.ReadAsync(ct))
@@ -440,7 +468,8 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     /// line/column in the script, located through the failing statement of the batch.
     /// </summary>
     private static async Task<QueryExecutionResult> RunAsync(
-        NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, CancellationToken ct)
+        NpgsqlConnection cn, NpgsqlTransaction? tx, string sql, int timeoutSeconds, int maxRows, CancellationToken ct,
+        ResultSetStream? stream = null)
     {
         var resultSets = new List<QueryResultSet>();
         var messages = new List<string>();
@@ -452,7 +481,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
         try
         {
             await using var cmd = new NpgsqlCommand(sql, cn, tx) { CommandTimeout = timeoutSeconds };
-            rowsAffected = await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct);
+            rowsAffected = await ReadResultSetsAsync(cmd, maxRows, stoppedOnServer: false, resultSets, ct, stream);
         }
         catch (PostgresException ex)
         {
@@ -776,6 +805,12 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
             var sw = Stopwatch.StartNew();
             var result = await RunAsync(connection, transaction, sql, timeoutSeconds, maxRows, readOnly, ct);
             return result with { Elapsed = sw.Elapsed };
+        }
+
+        public async Task<long> StreamAsync(string sql, ResultSetStream stream, CancellationToken ct = default)
+        {
+            await RunAsync(connection, transaction, sql, timeoutSeconds: 0, maxRows: 0, ct, stream);
+            return stream.RowCount;
         }
 
         public async Task RollbackAsync(CancellationToken ct = default)

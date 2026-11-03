@@ -49,21 +49,21 @@ public static partial class ResultExporter
     /// </summary>
     public static string ToCsv(IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows, char separator = ',')
     {
-        var sb = new StringBuilder();
-        sb.AppendJoin(separator, columns.Select(c => CsvField(c, separator))).Append("\r\n");
-        foreach (var row in rows)
+        using var text = new StringWriter(CultureInfo.InvariantCulture);
+        WriteAll(new CsvResultWriter(text, ownsWriter: false, separator), columns, rows);
+        return text.ToString();
+    }
+
+    /// <summary>Writes every row with <paramref name="writer"/> and completes the file.</summary>
+    public static long WriteAll(ResultFileWriter writer, IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows)
+    {
+        using (writer)
         {
-            for (var i = 0; i < columns.Count; i++)
-            {
-                if (i > 0) sb.Append(separator);
-                var value = i < row.Count ? row[i] : null;
-                var text = FormatInvariant(value);
-                if (value is string or char) text = NeutralizeFormula(text);
-                sb.Append(CsvField(text, separator));
-            }
-            sb.Append("\r\n");
+            writer.Begin(columns);
+            foreach (var row in rows) writer.WriteRow(row);
+            writer.Complete();
+            return writer.RowCount;
         }
-        return sb.ToString();
     }
 
     /// <summary>Tab-separated text for the clipboard: pastes into Excel / Sheets as cells.</summary>
@@ -85,22 +85,7 @@ public static partial class ResultExporter
     public static string ToJson(IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows)
     {
         using var ms = new MemoryStream();
-        using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
-        {
-            var names = UniqueNames(columns);
-            w.WriteStartArray();
-            foreach (var row in rows)
-            {
-                w.WriteStartObject();
-                for (var i = 0; i < names.Count; i++)
-                {
-                    w.WritePropertyName(names[i]);
-                    WriteJsonValue(w, i < row.Count ? row[i] : null);
-                }
-                w.WriteEndObject();
-            }
-            w.WriteEndArray();
-        }
+        WriteAll(new JsonResultWriter(ms), columns, rows);
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 
@@ -142,17 +127,12 @@ public static partial class ResultExporter
     /// <summary>One INSERT per row, with literals rendered for the given dialect.</summary>
     public static string ToInsertStatements(
         IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows,
-        string targetTable, SqlDialect dialect, Func<string, string> quote)
+        string targetTable, SqlDialect dialect, Func<string, string> quote, IReadOnlyList<string>? notes = null)
     {
-        var columnList = string.Join(", ", columns.Select(quote));
-        var sb = new StringBuilder();
-        foreach (var row in rows)
-        {
-            sb.Append("INSERT INTO ").Append(targetTable).Append(" (").Append(columnList).Append(") VALUES (");
-            sb.AppendJoin(", ", Enumerable.Range(0, columns.Count).Select(i => SqlLiteral(i < row.Count ? row[i] : null, dialect)));
-            sb.Append(");\n");
-        }
-        return sb.ToString();
+        using var text = new StringWriter(CultureInfo.InvariantCulture);
+        WriteAll(new InsertResultWriter(text, ownsWriter: false,
+            new ResultFileOptions { TargetTable = targetTable, Dialect = dialect, Quote = quote, Notes = notes ?? [] }), columns, rows);
+        return text.ToString();
     }
 
     public static string SqlLiteral(object? value, SqlDialect dialect)
@@ -176,19 +156,24 @@ public static partial class ResultExporter
         };
     }
 
-    /// <summary>Writes a single-sheet .xlsx (Office Open XML) with a header row; numbers stay numeric.</summary>
+    /// <summary>Writes an .xlsx (Office Open XML) with a header row; numbers stay numeric. Rows past Excel's sheet limit
+    /// continue on further sheets (see <see cref="XlsxResultWriter"/>).</summary>
     public static void WriteXlsx(
-        Stream output, IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows, string sheetName = "Results")
-    {
-        using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+        Stream output, IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<object?>> rows, string sheetName = "Results") =>
+        WriteAll(new XlsxResultWriter(output, sheetName), columns, rows);
 
-        WriteEntry(zip, "[Content_Types].xml", """
+    /// <summary>The workbook parts around the sheets already written as xl/worksheets/sheetN.xml.</summary>
+    internal static void WriteXlsxParts(ZipArchive zip, IReadOnlyList<string> sheetNames)
+    {
+        var overrides = string.Concat(sheetNames.Select((_, i) =>
+            $"<Override PartName=\"/xl/worksheets/sheet{i + 1}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"));
+        WriteEntry(zip, "[Content_Types].xml", $"""
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
             <Default Extension="xml" ContentType="application/xml"/>
             <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-            <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+            {overrides}
             <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
             </Types>
             """);
@@ -198,17 +183,22 @@ public static partial class ResultExporter
             <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
             </Relationships>
             """);
+        // Relationship ids: rId1 = styles, rId2… = the sheets in order.
+        var sheets = string.Concat(sheetNames.Select((name, i) =>
+            $"<sheet name=\"{Xml(name)}\" sheetId=\"{i + 1}\" r:id=\"rId{i + 2}\"/>"));
         WriteEntry(zip, "xl/workbook.xml", $"""
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-            <sheets><sheet name="{Xml(SafeSheetName(sheetName))}" sheetId="1" r:id="rId1"/></sheets>
+            <sheets>{sheets}</sheets>
             </workbook>
             """);
-        WriteEntry(zip, "xl/_rels/workbook.xml.rels", """
+        var sheetRels = string.Concat(sheetNames.Select((_, i) =>
+            $"<Relationship Id=\"rId{i + 2}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet{i + 1}.xml\"/>"));
+        WriteEntry(zip, "xl/_rels/workbook.xml.rels", $"""
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-            <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-            <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            {sheetRels}
             </Relationships>
             """);
         // Style 1 = bold header.
@@ -223,37 +213,22 @@ public static partial class ResultExporter
             <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
             </styleSheet>
             """);
+    }
 
-        var entry = zip.CreateEntry("xl/worksheets/sheet1.xml", CompressionLevel.Fastest);
-        using var w = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-        w.Write("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>""");
+    internal static void WriteXlsxHeaderCell(TextWriter w, int column, string name) =>
+        WriteStringCell(w, CellRef(column, 1), name, style: 1);
 
-        var rowNumber = 1;
-        w.Write("<row r=\"1\">");
-        for (var i = 0; i < columns.Count; i++)
-            WriteStringCell(w, CellRef(i, rowNumber), columns[i], style: 1);
-        w.Write("</row>");
-
-        foreach (var row in rows)
-        {
-            rowNumber++;
-            w.Write($"<row r=\"{rowNumber}\">");
-            for (var i = 0; i < columns.Count; i++)
-            {
-                var value = i < row.Count ? row[i] : null;
-                if (value is null or DBNull) continue;
-                var r = CellRef(i, rowNumber);
-                if (IsNumeric(value) && value is not bool)
-                    w.Write($"<c r=\"{r}\"><v>{FormatInvariant(value)}</v></c>");
-                else if (value is bool b)
-                    w.Write($"<c r=\"{r}\" t=\"b\"><v>{(b ? 1 : 0)}</v></c>");
-                else
-                    WriteStringCell(w, r, FormatInvariant(value), style: 0);
-            }
-            w.Write("</row>");
-        }
-
-        w.Write("</sheetData></worksheet>");
+    /// <summary>One data cell; NULL leaves the cell out.</summary>
+    internal static void WriteXlsxCell(TextWriter w, int column, int row, object? value)
+    {
+        if (value is null or DBNull) return;
+        var r = CellRef(column, row);
+        if (IsNumeric(value) && value is not bool)
+            w.Write($"<c r=\"{r}\"><v>{FormatInvariant(value)}</v></c>");
+        else if (value is bool b)
+            w.Write($"<c r=\"{r}\" t=\"b\"><v>{(b ? 1 : 0)}</v></c>");
+        else
+            WriteStringCell(w, r, FormatInvariant(value), style: 0);
     }
 
     public static string FormatInvariant(object? value) => value switch
@@ -277,15 +252,15 @@ public static partial class ResultExporter
     private static bool IsNumeric(object value) => value is byte or sbyte or short or ushort or int or uint or long
         or ulong or decimal or double or float && (value is not double d || double.IsFinite(d)) && (value is not float f || float.IsFinite(f));
 
-    private static string NeutralizeFormula(string text) =>
+    internal static string NeutralizeFormula(string text) =>
         text.Length > 0 && text[0] is '=' or '+' or '-' or '@' or '\t' or '\r' ? "'" + text : text;
 
-    private static string CsvField(string text, char separator) =>
+    internal static string CsvField(string text, char separator) =>
         text.IndexOfAny([separator, '"', '\r', '\n']) >= 0 || (text.Length > 0 && (text[0] == ' ' || text[^1] == ' '))
             ? "\"" + text.Replace("\"", "\"\"") + "\""
             : text;
 
-    private static void WriteJsonValue(Utf8JsonWriter w, object? value)
+    internal static void WriteJsonValue(Utf8JsonWriter w, object? value)
     {
         switch (value)
         {
@@ -300,7 +275,7 @@ public static partial class ResultExporter
         }
     }
 
-    private static List<string> UniqueNames(IReadOnlyList<string> columns)
+    internal static List<string> UniqueNames(IReadOnlyList<string> columns)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<string>();
@@ -338,7 +313,7 @@ public static partial class ResultExporter
         return SecurityElement.Escape(sb.ToString());
     }
 
-    private static string SafeSheetName(string name)
+    internal static string SafeSheetName(string name)
     {
         var cleaned = new string(name.Where(c => c is not ('\\' or '/' or '?' or '*' or '[' or ']' or ':')).ToArray()).Trim();
         if (cleaned.Length == 0) cleaned = "Results";

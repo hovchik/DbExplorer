@@ -174,6 +174,13 @@ public sealed record ResultSetView(string Title, IReadOnlyList<string> Columns, 
     /// <summary>Shows the row a foreign key value refers to. Null where navigation is not offered.</summary>
     public Action<ResultSetView, ResultReference, ResultRow>? OpenReference { get; init; }
 
+    /// <summary>A cut-off Query tab result that can be read again in full: exported straight to a file or fetched past
+    /// the row limit. Null where the script is not run again (it may write, several databases, pinned).</summary>
+    public ResultRerun? Rerun { get; init; }
+
+    /// <summary>Why a cut-off result has no <see cref="Rerun"/>; shown in the bar above the grid.</summary>
+    public string? RerunUnavailable { get; init; }
+
     /// <summary>Set on a query's Plan tab: the tab draws this plan instead of a grid.</summary>
     public PlanViewModel? Plan { get; init; }
 

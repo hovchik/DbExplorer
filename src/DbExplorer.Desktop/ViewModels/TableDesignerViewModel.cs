@@ -63,6 +63,29 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     public ObservableCollection<IndexRow> Indexes { get; } = [];
     public ObservableCollection<DesignSuggestionItem> Suggestions { get; } = [];
 
+    /// <summary>Columns of the open table that the edits drop, each with a Restore button.</summary>
+    public ObservableCollection<RemovedColumnItem> RemovedColumns { get; } = [];
+
+    /// <summary>The column whose row has the keyboard focus: the target of the move and remove shortcuts.</summary>
+    [ObservableProperty] private ColumnRow? _selectedColumn;
+
+    /// <summary>Ready-made columns for the "Common columns" menu, typed for the engine and named like the database's.</summary>
+    [ObservableProperty] private IReadOnlyList<CommonColumn> _commonColumnChoices = [];
+
+    /// <summary>"2 new · 1 changed · 1 dropped" while an open table has edits; empty otherwise.</summary>
+    [ObservableProperty] private string _changeSummary = "";
+
+    /// <summary>"CREATE TABLE", "3 statements" or "No changes", next to the script's title.</summary>
+    [ObservableProperty] private string _scriptSummary = "";
+
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasErrorCount))] private int _errorCount;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWarningCount))] private int _warningCount;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTipCount))] private int _tipCount;
+
+    public bool HasErrorCount => ErrorCount > 0;
+    public bool HasWarningCount => WarningCount > 0;
+    public bool HasTipCount => TipCount > 0;
+
     /// <summary>The design's column names, for the foreign key and index pickers.</summary>
     public ObservableCollection<string> ColumnNames { get; } = [];
 
@@ -72,7 +95,22 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     public bool HasFixable => Suggestions.Any(s => s.CanFix && !s.Suggestion.Key.StartsWith("alter-", StringComparison.Ordinal));
     public bool HasForeignKeys => ForeignKeys.Count > 0;
     public bool HasIndexes => Indexes.Count > 0;
+    public bool HasRemovedColumns => RemovedColumns.Count > 0;
     public bool IsAltering => _original is not null;
+    public bool HasChanges => ChangeSummary.Length > 0;
+
+    public string ColumnsHeader => $"Columns ({Columns.Count})";
+    public string ForeignKeysHeader => $"Foreign keys ({ForeignKeys.Count})";
+    public string IndexesHeader => $"Indexes ({Indexes.Count})";
+    /// <summary>The tab the side panel moves into in a narrow window.</summary>
+    public string SideTabHeader => Suggestions.Count == 0 ? "Script" : $"Script · {Suggestions.Count} suggestion(s)";
+    public string SuggestionsHeader => Suggestions.Count == 0 ? "Suggestions" : $"Suggestions ({Suggestions.Count})";
+
+    /// <summary>"NEW" or "ALTER", on the badge before the table's name.</summary>
+    public string ModeBadge => IsAltering ? "ALTER" : "NEW";
+
+    /// <summary>The table's name as the header shows it: schema.table, or a hint while it has none.</summary>
+    public string TitleText => TableName.Trim().Length > 0 ? $"{(Schema.Trim().Length > 0 ? Schema.Trim() + "." : "")}{TableName.Trim()}" : "Untitled table";
 
     /// <summary>What the edits not executed yet are for: the table's name, or "a new table"; null without edits.</summary>
     public string? UnsavedDesign => !_edited ? null
@@ -85,6 +123,9 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     /// <summary>Raised to show the created table in the Objects tab.</summary>
     public event Action<DbObject>? OpenObjectRequested;
+
+    /// <summary>Raised after a column is added, so the view can put the caret in its name box.</summary>
+    public event Action<ColumnRow>? FocusColumnRequested;
 
     private string ProviderKey => _session?.Provider.ProviderKey ?? SqlDialect.SqlServerKey;
 
@@ -299,6 +340,11 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
             Suggestions.Add(new DesignSuggestionItem(s));
         var errors = review.Count(s => s.Severity == DesignSeverity.Error);
         var others = Suggestions.Count - errors;
+        ErrorCount = errors;
+        WarningCount = Suggestions.Count(s => s.Suggestion.Severity == DesignSeverity.Warning);
+        TipCount = Suggestions.Count(s => s.Suggestion.Severity == DesignSeverity.Tip);
+        RefreshChanges(design);
+        CommonColumnChoices = CommonColumns.For(ProviderKey, _context, design);
         SuggestionSummary = errors > 0 ? $"{errors} to fix before Execute" + (others > 0 ? $" · {others} suggestion(s)" : "")
             : others > 0 ? $"{others} suggestion(s). Apply them with one click, or dismiss the ones you don't want."
             : IsAltering ? "Nothing to flag in these changes." : "Nothing to suggest. The table looks good.";
@@ -307,7 +353,53 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         OnPropertyChanged(nameof(HasFixable));
         OnPropertyChanged(nameof(HasForeignKeys));
         OnPropertyChanged(nameof(HasIndexes));
+        OnPropertyChanged(nameof(HasRemovedColumns));
+        OnPropertyChanged(nameof(HasChanges));
+        OnPropertyChanged(nameof(ColumnsHeader));
+        OnPropertyChanged(nameof(ForeignKeysHeader));
+        OnPropertyChanged(nameof(IndexesHeader));
+        OnPropertyChanged(nameof(SuggestionsHeader));
+        OnPropertyChanged(nameof(SideTabHeader));
+        OnPropertyChanged(nameof(TitleText));
         ExecuteCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Marks each row new, renamed or changed against the open table, lists the columns the edits drop, and
+    /// sums it all up for the header. A new table has no marks: every column is new there.</summary>
+    private void RefreshChanges(TableDesign design)
+    {
+        var original = _original;
+        var byName = original?.Columns.Where(c => c.OriginalName is not null || c.Name.Length > 0)
+            .GroupBy(c => c.OriginalName ?? c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        int added = 0, changed = 0;
+        foreach (var row in Columns)
+        {
+            var before = byName is not null && row.OriginalName is { } name ? byName.GetValueOrDefault(name) : null;
+            if (original is null) row.UpdateChange(ColumnChange.None);
+            else if (before is null) row.UpdateChange(ColumnChange.New);
+            else row.UpdateChange(ColumnRow.Compare(before, row.ToDesign(), ProviderKey));
+            if (row.Change == ColumnChange.New) added++;
+            else if (row.Change != ColumnChange.None) changed++;
+        }
+
+        var kept = Columns.Select(c => c.OriginalName).Where(n => n is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removed = original?.Columns.Where(c => !kept.Contains(c.OriginalName ?? c.Name)).ToList() ?? [];
+        if (!removed.Select(r => r.Name).SequenceEqual(RemovedColumns.Select(r => r.Column.Name), StringComparer.Ordinal))
+        {
+            RemovedColumns.Clear();
+            foreach (var column in removed) RemovedColumns.Add(new RemovedColumnItem(column));
+        }
+
+        var parts = new List<string>();
+        if (added > 0) parts.Add($"{added} new");
+        if (changed > 0) parts.Add($"{changed} changed");
+        if (removed.Count > 0) parts.Add($"{removed.Count} dropped");
+        if (original is not null && parts.Count == 0 && !TableAlterScriptBuilder.IsUnchanged(original, design, ProviderKey)) parts.Add("keys or indexes changed");
+        ChangeSummary = original is null ? "" : string.Join(" · ", parts);
+        ScriptSummary = original is null ? "CREATE TABLE"
+            : ChangeSummary.Length == 0 ? "No changes yet"
+            : $"ALTER · {ChangeSummary}";
     }
 
     /// <summary>Updates the column list in place: clearing it would make every foreign key picker drop its selection.</summary>
@@ -326,17 +418,55 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     // ----- Editing commands -----
 
     [RelayCommand]
-    private void AddColumn()
+    private void AddColumn() => InsertColumn(new ColumnDesign { Type = "" });
+
+    /// <summary>Adds one of the <see cref="CommonColumnChoices"/>.</summary>
+    [RelayCommand]
+    private void AddCommonColumn(CommonColumn? choice)
     {
-        Columns.Add(ColumnRow.From(new ColumnDesign { Type = "" }, Changed, ColumnRenamed));
+        if (choice is null) return;
+        InsertColumn(choice.Column);
+        Status = $"Added {choice.Column.Name} ({choice.Column.FullType}). Change anything you like.";
+    }
+
+    /// <summary>A new column goes below the one being edited (at the end when none is), and gets the caret.</summary>
+    private void InsertColumn(ColumnDesign column)
+    {
+        var row = ColumnRow.From(column, Changed, ColumnRenamed);
+        var at = SelectedColumn is { } selected && Columns.IndexOf(selected) is >= 0 and var i ? i + 1 : Columns.Count;
+        Columns.Insert(at, row);
+        SelectedColumn = row;
         Changed();
+        FocusColumnRequested?.Invoke(row);
+    }
+
+    /// <summary>Puts a column the edits dropped back where it was, as it is on the server.</summary>
+    [RelayCommand]
+    private void RestoreColumn(RemovedColumnItem? item)
+    {
+        if (item is null || _original is null) return;
+        var position = _original.Columns.ToList().IndexOf(item.Column);
+        // Below the nearest column that came before it on the server and is still there.
+        var at = 0;
+        for (var i = position - 1; i >= 0 && at == 0; i--)
+        {
+            var name = _original.Columns[i].OriginalName ?? _original.Columns[i].Name;
+            var row = Columns.FirstOrDefault(c => Same(c.OriginalName, name));
+            if (row is not null) at = Columns.IndexOf(row) + 1;
+        }
+        Columns.Insert(at, ColumnRow.From(item.Column, Changed, ColumnRenamed));
+        Changed();
+        Status = $"Restored {item.Column.Name}. Its foreign keys and indexes are not restored; Revert brings back everything.";
     }
 
     [RelayCommand]
     private void RemoveColumn(ColumnRow? row)
     {
+        row ??= SelectedColumn;
         if (row is null) return;
+        var position = Columns.IndexOf(row);
         Columns.Remove(row);
+        if (ReferenceEquals(SelectedColumn, row)) SelectedColumn = Columns.Count == 0 ? null : Columns[Math.Clamp(position, 0, Columns.Count - 1)];
         // The column's keys and indexes go with it, as they do on the server.
         var name = row.Name?.Trim() ?? "";
         if (name.Length > 0)
@@ -355,6 +485,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
 
     private void Move(ColumnRow? row, int by)
     {
+        row ??= SelectedColumn;
         if (row is null) return;
         var index = Columns.IndexOf(row);
         if (index < 0 || index + by < 0 || index + by >= Columns.Count) return;
@@ -382,6 +513,31 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     {
         Indexes.Add(IndexRow.From(new IndexDesign(), Changed));
         Changed();
+    }
+
+    /// <summary>Appends a column to an index's list (from the index row's column menu).</summary>
+    public void AppendIndexColumn(IndexRow row, string column)
+    {
+        var columns = row.ToDesign().Columns;
+        if (columns.Contains(column, StringComparer.OrdinalIgnoreCase)) return;
+        row.Columns = string.Join(", ", columns.Append(column));
+    }
+
+    /// <summary>Indexes the given column on its own (from a column row's menu).</summary>
+    [RelayCommand]
+    private void IndexColumn(ColumnRow? row)
+    {
+        row ??= SelectedColumn;
+        var name = row?.Name?.Trim() ?? "";
+        if (name.Length == 0) return;
+        if (Indexes.Any(i => i.ToDesign().Columns is [var only] && Same(only, name)))
+        {
+            Status = $"{name} has an index already.";
+            return;
+        }
+        Indexes.Add(IndexRow.From(new IndexDesign { Columns = [name] }, Changed));
+        Changed();
+        Status = $"Added an index on {name}: see Indexes.";
     }
 
     [RelayCommand]
@@ -519,6 +675,7 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
         _original = original;
         ModeText = original is null ? "New table" : $"Changing {original.Schema}.{original.Name}";
         OnPropertyChanged(nameof(IsAltering));
+        OnPropertyChanged(nameof(ModeBadge));
         OnPropertyChanged(nameof(ExecuteLabel));
     }
 
@@ -738,9 +895,55 @@ public partial class TableDesignerViewModel(SessionService sessions, IDialogServ
     }
 }
 
+/// <summary>How a column row differs from the open table's column on the server.</summary>
+public enum ColumnChange
+{
+    None,
+    New,
+    Renamed,
+    Changed
+}
+
 /// <summary>One editable column row.</summary>
 public partial class ColumnRow : ObservableObject
 {
+    /// <summary>Against the open table: new, renamed or changed (renamed wins when both); None for a new table.</summary>
+    [ObservableProperty] private ColumnChange _change;
+
+    /// <summary>What changed, for the marker's tooltip: "Renamed from CustomerNo · type int → bigint".</summary>
+    [ObservableProperty] private string _changeText = "";
+
+    public bool IsNew => Change == ColumnChange.New;
+    public bool IsChanged => Change is ColumnChange.Changed or ColumnChange.Renamed;
+
+    internal void UpdateChange((ColumnChange Change, string Text) change)
+    {
+        Change = change.Change;
+        ChangeText = change.Change == ColumnChange.New ? "New column: added at the end of the table" : change.Text;
+        OnPropertyChanged(nameof(IsNew));
+        OnPropertyChanged(nameof(IsChanged));
+    }
+
+    internal void UpdateChange(ColumnChange change) => UpdateChange((change, ""));
+
+    /// <summary>What an edit changed about a column of the open table.</summary>
+    internal static (ColumnChange Change, string Text) Compare(ColumnDesign before, ColumnDesign after, string providerKey)
+    {
+        var notes = new List<string>();
+        var renamed = !string.Equals(before.Name.Trim(), after.Name.Trim(), StringComparison.Ordinal);
+        if (renamed) notes.Add($"Renamed from {before.Name}");
+        var typeBefore = ColumnTypes.Canonical(providerKey, before.FullType);
+        var typeAfter = ColumnTypes.Canonical(providerKey, after.FullType);
+        if (!string.Equals(typeBefore, typeAfter, StringComparison.Ordinal)) notes.Add($"type {before.FullType} → {after.FullType}");
+        if (before.WritesNotNull != after.WritesNotNull) notes.Add(after.WritesNotNull ? "now NOT NULL" : "now allows NULL");
+        if (!string.Equals(before.Default?.Trim() ?? "", after.Default?.Trim() ?? "", StringComparison.Ordinal))
+            notes.Add(string.IsNullOrWhiteSpace(after.Default) ? "default removed" : $"default {after.Default!.Trim()}");
+        if (before.IsPrimaryKey != after.IsPrimaryKey) notes.Add(after.IsPrimaryKey ? "added to the primary key" : "taken out of the primary key");
+        if (before.IsIdentity != after.IsIdentity) notes.Add(after.IsIdentity ? "now an identity" : "no longer an identity");
+        if (notes.Count == 0) return (ColumnChange.None, "");
+        return (renamed ? ColumnChange.Renamed : ColumnChange.Changed, string.Join(" · ", notes));
+    }
+
     private Action _changed = () => { };
     private Action<string, string> _renamed = (_, _) => { };
 
@@ -908,6 +1111,13 @@ public partial class IndexRow : ObservableObject
     partial void OnNameChanged(string value) => _changed();
 }
 
+/// <summary>A column of the open table that the edits drop.</summary>
+public sealed class RemovedColumnItem(ColumnDesign column)
+{
+    public ColumnDesign Column { get; } = column;
+    public string Text => $"{Column.Name} · {Column.FullType}";
+}
+
 /// <summary>A suggestion card.</summary>
 public sealed class DesignSuggestionItem(DesignSuggestion suggestion)
 {
@@ -919,6 +1129,9 @@ public sealed class DesignSuggestionItem(DesignSuggestion suggestion)
     public bool CanFix => Suggestion.CanFix;
     public bool CanDismiss => Suggestion.Severity != DesignSeverity.Error;
     public string SeverityText => Suggestion.Severity switch { DesignSeverity.Error => "Fix", DesignSeverity.Warning => "Check", _ => "Tip" };
+    public bool IsError => Suggestion.Severity == DesignSeverity.Error;
+    public bool IsWarning => Suggestion.Severity == DesignSeverity.Warning;
+    public bool IsTip => Suggestion.Severity == DesignSeverity.Tip;
     public IBrush SeverityColor => Suggestion.Severity switch { DesignSeverity.Error => ErrorBrush, DesignSeverity.Warning => WarningBrush, _ => TipBrush };
 
     private static readonly IBrush ErrorBrush = new SolidColorBrush(Color.Parse("#D13438"));

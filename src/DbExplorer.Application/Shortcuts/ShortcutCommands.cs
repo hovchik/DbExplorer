@@ -10,6 +10,7 @@ public static class ShortcutAreas
     public const string Navigator = "Database navigator";
     public const string Comparer = "Comparer";
     public const string ErModel = "ER model";
+    public const string TableDesigner = "Table designer";
     public const string Debugger = "Routine debugger";
     public const string Palette = "Command palette";
     public const string Vim = "Vim mode (Query editor)";
@@ -90,6 +91,13 @@ public static class ShortcutCommands
     public const string NextDifference = "comparer.next";
     public const string PreviousDifference = "comparer.previous";
     public const string CancelComparison = "comparer.cancel";
+
+    public const string DesignerExecute = "designer.execute";
+    public const string DesignerAddColumn = "designer.add-column";
+    public const string DesignerRemoveColumn = "designer.remove-column";
+    public const string DesignerColumnUp = "designer.column-up";
+    public const string DesignerColumnDown = "designer.column-down";
+    public const string DesignerCopyScript = "designer.copy-script";
 
     public const string DebugContinue = "debugger.continue";
     public const string DebugStop = "debugger.stop";
@@ -224,6 +232,14 @@ public static class ShortcutCommands
         Add(NextDifference, c, "Next difference", "F8");
         Add(PreviousDifference, c, "Previous difference", "Shift+F8");
         Add(CancelComparison, c, "Cancel the comparison", "Esc");
+
+        var td = ShortcutAreas.TableDesigner;
+        Add(DesignerExecute, td, "Execute the script (Apply changes for an open table)", "Ctrl+Enter");
+        Add(DesignerAddColumn, td, "Add a column", "Alt+Insert");
+        Add(DesignerRemoveColumn, td, "Remove the column being edited", "Alt+Delete");
+        Add(DesignerColumnUp, td, "Move the column being edited up", "Alt+↑");
+        Add(DesignerColumnDown, td, "Move the column being edited down", "Alt+↓");
+        Add(DesignerCopyScript, td, "Copy the script", "Ctrl+Shift+C");
 
         var d = ShortcutAreas.Debugger;
         Add(DebugContinue, d, "Start or continue", "F5");

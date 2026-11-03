@@ -414,6 +414,7 @@ public partial class QueryView : UserControl
             case EditorAction.ResetZoom: ResetZoom(); break;
             case EditorAction.ToggleWordWrap: ToggleWordWrap(); break;
             case EditorAction.MaximizeResults: SetSplit(1, 12); break;
+            case EditorAction.ResultsAsText: if (DataContext is QueryViewModel text) text.ResultsAsText = !text.ResultsAsText; break;
             case EditorAction.MaximizeEditor: SetSplit(12, 1); break;
             case EditorAction.ResetLayout: SetSplit(DefaultEditorShare, DefaultResultsShare); break;
         }
@@ -470,6 +471,7 @@ public partial class QueryView : UserControl
             case ShortcutCommands.UpperCase: ChangeCase(upper: true); break;
             case ShortcutCommands.LowerCase: ChangeCase(upper: false); break;
             case ShortcutCommands.MaximizeResults: SetSplit(1, 12); break;
+            case ShortcutCommands.ResultsAsText when DataContext is QueryViewModel text: text.ResultsAsText = !text.ResultsAsText; break;
             case ShortcutCommands.MaximizeEditor: SetSplit(12, 1); break;
             case ShortcutCommands.MoveLinesUp: MoveLines(-1); break;
             case ShortcutCommands.MoveLinesDown: MoveLines(1); break;

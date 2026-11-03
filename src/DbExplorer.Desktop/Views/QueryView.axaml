@@ -3,6 +3,7 @@
 			 xmlns:controls="using:DbExplorer.Desktop.Controls"
 			 xmlns:vm="using:DbExplorer.Desktop.ViewModels"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
+			 xmlns:converters="using:DbExplorer.Desktop.Converters"
 			 xmlns:ae="using:AvaloniaEdit"
 			 xmlns:services="using:DbExplorer.Desktop.Services"
 			 x:Class="DbExplorer.Desktop.Views.QueryView">
@@ -332,9 +333,7 @@
 	</Border>
 	</DockPanel>
 
-	<!-- Drag to resize editor vs results; the grip is drawn underneath and ignores the pointer -->
-	<Border Grid.Row="2" Width="40" Height="4" CornerRadius="2" IsHitTestVisible="False"
-			HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource AppBorderBrush}" />
+	<!-- Drag to resize editor vs results; the grip comes from the app-wide GridSplitter style -->
 	<GridSplitter x:Name="ResultsSplitter" Grid.Row="2" ResizeDirection="Rows" Background="Transparent"
 				  ToolTip.Tip="Drag to resize the editor and results · double-click to reset" />
 
@@ -373,6 +372,11 @@
 				<MenuItem Header="Close" IsVisible="{Binding IsPinned}"
 						  Command="{Binding $parent[TabControl].DataContext.ClosePinnedResultCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close all pinned" Command="{Binding $parent[TabControl].DataContext.CloseAllPinnedResultsCommand}" />
+				<Separator />
+				<MenuItem Header="Show as text (Ctrl+T)" IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}"
+						  Command="{Binding $parent[TabControl].DataContext.ToggleResultsAsTextCommand}" />
+				<MenuItem Header="Show as grid (Ctrl+T)" IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}"
+						  Command="{Binding $parent[TabControl].DataContext.ToggleResultsAsTextCommand}" />
 			  </ContextMenu>
 			</StackPanel.ContextMenu>
 			<controls:StrokeIcon Classes="pinned" Data="{x:Static controls:Icons.Pin}" Width="13" Height="13"
@@ -392,7 +396,16 @@
 	  <TabControl.ContentTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <Panel>
-			<views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" />
+			<Panel IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}">
+			  <views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" />
+			</Panel>
+			<!-- Ctrl+T: the same rows as aligned text, selectable and copyable as they look -->
+			<Panel IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}">
+			  <TextBox Classes="code" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" IsVisible="{Binding IsGrid}"
+					   AutomationProperties.Name="Results as text"
+					   ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+					   Text="{Binding Converter={x:Static converters:ResultTextConverter.Instance}}" />
+			</Panel>
 			<ContentControl Content="{Binding Plan}" IsVisible="{Binding !IsGrid}">
 			  <ContentControl.ContentTemplate>
 				<DataTemplate x:DataType="vm:PlanViewModel">

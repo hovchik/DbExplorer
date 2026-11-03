@@ -198,6 +198,7 @@ namespace DbExplorer.UiRender
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
             await Step("inline", RenderInlineResultsAsync);
+            await Step("datasearch", RenderDataSearchAsync);
             await Step("updates", RenderUpdatesAsync);
             await Step("charts", RenderChartsAsync);
             await Step("backup", RenderBackupAsync);
@@ -624,6 +625,54 @@ namespace DbExplorer.UiRender
 
         /// <summary>Results under their statements in the editor: a script of quick checks run once, then one statement
         /// run again, at both window sizes.</summary>
+        private async Task RenderDataSearchAsync()
+        {
+            var ds = _vm.DataSearch;
+            _vm.SelectedTab = AppTab.SearchData;
+            await Settle();
+            await Shot(_window, "datasearch-empty");
+
+            // "12" is in names, emails, SKUs and notes; the size limit skips order_items so the skipped badge shows.
+            ds.Term = "12";
+            ds.MaxTableRows = 100;
+            await ds.StartCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning && ds.Matches.Count > 0, "data search", 60_000);
+            ds.SelectedMatch = ds.Matches.First(m => m.Match.Table == "customers" && m.Column == "email");
+            await WaitFor(() => !ds.IsRecordLoading && ds.RecordFields.Count > 0, "found row");
+            await Settle(8);
+            await Shot(_window, "datasearch-results");
+
+            ds.SelectedTable = ds.Tables.First(t => t.Table == "products");
+            await WaitFor(() => !ds.IsRecordLoading && ds.RecordFields.Count > 0, "found row (products)");
+            await Settle(8);
+            await Shot(_window, "datasearch-table");
+
+            ds.DetailTabIndex = 1;
+            await Settle(4);
+            await Shot(_window, "datasearch-skipped");
+            await ds.RetrySkippedCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning, "retry skipped", 60_000);
+            ds.DetailTabIndex = 0;
+            ds.SelectedTable = ds.Tables[0];
+            await WaitFor(() => !ds.IsRecordLoading, "found row (all)");
+            await Settle(8);
+            await Shot(_window, "datasearch-retried");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(8);
+            await Shot(_window, "small-datasearch");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            ds.MaxTableRows = null;
+            ds.Term = "no such value anywhere";
+            await ds.StartCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning, "data search (nothing)", 60_000);
+            await Settle(8);
+            await Shot(_window, "datasearch-nomatch");
+        }
+
         private async Task RenderInlineResultsAsync()
         {
             _vm.SelectedTab = AppTab.Query;

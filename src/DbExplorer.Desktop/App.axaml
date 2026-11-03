@@ -29,6 +29,8 @@
           <SolidColorBrush x:Key="AppGridHeaderBrush">#0D000000</SolidColorBrush>
           <!-- An edited, not yet committed value in a result grid -->
           <SolidColorBrush x:Key="AppCellEditedBrush">#40F5A623</SolidColorBrush>
+          <!-- Search data: the matched part of a found value -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#73FFD54F</SolidColorBrush>
           <!-- A row added in a result grid, and one marked for deletion, not committed yet -->
           <SolidColorBrush x:Key="AppCellNewBrush">#332E7D32</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellDeletedBrush">#33D13438</SolidColorBrush>
@@ -60,8 +62,6 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FF9AA0A6</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFC62828</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#1AC62828</SolidColorBrush>
-          <!-- Behind what a search found (Search names & code results) -->
-          <SolidColorBrush x:Key="AppSearchHitBrush">#66F2C03C</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush">#22808080</SolidColorBrush>
@@ -83,6 +83,8 @@
           <SolidColorBrush x:Key="AppGridAltRowBrush">#08FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#12FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellEditedBrush">#4DB8860B</SolidColorBrush>
+          <!-- Search data: the matched part of a found value -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#80A07800</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellNewBrush">#407BC67E</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellDeletedBrush">#40F1707A</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectTableBrush">#FFF5A55A</SolidColorBrush>
@@ -110,8 +112,6 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FF80868B</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFF27878</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#26F27878</SolidColorBrush>
-          <!-- Behind what a search found (Search names & code results) -->
-          <SolidColorBrush x:Key="AppSearchHitBrush">#59C99A1E</SolidColorBrush>
         </ResourceDictionary>
         <!-- High contrast (Preferences, or Windows' contrast themes with the System theme): black, white and bright
              colours, yellow accent with black text. Keys not listed here fall back to Dark. -->
@@ -134,6 +134,8 @@
           <SolidColorBrush x:Key="AppGridAltRowBrush">#1FFFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppGridHeaderBrush">#33FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellEditedBrush">#80705A00</SolidColorBrush>
+          <!-- Search data: the matched part of a found value -->
+          <SolidColorBrush x:Key="AppSearchHitBrush">#FF5A4A00</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellNewBrush">#80005A00</SolidColorBrush>
           <SolidColorBrush x:Key="AppCellDeletedBrush">#80800000</SolidColorBrush>
           <SolidColorBrush x:Key="AppObjectTableBrush">#FFFFA040</SolidColorBrush>
@@ -161,8 +163,6 @@
           <SolidColorBrush x:Key="AppStatusIdleBrush">#FFC8C8C8</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerBrush">#FFFF6E6E</SolidColorBrush>
           <SolidColorBrush x:Key="AppDangerHoverBrush">#40FF6E6E</SolidColorBrush>
-          <!-- Behind what a search found (Search names & code results) -->
-          <SolidColorBrush x:Key="AppSearchHitBrush">#FF1A5FB4</SolidColorBrush>
           <SolidColorBrush x:Key="AppAccentForegroundBrush">#FF000000</SolidColorBrush>
           <SolidColorBrush x:Key="AccentButtonBackground">#FFFFD700</SolidColorBrush>
           <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver">#FFFFE34D</SolidColorBrush>

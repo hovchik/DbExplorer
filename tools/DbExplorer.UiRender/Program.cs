@@ -17,6 +17,7 @@ using DbExplorer.Application.Updates;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop;
+using DbExplorer.Desktop.Controls;
 using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
@@ -756,6 +757,23 @@ namespace DbExplorer.UiRender
             _vm.SelectedTab = AppTab.SearchData;
             await Settle();
             await Shot(_window, "datasearch-empty");
+
+            // The scope pickers: the connection's schemas, then its tables with two ticked.
+            var view = _window.GetVisualDescendants().OfType<DataSearchView>().First();
+            Button PickerButton(string name) => (Button)view.FindControl<MultiNamePicker>(name)!.Content!;
+            PickerButton("SchemaPicker").Flyout!.ShowAt(PickerButton("SchemaPicker"));
+            await Settle(6);
+            await Shot(_window, "datasearch-schemas");
+            PickerButton("SchemaPicker").Flyout!.Hide();
+            ds.TableChoices.First(c => c.Table == "customers").IsSelected = true;
+            ds.TableChoices.First(c => c.Table == "products").IsSelected = true;
+            PickerButton("TablePicker").Flyout!.ShowAt(PickerButton("TablePicker"));
+            await Settle(6);
+            await Shot(_window, "datasearch-tables");
+            PickerButton("TablePicker").Flyout!.Hide();
+            await Settle(4);
+            await Shot(_window, "datasearch-scope");
+            ds.ResetScopeCommand.Execute(null);
 
             // "12" is in names, emails, SKUs and notes; the size limit skips order_items so the skipped badge shows.
             ds.Term = "12";

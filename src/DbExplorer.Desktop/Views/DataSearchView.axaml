@@ -4,6 +4,16 @@
              xmlns:conv="using:DbExplorer.Desktop.Converters"
              x:Class="DbExplorer.Desktop.Views.DataSearchView">
   <UserControl.Styles>
+    <Style Selector="Button">
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <!-- The scope pickers look like the inputs next to them, not like buttons -->
+    <Style Selector="controls|MultiNamePicker > Button">
+      <Setter Property="Background" Value="{DynamicResource TextControlBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
     <Style Selector="TextBlock.caption">
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
@@ -93,10 +103,10 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
       <Panel Grid.Column="2" Margin="8,0,0,0">
-        <Button Content="Search" Classes="accent" MinHeight="34" MinWidth="96" HorizontalContentAlignment="Center"
+        <Button Content="Search" Classes="accent" Height="34" MinWidth="96" Padding="16,0" HorizontalContentAlignment="Center"
                 Command="{Binding StartCommand}" IsVisible="{Binding !IsRunning}"
                 ToolTip.Tip="Search every table (Enter)" />
-        <Button Content="Stop" MinHeight="34" MinWidth="96" HorizontalContentAlignment="Center"
+        <Button Content="Stop" Height="34" MinWidth="96" Padding="16,0" HorizontalContentAlignment="Center"
                 Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}"
                 ToolTip.Tip="Stop searching and keep what was found (Esc)" />
       </Panel>
@@ -105,12 +115,14 @@
     <!-- 2. Where to look, and the safety limits -->
     <WrapPanel Grid.Row="1" Classes="toolbar" Margin="0,0,0,4">
       <TextBlock Classes="caption" Text="Look in" Margin="0,0,8,4" />
-      <TextBox Width="150" Text="{Binding Schemas}" Watermark="all schemas"
-               ToolTip.Tip="Schemas to search, comma-separated. Empty searches every schema."
-               AutomationProperties.Name="Schemas to search" />
-      <TextBox Width="160" Text="{Binding TableFilter}" Watermark="any table name"
-               ToolTip.Tip="Only tables whose name contains this text. Empty searches every table."
-               AutomationProperties.Name="Table name contains" />
+      <controls:MultiNamePicker x:Name="SchemaPicker" Width="170" ItemsSource="{Binding SchemaChoices}" Summary="{Binding SchemaSummary}"
+                                AllText="All schemas" Caption="Schemas" Watermark="Type to filter schemas…"
+                                EmptyText="This connection has no schemas to pick."
+                                ToolTip.Tip="Schemas to search: tick one or more. All schemas when none is ticked." />
+      <controls:MultiNamePicker x:Name="TablePicker" Width="190" ItemsSource="{Binding TableChoices}" Summary="{Binding TableSummary}"
+                                AllText="All tables" Caption="Tables" Watermark="Type to filter tables…"
+                                EmptyText="No tables in the chosen schemas."
+                                ToolTip.Tip="Tables to search, from the chosen schemas: tick one or more. All of them when none is ticked." />
       <CheckBox Content="Views" IsChecked="{Binding IncludeViews}" Margin="2,0,10,4"
                 ToolTip.Tip="Search views and materialized views too (slower: they run their query)" />
       <CheckBox Content="Number columns" IsChecked="{Binding IncludeNumeric}" Margin="0,0,10,4"
@@ -120,8 +132,8 @@
       <Button Content="Reset" Classes="link" Command="{Binding ResetScopeCommand}" IsVisible="{Binding ScopeChanged}"
               ToolTip.Tip="Search every schema and table again, tables only, all column kinds" />
       <Border Width="1" Height="18" Margin="4,0,12,4" Background="{DynamicResource AppBorderBrush}" />
-      <Button Classes="compact" ToolTip.Tip="Rows per table, parallel queries, timeouts and the table size limit"
-              AutomationProperties.Name="Limits">
+      <Button ToolTip.Tip="Rows per table, parallel queries, timeouts and the table size limit"
+              Padding="10,0" AutomationProperties.Name="Limits">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" Width="13" Height="13" />
           <TextBlock Text="Limits" />

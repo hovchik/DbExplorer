@@ -22,6 +22,9 @@ public partial class DataSearchView : UserControl
             if ((e.Source as Visual)?.FindAncestorOfType<DataGridRow>(includeSelf: true) is null) return;
             OpenRecord();
         };
+        // The metadata may have been refreshed since the lists were filled.
+        SchemaPicker.Opening += () => (DataContext as DataSearchViewModel)?.RefreshScopeChoices();
+        TablePicker.Opening += () => (DataContext as DataSearchViewModel)?.RefreshScopeChoices();
         // Picking a recent term runs it; close the list so the results are in view.
         RecentList.SelectionChanged += (_, _) =>
         {

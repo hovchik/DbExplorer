@@ -141,6 +141,7 @@
 			  <StackPanel>
 				<TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
 				<TextBlock Classes="hint" Text="{Binding FileToolTip}" IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}" />
+				<TextBlock Classes="hint" Text="{Binding ConnectionSummary}" />
 				<TextBlock Classes="hint" Text="Drag to move · middle-click to close" Margin="0,4,0,0" />
 			  </StackPanel>
 			</ToolTip.Tip>
@@ -163,6 +164,10 @@
 				<MenuItem Header="Reopen closed tab" services:Keymap.Command="tabs.reopen" Command="{Binding $parent[TabControl].DataContext.ReopenClosedTabCommand}" />
 			  </ContextMenu>
 			</StackPanel.ContextMenu>
+			<!-- Which connection the tab runs on, once tabs are on more than one: the colour the connection has in the
+				 tab's connection picker and in the navigator (grey while it is closed) -->
+			<Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{Binding ConnectionMark}"
+					 IsVisible="{Binding ShowConnectionMark}" />
 			<TextBlock Classes="title" Text="{Binding Header}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
 			<Button Classes="close" ToolTip.Tip="Close (Ctrl+W)"
 					Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}" CommandParameter="{Binding}">

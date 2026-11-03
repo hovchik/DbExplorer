@@ -159,6 +159,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("multi", RenderMultipleConnectionsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -764,6 +765,8 @@ namespace DbExplorer.UiRender
         {
             _vm.SelectedTab = AppTab.Objects;
             await Settle();
+            // Earlier steps leave tables on the Query builder canvas; Disconnect would ask about them and wait forever here.
+            if (_vm.QueryBuilder.ClearCommand.CanExecute(null)) _vm.QueryBuilder.ClearCommand.Execute(null);
             await _vm.DisconnectCommand.ExecuteAsync(null);
             await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
             await WaitFor(() => _vm.Query.SelectedDocument?.CompletionInfo.StartsWith("Offline", StringComparison.Ordinal) == true, "offline catalog");
@@ -1347,6 +1350,74 @@ namespace DbExplorer.UiRender
             await Settle(6);
             await Shot(window, "small-import-new");
             window.Close();
+            await Settle();
+        }
+
+        /// <summary>Two connections open at once: the shop and its older copy, a Query tab on each, the toolbar and the
+        /// navigator showing both, switching the active one, and a tab left waiting when its connection closes.</summary>
+        private async Task RenderMultipleConnectionsAsync()
+        {
+            var shop = _vm.Session!;
+            var archive = Profile("Shop archive", SqlDialect.PostgresKey, [.. pg[..4], "uirender_shop_old"], ConnectionEnvironment.Staging, "Local");
+            _vm.Profiles.Add(archive);
+            _vm.ShowNavigator = true;
+            _vm.SelectedTab = AppTab.Query;
+            var query = _vm.Query;
+            var before = query.Documents.ToList();
+            query.OpenInNewTab("SELECT id, customer_id, status, ordered_at\nFROM orders\nORDER BY id DESC\nLIMIT 20;", "Orders today");
+            var onShop = query.SelectedDocument!;
+
+            await _vm.ConnectProfileAsync(archive);
+            await WaitFor(() => _vm.OpenConnections.Count == 2 && !_vm.IsBusy, "second connection", 60_000);
+            Console.WriteLine($"  open: {string.Join(", ", _vm.OpenConnections.All.Select(o => o.Profile.Name))}; active {_vm.Session?.Profile.Name}");
+            if (!ReferenceEquals(onShop.AttachedSession, shop)) _failures.Add("multi: the Shop tab moved to the archive");
+
+            query.OpenInNewTab("SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = 'public'\nORDER BY table_name;", "Archive tables");
+            var onArchive = query.SelectedDocument!;
+            await onArchive.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !onArchive.IsRunning && onArchive.ResultSets.Count > 0, "archive results");
+            await onShop.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !onShop.IsRunning && onShop.ResultSets.Count > 0, "shop results");
+            Console.WriteLine($"  archive tab: {onArchive.AttachedSession?.Profile.Name} {onArchive.Status}; shop tab: {onShop.AttachedSession?.Profile.Name} {onShop.Status}");
+            await Settle(6);
+            await Shot(_window, "multi-query");
+
+            var picker = _window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Name == "ConnectionPicker" && c.IsEffectivelyVisible);
+            picker.IsDropDownOpen = true;
+            await Settle(6);
+            await Shot(_window, "multi-tab-picker");
+            picker.IsDropDownOpen = false;
+            await Settle();
+
+            var main = _window.GetVisualDescendants().OfType<ComboBox>().First(c => c.Classes.Contains("bare"));
+            main.IsDropDownOpen = true;
+            await Settle(6);
+            await Shot(_window, "multi-toolbar-picker");
+            main.IsDropDownOpen = false;
+            await Settle();
+
+            // Picking the shop in the toolbar makes it active again: the Objects tab shows it, the archive tab stays.
+            _vm.SelectedProfile = _vm.Profiles.First(p => p.Id == shop.Profile.Id);
+            await WaitFor(() => ReferenceEquals(_vm.Session, shop), "activate shop");
+            _vm.SelectedTab = AppTab.Objects;
+            await Settle(8);
+            await Shot(_window, "multi-objects");
+            if (!ReferenceEquals(onArchive.AttachedSession?.Profile.Id, archive.Id) && onArchive.AttachedSession?.Profile.Id != archive.Id)
+                _failures.Add("multi: the archive tab left its connection");
+
+            // Closing the archive: its tab waits with Connect, or runs on the shop instead.
+            await _vm.CloseConnectionAsync(_vm.OpenConnections.Find(archive.Id)!);
+            _vm.SelectedTab = AppTab.Query;
+            query.SelectedDocument = onArchive;
+            await Settle(8);
+            await Shot(_window, "multi-closed-tab");
+
+            foreach (var doc in query.Documents.Except(before).ToList())
+            {
+                doc.SetText("", markClean: true);
+                await query.CloseTabCommand.ExecuteAsync(doc);
+            }
+            _vm.Profiles.Remove(archive);
             await Settle();
         }
 

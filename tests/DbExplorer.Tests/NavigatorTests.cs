@@ -229,8 +229,8 @@ public class NavigatorTests
         vm.Attach(session);
         var objectActions = new List<(NavigatorObjectAction, DbObject)>();
         var scripts = new List<(string Sql, string? Database, string? Title)>();
-        vm.ObjectActionRequested += (action, obj) => objectActions.Add((action, obj));
-        vm.OpenSqlRequested += (sql, database, title) => scripts.Add((sql, database, title));
+        vm.ObjectActionRequested += (action, obj, _) => objectActions.Add((action, obj));
+        vm.OpenSqlRequested += (sql, database, title, _) => scripts.Add((sql, database, title));
 
         await vm.RevealAsync(Obj("Orders"));
         var orders = vm.SelectedNode!;
@@ -326,7 +326,7 @@ public class NavigatorTests
                 [Col("Orders", "AuditId", 1, pk: true, database: "Audit"), Col("Orders", "OrderId", 1, pk: true)]));
         var vm = new NavigatorViewModel(null!) { Profiles = [session.Profile] };
         string? sql = null;
-        vm.OpenSqlRequested += (text, _, _) => sql = text;
+        vm.OpenSqlRequested += (text, _, _, _) => sql = text;
         vm.Attach(session);
 
         await vm.RevealAsync(Obj("Orders"));
@@ -344,8 +344,8 @@ public class NavigatorTests
         var opened = new List<DbObject>();
         var scripts = new List<string?>();
         var hidden = false;
-        vm.ObjectActionRequested += (_, obj) => opened.Add(obj);
-        vm.OpenSqlRequested += (_, database, _) => scripts.Add(database);
+        vm.ObjectActionRequested += (_, obj, _) => opened.Add(obj);
+        vm.OpenSqlRequested += (_, database, _, _) => scripts.Add(database);
         vm.HideRequested += () => hidden = true;
 
         await vm.RevealAsync(Obj("Orders"));
@@ -370,7 +370,7 @@ public class NavigatorTests
         Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Object, "t", "k")));
         Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Detail, "c", "k")));
         Assert.True(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Connection, "saved", "k")));
-        Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Connection, "connected", "k") { IsEmphasized = true }));
+        Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Connection, "connected", "k") { Session = Connected().Session }));
         Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.Folder, "Tables", "k")));
         Assert.False(NavigatorViewModel.OpensOnDoubleClick(new NavigatorNode(NavigatorNodeKind.DetailFolder, "Columns", "k")));
     }

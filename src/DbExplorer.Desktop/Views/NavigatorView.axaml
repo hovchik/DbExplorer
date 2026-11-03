@@ -77,13 +77,16 @@
               KeyDown="OnTreeKeyDown" ContextRequested="OnTreeContextRequested">
       <TreeView.ItemTemplate>
         <TreeDataTemplate DataType="vm:NavigatorNode" ItemsSource="{Binding Children}">
-          <Grid ColumnDefinitions="Auto,Auto,*" Background="Transparent" ToolTip.Tip="{Binding ToolTip}">
+          <Grid ColumnDefinitions="Auto,Auto,Auto,*" Background="Transparent" ToolTip.Tip="{Binding ToolTip}">
             <controls:TintedIcon Grid.Column="0" Data="{Binding Icon}" ColorKey="{Binding ColorKey}" Width="16" Height="16"
                                  VerticalAlignment="Center" Margin="0,0,7,0" />
             <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        FontWeight="{Binding IsEmphasized, Converter={x:Static controls:NavigatorConverters.Weight}}"
                        Opacity="{Binding IsDimmed, Converter={x:Static controls:NavigatorConverters.Dim}}" />
-            <TextBlock Grid.Column="2" Classes="detail" Text="{Binding Detail}"
+            <!-- Several connections open: the colour this connection's Query tabs are marked with -->
+            <Ellipse Grid.Column="2" Width="7" Height="7" Margin="6,0,0,0" VerticalAlignment="Center" Fill="{Binding MarkBrush}"
+                     IsVisible="{Binding MarkBrush, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Grid.Column="3" Classes="detail" Text="{Binding Detail}"
                        IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </Grid>
         </TreeDataTemplate>
@@ -91,16 +94,16 @@
       <TreeView.ContextMenu>
         <ContextMenu>
           <!-- Saved connections -->
-          <MenuItem Header="Connect" Command="{Binding ConnectCommand}" IsVisible="{Binding SelectedIsOtherConnection}"
-                    IsEnabled="{Binding !IsConnected}" />
-          <MenuItem Header="Switch to this connection" Command="{Binding SwitchConnectionCommand}"
-                    IsVisible="{Binding SelectedIsOtherConnection}" IsEnabled="{Binding IsConnected}"
-                    ToolTip.Tip="Disconnect the current connection and connect to this one" />
-          <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding SelectedIsActiveConnection}" />
+          <MenuItem Header="Connect" Command="{Binding ConnectCommand}" IsVisible="{Binding SelectedIsClosedConnection}"
+                    ToolTip.Tip="Open this connection next to the ones already open; the Objects, Diagram and other tabs move to it" />
+          <MenuItem Header="Make active" Command="{Binding ActivateConnectionCommand}" IsVisible="{Binding SelectedIsOpenInactiveConnection}"
+                    ToolTip.Tip="Show this open connection in the Objects, Diagram and other tabs. Query tabs keep their own connections." />
+          <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding SelectedIsOpenConnection}"
+                    ToolTip.Tip="Close this connection; the other open ones stay open" />
           <MenuItem Header="Edit connection…" Command="{Binding EditConnectionCommand}" IsVisible="{Binding SelectedIsConnection}" />
           <MenuItem Header="Duplicate connection…" Command="{Binding DuplicateConnectionCommand}" IsVisible="{Binding SelectedIsConnection}"
                     ToolTip.Tip="A copy of this connection under a new name, opened for editing" />
-          <MenuItem Header="Delete connection…" Command="{Binding DeleteConnectionCommand}" IsVisible="{Binding SelectedIsOtherConnection}" />
+          <MenuItem Header="Delete connection…" Command="{Binding DeleteConnectionCommand}" IsVisible="{Binding SelectedIsClosedConnection}" />
           <MenuItem Header="Copy connection string" IsVisible="{Binding SelectedIsConnection}"
                     ToolTip.Tip="These settings for other tools, without the password">
             <MenuItem Header="As key=value pairs" Command="{Binding CopyConnectionStringCommand}" CommandParameter="keyvalue" />

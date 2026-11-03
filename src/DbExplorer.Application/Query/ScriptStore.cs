@@ -45,6 +45,10 @@ public sealed class QueryTabState
     public DateTime? FileWriteUtc { get; set; }
 
     public long? FileLength { get; set; }
+
+    /// <summary>The saved connection the tab is bound to (it runs there whichever connection is active); null for a
+    /// tab not bound yet and in files written before several connections could be open at once.</summary>
+    public Guid? ConnectionId { get; set; }
 }
 
 /// <summary>

@@ -25,6 +25,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly AssistantSettings _assistantSettings;
     private readonly ISessionAware[] _tabs;
     private readonly WorkspaceStore _workspace;
+    private readonly OpenConnections _open;
 
     public MainWindowViewModel(
         ConnectionStore store,
@@ -48,8 +49,11 @@ public partial class MainWindowViewModel : ViewModelBase
         SecurityViewModel security,
         NavigatorViewModel navigator,
         WorkspaceStore workspace,
-        AssistantSettings assistantSettings)
+        AssistantSettings assistantSettings,
+        OpenConnections open)
     {
+        _open = open;
+        _open.Changed += (_, _) => OnOpenConnectionsChanged();
         _assistantSettings = assistantSettings;
         _workspace = workspace;
         SavedWorkspace = workspace.Load();
@@ -74,6 +78,8 @@ public partial class MainWindowViewModel : ViewModelBase
         QueryBuilder = queryBuilder;
         Query = query;
         Query.ConnectCommand = ConnectCommand;
+        Query.Profiles = Profiles;
+        Query.ConnectProfileRequested += profile => ConnectProfileAsync(profile);
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
@@ -155,15 +161,16 @@ public partial class MainWindowViewModel : ViewModelBase
         };
 
         navigator.Profiles = Profiles;
-        navigator.OpenSqlRequested += (sql, database, title) =>
+        navigator.OpenSqlRequested += (sql, database, title, profile) =>
         {
             SelectedTab = AppTab.Query;
             // No database means the connection's default here, never the database of whichever tab is selected.
-            query.OpenInNewTab(sql, title, database, connectionDefault: true);
+            // The tab runs on the connection the row belongs to, whichever one is active.
+            query.OpenInNewTab(sql, title, database, connectionDefault: true, connection: profile?.Id);
         };
         navigator.HideRequested += () => ShowNavigator = false;
-        navigator.ObjectActionRequested += OnNavigatorObjectAction;
-        navigator.DocumentationRequested += (database, schema) => _ = ExportDocumentationAsync(database, schema);
+        navigator.ObjectActionRequested += (action, obj, session) => _ = OnNavigatorObjectActionAsync(action, obj, session);
+        navigator.DocumentationRequested += (database, schema, session) => _ = ExportDocumentationFromNavigatorAsync(database, schema, session);
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
 
@@ -187,7 +194,20 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ToggleNavigator() => ShowNavigator = !ShowNavigator;
 
     /// <summary>Runs a navigator action through the Objects tab, which already knows how to open, modify or drop
-    /// the object; actions whose outcome is shown in the Objects tab switch to it.</summary>
+    /// the object; actions whose outcome is shown in the Objects tab switch to it. An object of another open
+    /// connection makes that connection active first (the Objects tab shows the active one).</summary>
+    private async Task OnNavigatorObjectActionAsync(NavigatorObjectAction action, DbObject obj, DatabaseSession? session)
+    {
+        if (session is not null && !ReferenceEquals(session, Session) && !await ActivateAsync(session)) return;
+        OnNavigatorObjectAction(action, obj);
+    }
+
+    private async Task ExportDocumentationFromNavigatorAsync(string? database, string? schema, DatabaseSession? session)
+    {
+        if (session is not null && !ReferenceEquals(session, Session) && !await ActivateAsync(session)) return;
+        await ExportDocumentationAsync(database, schema);
+    }
+
     private void OnNavigatorObjectAction(NavigatorObjectAction action, DbObject obj)
     {
         Objects.Reveal(obj);
@@ -241,19 +261,14 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         switch (action)
         {
-            case NavigatorConnectionAction.Connect when !IsConnected && !IsBusy:
-                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
-                if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+            case NavigatorConnectionAction.Connect when !IsBusy:
+                await ConnectProfileAsync(Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? profile);
                 break;
-            case NavigatorConnectionAction.Switch when IsConnected && !IsBusy && Session?.Profile.Id != profile.Id:
-                if (!await ConfirmLeaveAsync(LeaveReason.Switch)) return;
-                await DisconnectCoreAsync();
-                if (IsConnected) return;
-                SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id) ?? SelectedProfile;
-                if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+            case NavigatorConnectionAction.Activate when !IsBusy && _open.Find(profile.Id) is { } open:
+                await ActivateAsync(open);
                 break;
-            case NavigatorConnectionAction.Disconnect:
-                if (DisconnectCommand.CanExecute(null)) await DisconnectCommand.ExecuteAsync(null);
+            case NavigatorConnectionAction.Disconnect when !IsBusy && _open.Find(profile.Id) is { } open:
+                await CloseConnectionAsync(open);
                 break;
             case NavigatorConnectionAction.Edit when !IsBusy:
                 await EditProfileAsync(profile);
@@ -264,8 +279,8 @@ public partial class MainWindowViewModel : ViewModelBase
             case NavigatorConnectionAction.Delete when !IsBusy:
                 await DeleteProfileAsync(profile);
                 break;
-            case NavigatorConnectionAction.RefreshMetadata:
-                if (RefreshMetadataCommand.CanExecute(null)) await RefreshMetadataCommand.ExecuteAsync(null);
+            case NavigatorConnectionAction.RefreshMetadata when !IsBusy && _open.Find(profile.Id) is { } open:
+                await RefreshSessionAsync(open);
                 break;
         }
     }
@@ -329,6 +344,123 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool IsConnected => Session is not null;
 
+    // ----- Several connections: all open ones, of which the active one (Session) is shown by the main tabs -----
+
+    /// <summary>The open connections; <see cref="Session"/> is the active one among them.</summary>
+    public OpenConnections OpenConnections => _open;
+
+    /// <summary>How many connections are open (the badge next to the toolbar picker shows it from two on).</summary>
+    public int OpenCount => _open.Count;
+
+    public bool ShowOpenCount => _open.Count > 1;
+
+    public string OpenCountTip => _open.Count < 2 ? "" :
+        $"{_open.Count} connections are open: {string.Join(", ", _open.All.Select(s => s.Profile.DisplayName))}. " +
+        $"The tabs other than Query show {Session?.Profile.DisplayName}; pick another open one here or in the navigator to show it. " +
+        "Each Query tab runs on its own connection (the picker in its toolbar).";
+
+    /// <summary>Whether the connection picked in the toolbar is open (it is then the active one): the status dot and
+    /// Connect / Disconnect follow it.</summary>
+    public bool SelectedIsOpen => SelectedProfile is { } p && _open.IsOpen(p.Id);
+
+    /// <summary>The colour mark of each open connection while several are open (the toolbar picker's dots); empty
+    /// otherwise.</summary>
+    public IReadOnlyDictionary<Guid, Avalonia.Media.IBrush> OpenMarks =>
+        _open.Count < 2 ? new Dictionary<Guid, Avalonia.Media.IBrush>() : _open.All.Select((s, i) => (s.Profile.Id, Brush: ConnectionMarks.Brush(i))).ToDictionary(x => x.Id, x => x.Brush);
+
+    private void OnOpenConnectionsChanged()
+    {
+        OnPropertyChanged(nameof(OpenMarks));
+        OnPropertyChanged(nameof(OpenCount));
+        OnPropertyChanged(nameof(ShowOpenCount));
+        OnPropertyChanged(nameof(OpenCountTip));
+        OnPropertyChanged(nameof(SelectedIsOpen));
+        RefreshCommands();
+    }
+
+    /// <summary>Set while the picker is moved to the active connection by code, so it does not try to activate it again.</summary>
+    private bool _syncingPicker;
+
+    private void ShowActiveInPicker()
+    {
+        if (OpenProfile() is not { } active || ReferenceEquals(SelectedProfile, active)) return;
+        _syncingPicker = true;
+        try { SelectedProfile = active; }
+        finally { _syncingPicker = false; }
+    }
+
+    /// <summary>
+    /// Makes an open connection the one the main tabs show. They start over on it (as after a reconnect), so what
+    /// they would lose is listed first; Query tabs are not affected, as each keeps its own connection.
+    /// </summary>
+    /// <returns>False when the user stayed on the current connection.</returns>
+    public async Task<bool> ActivateAsync(DatabaseSession session)
+    {
+        if (ReferenceEquals(session, Session)) return true;
+        if (IsBusy || !_open.All.Contains(session)) return false;
+        if (!await ConfirmSwitchAsync()) return false;
+        _open.Activate(session);
+        Session = session;
+        ShowActiveInPicker();
+        StatusText = BuildStatus(session);
+        return true;
+    }
+
+    /// <summary>The main tabs are about to move to another connection: say what they lose (not Query tabs).</summary>
+    private async Task<bool> ConfirmSwitchAsync()
+    {
+        if (Session is not { } current) return true;
+        var lines = UnsavedWork.Describe(MainTabsWork(), LeaveReason.Switch);
+        return lines.Count == 0 ||
+               await _dialogs.ConfirmAsync(UnsavedWork.Message(LeaveReason.Switch, current.Profile.DisplayName, lines),
+                   UnsavedWork.ConfirmText(LeaveReason.Switch));
+    }
+
+    /// <summary>What the main tabs (not the Query tabs) hold on the active connection.</summary>
+    private UnsavedWorkState MainTabsWork() => new()
+    {
+        SecurityPending = Security.Pending.Count,
+        TableDesign = TableDesigner.UnsavedDesign,
+        QueryBuilderTables = QueryBuilder.Tables.Count
+    };
+
+    /// <summary>Closes one open connection after saying what it loses. When it was the active one, the connection used
+    /// before it becomes active; Query tabs on it stay open and show "Connect to …".</summary>
+    public async Task<bool> CloseConnectionAsync(DatabaseSession session)
+    {
+        if (!await ConfirmCloseAsync(session)) return false;
+        await CloseCoreAsync(session);
+        return true;
+    }
+
+    private async Task<bool> ConfirmCloseAsync(DatabaseSession session)
+    {
+        var lines = DescribeUnsavedWork(LeaveReason.Disconnect, session);
+        return lines.Count == 0 ||
+               await _dialogs.ConfirmAsync(UnsavedWork.Message(LeaveReason.Disconnect, session.Profile.DisplayName, lines),
+                   UnsavedWork.ConfirmText(LeaveReason.Disconnect));
+    }
+
+    private async Task CloseCoreAsync(DatabaseSession session)
+    {
+        if (!_open.All.Contains(session) && !ReferenceEquals(session, Session)) return;
+        var wasActive = ReferenceEquals(session, Session);
+        // The main tabs move first, while the closing connection is still registered, so the Query tabs bound to it
+        // detach once (when it is removed) and never take the next connection by mistake.
+        if (wasActive)
+        {
+            var next = _open.SuccessorOf(session);
+            if (next is not null) _open.Activate(next);
+            Session = next;
+        }
+        _open.Remove(session);
+        await session.DisposeAsync();
+        ShowActiveInPicker();
+        StatusText = Session is { } now
+            ? $"Disconnected {session.Profile.DisplayName} · " + BuildStatus(now)
+            : "Disconnected";
+    }
+
     public ConnectionEnvironment ConnectedEnvironment => Session?.Profile.Environment ?? ConnectionEnvironment.None;
 
     public bool ShowEnvironmentBanner => ConnectedEnvironment != ConnectionEnvironment.None;
@@ -374,7 +506,14 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         if (note is not null) StatusText = note;
-        if (action == StartupConnectionAction.Connect && ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+        if (action == StartupConnectionAction.Connect)
+        {
+            // The other connections that were open too come first, so the one that was active is active again.
+            var main = SelectedProfile;
+            foreach (var other in StartupConnection.Others(SavedWorkspace, Profiles, _settings.ReconnectOnStart))
+                await ConnectProfileAsync(other, confirmSwitch: false, activate: false);
+            if (main is not null) await ConnectProfileAsync(main, confirmSwitch: false);
+        }
         // Nothing connected (not asked to, or the connect failed): open on the Query tab rather than a disabled one.
         ShowQueryWhileOffline();
     }
@@ -459,7 +598,10 @@ public partial class MainWindowViewModel : ViewModelBase
         MainTab = TabToRemember().ToString(),
         QueryTabIndex = Query.SelectedDocument is { } doc && Query.Documents.IndexOf(doc) is >= 0 and var i ? i : null,
         ConnectionId = Session?.Profile.Id ?? SelectedProfile?.Id,
-        WasConnected = Session is not null
+        WasConnected = Session is not null,
+        OtherOpenConnectionIds = _open.All.Where(s => !ReferenceEquals(s, Session)).Select(s => s.Profile.Id).ToList() is { Count: > 0 } others
+            ? others
+            : null
     };
 
     /// <summary>Every step runs even when an earlier one fails (e.g. the server went away), so tabs are saved and
@@ -471,8 +613,11 @@ public partial class MainWindowViewModel : ViewModelBase
         await Step(() => { ErModel.FlushAutosave(); return Task.CompletedTask; });
         await Step(Query.RollbackOpenTransactionsAsync);
         foreach (var tab in _tabs) await Step(() => { tab.Attach(null); return Task.CompletedTask; });
+        await Step(() => { Query.DetachAll(); return Task.CompletedTask; });
         await Step(() => Comparer.DisposeIndependentSessionsAsync().AsTask());
-        if (Session is { } s) await Step(() => s.DisposeAsync().AsTask());
+        // Left in the list: removing them one by one would only re-attach the tabs to the ones still open.
+        foreach (var s in _open.All.Append(Session).OfType<DatabaseSession>().Distinct().ToList())
+            await Step(() => s.DisposeAsync().AsTask());
 
         static async Task Step(Func<Task> step)
         {
@@ -496,6 +641,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (value is not null) value.SnapshotChanged += OnSnapshotChanged;
         OnPropertyChanged(nameof(IsConnected));
+        OnPropertyChanged(nameof(SelectedIsOpen));
+        OnPropertyChanged(nameof(OpenCountTip));
         OnPropertyChanged(nameof(ConnectedEnvironment));
         OnPropertyChanged(nameof(ShowEnvironmentBanner));
         OnPropertyChanged(nameof(EnvironmentBanner));
@@ -510,11 +657,23 @@ public partial class MainWindowViewModel : ViewModelBase
         else ReturnFromOffline();
     }
 
-    partial void OnSelectedProfileChanged(ConnectionProfile? value)
+    partial void OnSelectedProfileChanged(ConnectionProfile? oldValue, ConnectionProfile? newValue)
     {
+        var value = newValue;
         RefreshCommands();
+        OnPropertyChanged(nameof(SelectedIsOpen));
+        // Picking another open connection in the toolbar makes it the active one (nothing reconnects).
+        if (!_syncingPicker && value is not null && _open.Find(value.Id) is { } open && !ReferenceEquals(open, Session))
+            _ = ActivateFromPickerAsync(open);
         // While offline the Query tab suggests the picked connection's keywords and saved names.
         if (!IsConnected) _ = Query.SetOfflineProfileAsync(value);
+    }
+
+    private async Task ActivateFromPickerAsync(DatabaseSession session)
+    {
+        // After the picker finished its own selection change.
+        await Task.Yield();
+        if (!await ActivateAsync(session)) ShowActiveInPicker();
     }
 
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
@@ -522,14 +681,14 @@ public partial class MainWindowViewModel : ViewModelBase
     // Saved connections can be managed while connected: only the open connection itself cannot be deleted (or picked
     // in the locked toolbar picker), and edits to it reach the open session as described in ConnectionEdits.
     private bool HasSelection => SelectedProfile is not null && !IsBusy;
-    private bool CanConnect => SelectedProfile is not null && !IsConnected && !IsBusy;
+    private bool CanConnect => SelectedProfile is { } p && !_open.IsOpen(p.Id) && !IsBusy;
     private bool CanUseSession => IsConnected && !IsBusy;
     private bool CanCreate => !IsBusy;
     private bool CanDelete => SelectedProfile is { } p && !IsBusy && !IsOpen(p);
 
-    private bool IsOpen(ConnectionProfile profile) => Session?.Profile.Id == profile.Id;
+    private bool IsOpen(ConnectionProfile profile) => _open.IsOpen(profile.Id) || Session?.Profile.Id == profile.Id;
 
-    /// <summary>The toolbar's delete button explains why it is greyed out on the open connection.</summary>
+    /// <summary>The toolbar's delete button explains why it is greyed out on an open connection.</summary>
     public string DeleteConnectionTip => SelectedProfile is { } p && IsOpen(p)
         ? "Delete connection (disconnect first: this connection is open)"
         : "Delete connection…";
@@ -544,7 +703,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles.Add(profile);
         SortProfiles(profile);
         await SaveProfilesAsync();
-        if (IsConnected) StatusText = $"Saved {profile}. It is in the navigator; disconnect to connect to it.";
+        if (IsConnected) StatusText = $"Saved {profile}. Connect opens it next to {Session!.Profile.DisplayName}.";
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
@@ -572,7 +731,7 @@ public partial class MainWindowViewModel : ViewModelBase
         SortProfiles(edited);
         await SaveProfilesAsync();
 
-        if (Session is { } session && session.Profile.Id == edited.Id) await AfterOpenConnectionEditedAsync(session, edited);
+        if (_open.Find(edited.Id) is { } session) await AfterOpenConnectionEditedAsync(session, edited);
     }
 
     /// <summary>
@@ -593,21 +752,23 @@ public partial class MainWindowViewModel : ViewModelBase
             $"{edited.DisplayName} is open with its previous server, sign-in or security settings. Reconnect now to use the " +
             "new ones? Open transactions and uncommitted grid edits are rolled back; Query tabs stay open.",
             "Reconnect");
-        if (!now || !ReferenceEquals(Session, session))
+        if (!now || !_open.All.Contains(session))
         {
             StatusText = $"Saved {edited}. The open connection keeps its previous settings until you reconnect.";
             return;
         }
 
-        await DisconnectAsync();
-        if (IsConnected) return;
-        SelectedProfile = Profiles.FirstOrDefault(p => p.Id == edited.Id) ?? SelectedProfile;
-        if (ConnectCommand.CanExecute(null)) await ConnectCommand.ExecuteAsync(null);
+        var wasActive = ReferenceEquals(session, Session);
+        if (!await CloseConnectionAsync(session)) return;
+        // Reconnected, it is active again only if it was before; otherwise the main tabs stay where they are.
+        await ConnectProfileAsync(Profiles.FirstOrDefault(p => p.Id == edited.Id) ?? edited, confirmSwitch: false, activate: wasActive);
     }
 
     /// <summary>The window title, banner and status after the open connection's name or environment changed.</summary>
     private void RefreshSessionLabels(DatabaseSession session)
     {
+        Navigator.Rebuild();
+        if (!ReferenceEquals(session, Session)) return;
         OnPropertyChanged(nameof(ConnectedEnvironment));
         OnPropertyChanged(nameof(ShowEnvironmentBanner));
         OnPropertyChanged(nameof(EnvironmentBanner));
@@ -624,7 +785,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Profiles.Add(copy);
         SortProfiles(copy);
         await SaveProfilesAsync();
-        StatusText = $"Saved {copy}" + (IsConnected ? ". It is in the navigator; disconnect to connect to it." : "");
+        StatusText = $"Saved {copy}" + (IsConnected ? $". Connect opens it next to {Session!.Profile.DisplayName}." : "");
     }
 
     private async Task DeleteProfileAsync(ConnectionProfile profile)
@@ -749,12 +910,13 @@ public partial class MainWindowViewModel : ViewModelBase
             if (result.Replaced > 0) parts.Add($"overwrote {result.Replaced}");
             if (result.Skipped > 0) parts.Add($"skipped {result.Skipped}");
             var note = "";
-            // Overwriting the open connection: apply what applies at once, and say when the rest waits for a reconnect.
-            if (Session is { } session && OpenProfile() is { } imported && !ReferenceEquals(imported, session.Profile))
+            // Overwriting an open connection: apply what applies at once, and say when the rest waits for a reconnect.
+            foreach (var session in _open.All.ToList())
             {
+                if (Profiles.FirstOrDefault(p => p.Id == session.Profile.Id) is not { } imported || ReferenceEquals(imported, session.Profile)) continue;
                 if (ConnectionEdits.ApplyToOpenSession(session.Profile, imported)) RefreshSessionLabels(session);
                 if (ConnectionEdits.NeedsReconnect(session.Profile, imported))
-                    note = $" · {imported.DisplayName} keeps its previous settings until you reconnect";
+                    note += $" · {imported.DisplayName} keeps its previous settings until you reconnect";
             }
             StatusText = $"Imported connections from {picked.Name}: {string.Join(", ", parts)}{note}";
         }
@@ -765,9 +927,25 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanConnect))]
-    private async Task ConnectAsync()
+    private Task ConnectAsync() => SelectedProfile is { } profile ? ConnectProfileAsync(profile) : Task.CompletedTask;
+
+    /// <summary>
+    /// Opens a saved connection next to the ones already open and makes it the active one (the main tabs show it;
+    /// Query tabs bound to it attach). One that is open already is just made active.
+    /// </summary>
+    /// <param name="confirmSwitch">Ask first when the main tabs would lose work by moving to it (not at start-up).</param>
+    /// <param name="activate">False: open it in the background, for its Query tabs and the navigator, and leave the
+    /// main tabs on the active connection (reconnecting an open connection that was not active, start-up).</param>
+    public async Task ConnectProfileAsync(ConnectionProfile profile, bool confirmSwitch = true, bool activate = true)
     {
-        if (SelectedProfile is not { } profile) return;
+        if (IsBusy) return;
+        if (_open.Find(profile.Id) is { } already)
+        {
+            if (activate) await ActivateAsync(already);
+            return;
+        }
+        activate |= Session is null;
+        if (activate && confirmSwitch && !await ConfirmSwitchAsync()) return;
 
         if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
         {
@@ -790,15 +968,29 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             var session = await _sessions.ConnectAsync(profile, ct, LoadProgress(ct));
-            if (ct.IsCancellationRequested)
+            if (ct.IsCancellationRequested || _open.IsOpen(profile.Id))
             {
                 await session.DisposeAsync();
                 StatusText = "Connect cancelled";
                 return;
             }
-            Session = session;
             ConnectionFailure = null;
-            StatusText = BuildStatus(Session) + (Session.Snapshot.IsStale ? " · updating metadata in the background…" : "");
+            if (activate)
+            {
+                _open.Add(session);
+                Session = session;
+                ShowActiveInPicker();
+            }
+            else if (Session is { } current)
+            {
+                _open.Add(session);
+                _open.Activate(current);
+                StatusText = $"Opened {session.Profile.DisplayName} next to {current.Profile.DisplayName}" +
+                             (_open.Count > 1 ? $" · {_open.Count} connections open" : "");
+                return;
+            }
+            StatusText = BuildStatus(session) + (session.Snapshot.IsStale ? " · updating metadata in the background…" : "") +
+                         (_open.Count > 1 ? $" · {_open.Count} connections open" : "");
         }
         catch (Exception) when (ct.IsCancellationRequested)
         {
@@ -814,36 +1006,32 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Closes the active connection (the other open ones stay open; the one used before it becomes active).</summary>
     [RelayCommand(CanExecute = nameof(CanUseSession))]
     private async Task DisconnectAsync()
     {
-        if (!await ConfirmLeaveAsync(LeaveReason.Disconnect)) return;
-        await DisconnectCoreAsync();
-    }
-
-    private async Task DisconnectCoreAsync()
-    {
-        if (Session is not { } s) return;
-        Session = null;
-        await s.DisposeAsync();
-        StatusText = "Disconnected";
+        if (Session is { } s) await CloseConnectionAsync(s);
     }
 
     // ----- Before the connection goes away: say what is rolled back or discarded, and let the user stay -----
 
-    /// <summary>What is lost if the connection goes away now for <paramref name="reason"/>; empty when nothing is.</summary>
-    public IReadOnlyList<string> DescribeUnsavedWork(LeaveReason reason)
+    /// <summary>What is lost if connections go away now for <paramref name="reason"/>; empty when nothing is. With
+    /// <paramref name="session"/>, only what that connection holds: its Query tabs, and the main tabs when it is the
+    /// active one. Without, everything open (quitting).</summary>
+    public IReadOnlyList<string> DescribeUnsavedWork(LeaveReason reason, DatabaseSession? session = null)
     {
-        if (Session is null) return [];
+        if (Session is null && _open.Count == 0) return [];
+        var mainTabs = session is null || ReferenceEquals(session, Session);
         var state = new UnsavedWorkState
         {
             QueryTabs = Query.Documents
+                .Where(d => session is null || ReferenceEquals(d.AttachedSession, session))
                 .Select(d => new QueryTabWork(d.Title, d.HasOpenTransaction, ResultEditing.HasEdits(d.ResultSets), d.IsRunning))
                 .ToList(),
-            SecurityPending = Security.Pending.Count,
-            TableDesign = TableDesigner.UnsavedDesign,
-            QueryBuilderTables = QueryBuilder.Tables.Count,
-            DataWindows = _dialogs.DataWindowsWithUncommittedEdits()
+            SecurityPending = mainTabs ? Security.Pending.Count : 0,
+            TableDesign = mainTabs ? TableDesigner.UnsavedDesign : null,
+            QueryBuilderTables = mainTabs ? QueryBuilder.Tables.Count : 0,
+            DataWindows = mainTabs ? _dialogs.DataWindowsWithUncommittedEdits() : []
         };
         return UnsavedWork.Describe(state, reason);
     }
@@ -853,8 +1041,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (reason == LeaveReason.Quit && QuitConfirmed) return true;
         var lines = DescribeUnsavedWork(reason);
-        if (lines.Count > 0 && Session is { } s &&
-            !await _dialogs.ConfirmAsync(UnsavedWork.Message(reason, s.Profile.DisplayName, lines), UnsavedWork.ConfirmText(reason)))
+        var names = string.Join(", ", _open.All.Append(Session).OfType<DatabaseSession>().Distinct().Select(s => s.Profile.DisplayName));
+        if (lines.Count > 0 && names.Length > 0 &&
+            !await _dialogs.ConfirmAsync(UnsavedWork.Message(reason, names, lines), UnsavedWork.ConfirmText(reason)))
             return false;
         if (reason == LeaveReason.Quit) QuitConfirmed = true;
         return true;
@@ -864,10 +1053,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public bool QuitConfirmed { get; private set; }
 
     [RelayCommand(CanExecute = nameof(CanUseSession))]
-    private async Task RefreshMetadataAsync()
-    {
-        if (Session is not { } s) return;
+    private Task RefreshMetadataAsync() => Session is { } s ? RefreshSessionAsync(s) : Task.CompletedTask;
 
+    /// <summary>Re-reads one open connection's catalog (the active one from the toolbar, any from the navigator).</summary>
+    private async Task RefreshSessionAsync(DatabaseSession s)
+    {
         var ct = BeginLoad();
         ShowProgress("Reading catalog…");
         try

@@ -6,7 +6,8 @@ public enum LeaveReason
     /// <summary>The Disconnect button, the navigator's Disconnect or the command palette.</summary>
     Disconnect,
 
-    /// <summary>The navigator's "Connect" on another connection while one is open.</summary>
+    /// <summary>Another connection becomes the active one (opened, or picked among the open ones): the main tabs other
+    /// than Query start over on it.</summary>
     Switch,
 
     /// <summary>The window is closing.</summary>

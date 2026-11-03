@@ -32,7 +32,8 @@ public enum NavigatorConnectionAction
 {
     Connect,
     Disconnect,
-    Switch,
+    /// <summary>Make an open connection the active one (the main tabs show it).</summary>
+    Activate,
     Edit,
     Duplicate,
     Delete,
@@ -41,24 +42,99 @@ public enum NavigatorConnectionAction
 
 /// <summary>
 /// The database navigator on the left of the main window (after DBeaver's Database Navigator): saved connections,
-/// then for the connected one its databases, schemas, object folders (Tables, Views, Functions…), objects, and
+/// then for every open one (several can be open at once; the active one is bold) its databases, schemas, object folders (Tables, Views, Functions…), objects, and
 /// under each table its columns, keys and indexes, foreign keys and the tables that reference it. Everything is read
 /// from the cached catalog when a node is opened. Double-click or Enter opens an object; the right-click menu runs the
 /// Objects tab's actions on it or opens a script in a Query tab.
 /// </summary>
-public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase, ISessionAware
+public partial class NavigatorViewModel : ViewModelBase, ISessionAware
 {
     /// <summary>Matches shown for a filter; the summary says when there are more.</summary>
     public const int MaxMatches = 500;
 
+    private readonly SessionService sessions;
+    private readonly OpenConnections? _open;
+
+    /// <param name="open">Every open connection; without it (tests) only the attached one is open.</param>
+    public NavigatorViewModel(SessionService sessions, OpenConnections? open = null)
+    {
+        this.sessions = sessions;
+        _open = open;
+        if (_open is not null) _open.Changed += (_, _) => OnOpenChanged();
+    }
+
+    /// <summary>The active connection: bold in the tree, and the one the Objects tab shows.</summary>
     private DatabaseSession? _session;
     private ObservableCollection<ConnectionProfile>? _profiles;
 
-    /// <summary>Catalogs of other databases on the server, read when the user opened them, so the filter finds
-    /// their objects too.</summary>
-    private readonly Dictionary<string, MetadataSnapshot> _otherCatalogs = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Catalogs of other databases on each open connection's server, read when the user opened them, so the
+    /// filter finds their objects too.</summary>
+    private readonly Dictionary<DatabaseSession, Dictionary<string, MetadataSnapshot>> _otherCatalogs = [];
 
-    private bool _expandConnectionOnBuild;
+    private Dictionary<string, MetadataSnapshot> OtherCatalogs(DatabaseSession session)
+    {
+        if (!_otherCatalogs.TryGetValue(session, out var catalogs))
+            _otherCatalogs[session] = catalogs = new Dictionary<string, MetadataSnapshot>(StringComparer.OrdinalIgnoreCase);
+        return catalogs;
+    }
+
+    /// <summary>Connections opened since the last rebuild: their row and their own database open on the next build.</summary>
+    private readonly HashSet<DatabaseSession> _expandOnBuild = [];
+    private readonly HashSet<DatabaseSession> _seen = [];
+    private readonly HashSet<DatabaseSession> _subscribed = [];
+
+    /// <summary>The open connections, in the order they were opened.</summary>
+    public IReadOnlyList<DatabaseSession> OpenSessions
+    {
+        get
+        {
+            if (_open is null) return _session is null ? [] : [_session];
+            return _session is not null && !_open.All.Contains(_session) ? [.. _open.All, _session] : _open.All;
+        }
+    }
+
+    private DatabaseSession? SessionFor(Guid profileId) => OpenSessions.FirstOrDefault(s => s.Profile.Id == profileId);
+
+    /// <summary>The open connection a row belongs to (from its connection row), or null for a closed one.</summary>
+    public static DatabaseSession? SessionOf(NavigatorNode? node)
+    {
+        for (var n = node; n is not null; n = n.Parent)
+            if (n.Kind == NavigatorNodeKind.Connection) return n.Session;
+        return null;
+    }
+
+    private bool IsStillOpen(DatabaseSession session) => OpenSessions.Contains(session);
+
+    private void OnOpenChanged()
+    {
+        Track();
+        OnPropertyChanged(nameof(IsConnected));
+        Rebuild();
+    }
+
+    /// <summary>Listens to the catalogs of the open connections only, and forgets what belonged to closed ones.</summary>
+    private void Track()
+    {
+        var open = OpenSessions;
+        foreach (var gone in _subscribed.Where(s => !open.Contains(s)).ToList())
+        {
+            gone.SnapshotChanged -= OnCatalogChanged;
+            gone.DatabasesChanged -= OnCatalogChanged;
+            _subscribed.Remove(gone);
+            _otherCatalogs.Remove(gone);
+            _seen.Remove(gone);
+            _expandOnBuild.Remove(gone);
+        }
+        foreach (var session in open)
+        {
+            if (_subscribed.Add(session))
+            {
+                session.SnapshotChanged += OnCatalogChanged;
+                session.DatabasesChanged += OnCatalogChanged;
+            }
+            if (_seen.Add(session)) _expandOnBuild.Add(session);
+        }
+    }
 
     public ObservableCollection<NavigatorNode> Roots { get; } = [];
 
@@ -66,27 +142,30 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [ObservableProperty] private string _filterSummary = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SelectedIsConnection), nameof(SelectedIsOtherConnection), nameof(SelectedIsActiveConnection),
+    [NotifyPropertyChangedFor(nameof(SelectedIsConnection), nameof(SelectedIsClosedConnection), nameof(SelectedIsActiveConnection),
+        nameof(SelectedIsOpenConnection), nameof(SelectedIsOpenInactiveConnection),
         nameof(SelectedIsObject), nameof(SelectedIsTableLike), nameof(SelectedIsTable), nameof(SelectedIsRoutine),
         nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument))]
     private NavigatorNode? _selectedNode;
 
     /// <summary>Raised for an object the Objects tab can show (it is in the session's catalog).</summary>
-    public event Action<NavigatorObjectAction, DbObject>? ObjectActionRequested;
+    /// <remarks>The session is the open connection the object belongs to (it may not be the active one).</remarks>
+    public event Action<NavigatorObjectAction, DbObject, DatabaseSession?>? ObjectActionRequested;
 
     public event Action<NavigatorConnectionAction, ConnectionProfile>? ConnectionActionRequested;
 
-    /// <summary>A script for a new Query tab: the SQL, the database to run it in, and the tab title (null for a
-    /// numbered tab).</summary>
-    public event Action<string, string?, string?>? OpenSqlRequested;
+    /// <summary>A script for a new Query tab: the SQL, the database to run it in, the tab title (null for a numbered
+    /// tab) and the connection it is for (the row's, whichever connection is active).</summary>
+    public event Action<string, string?, string?, ConnectionProfile?>? OpenSqlRequested;
 
     /// <summary>Text for the clipboard (the view owns the clipboard).</summary>
     public event Action<string>? CopyRequested;
 
     /// <summary>Export documentation of a database (null: the connection's own) and, from a schema row, one schema.</summary>
-    public event Action<string?, string?>? DocumentationRequested;
+    public event Action<string?, string?, DatabaseSession?>? DocumentationRequested;
 
-    public bool IsConnected => _session is not null;
+    /// <summary>Whether any connection is open.</summary>
+    public bool IsConnected => OpenSessions.Count > 0;
 
     /// <summary>The saved connections, kept in step with the toolbar's list.</summary>
     public ObservableCollection<ConnectionProfile>? Profiles
@@ -103,29 +182,19 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     private void OnProfilesChanged(object? sender, NotifyCollectionChangedEventArgs e) => Rebuild();
 
+    /// <summary>The active connection changed (or, without the list of open connections, the only one).</summary>
     public void Attach(DatabaseSession? session)
     {
-        if (_session is not null)
-        {
-            _session.SnapshotChanged -= OnCatalogChanged;
-            _session.DatabasesChanged -= OnCatalogChanged;
-        }
         _session = session;
-        _otherCatalogs.Clear();
-        if (_session is not null)
-        {
-            _session.SnapshotChanged += OnCatalogChanged;
-            _session.DatabasesChanged += OnCatalogChanged;
-        }
+        Track();
         OnPropertyChanged(nameof(IsConnected));
-        _expandConnectionOnBuild = session is not null;
         Rebuild();
     }
 
     private void OnCatalogChanged(object? sender, EventArgs e)
     {
-        if (!ReferenceEquals(sender, _session)) return;
-        _otherCatalogs.Clear();
+        if (sender is not DatabaseSession session || !IsStillOpen(session)) return;
+        _otherCatalogs.Remove(session);
         Rebuild();
     }
 
@@ -149,14 +218,14 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         if (FilterText.Trim().Length > 0) BuildFiltered(FilterText.Trim());
         else BuildConnections();
 
-        if (_expandConnectionOnBuild && _session is not null)
+        foreach (var opened in _expandOnBuild)
         {
-            _expandConnectionOnBuild = false;
-            var key = ConnectionKey(_session.Profile);
+            var key = ConnectionKey(opened.Profile);
             expanded.Add(key);
             // Open the connection's own database too, the way DBeaver lands on it after connecting.
-            expanded.Add(DatabaseKey(key, _session.Profile.Database));
+            expanded.Add(DatabaseKey(key, opened.Profile.Database));
         }
+        _expandOnBuild.Clear();
         _pendingExpanded = expanded;
         _pendingSelected = selected;
         _ = RestoreAsync(expanded, selected, generation);
@@ -226,28 +295,47 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     private NavigatorNode ConnectionNode(ConnectionProfile profile)
     {
-        var active = _session is { } s && s.Profile.Id == profile.Id;
+        var open = OpenSessions;
+        var session = SessionFor(profile.Id);
+        var active = session is not null && ReferenceEquals(session, _session);
+        var several = open.Count > 1;
         var engine = SqlDialect.EngineName(profile.ProviderKey);
         var tip = $"{profile.DisplayName} · {engine} · {profile.Host}" + (string.IsNullOrEmpty(profile.Database) ? "" : "/" + profile.Database);
         return new NavigatorNode(NavigatorNodeKind.Connection, profile.DisplayName, ConnectionKey(profile))
         {
             Icon = Icons.Server,
-            ColorKey = active ? "AppStatusConnectedBrush" : null,
-            Profile = profile,
+            ColorKey = session is not null ? "AppStatusConnectedBrush" : null,
+            Profile = session?.Profile ?? profile,
+            Session = session,
             IsEmphasized = active,
-            IsDimmed = _session is not null && !active,
-            ToolTip = active
-                ? tip + "\nConnected. Open it to browse databases and objects."
-                : _session is null
-                    ? tip + "\nDouble-click or press Enter to connect."
-                    : tip + "\nRight-click › Switch to this connection to disconnect the current one and connect here.",
-            Loader = active ? LoadDatabasesAsync : null
+            MarkBrush = session is not null && several ? ConnectionMarks.Brush(IndexOfOpen(session)) : null,
+            Detail = active && several ? "active" : null,
+            ToolTip = session is null
+                ? tip + (open.Count == 0
+                    ? "\nDouble-click or press Enter to connect."
+                    : "\nDouble-click or press Enter to connect. It opens next to the open connections and becomes the active one.")
+                : active
+                    ? tip + (several
+                        ? "\nOpen and active: the Objects, Diagram and other tabs show it. Query tabs with its colour run on it."
+                        : "\nConnected. Open it to browse databases and objects.")
+                    : tip + "\nOpen. Right-click › Make active to show it in the Objects, Diagram and other tabs; Query tabs with its colour run on it.",
+            Loader = session is not null ? LoadDatabasesAsync : null
         };
+    }
+
+    private int IndexOfOpen(DatabaseSession session)
+    {
+        var index = _open?.IndexOf(session.Profile.Id) ?? -1;
+        if (index >= 0) return index;
+        var all = OpenSessions;
+        for (var i = 0; i < all.Count; i++)
+            if (ReferenceEquals(all[i], session)) return i;
+        return 0;
     }
 
     private async Task<IReadOnlyList<NavigatorNode>> LoadDatabasesAsync(NavigatorNode connection)
     {
-        if (_session is not { } session) return [];
+        if (SessionOf(connection) is not { } session) return [];
         IReadOnlyList<string> server = [];
         try
         {
@@ -257,7 +345,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         {
             ErrorLog.Write("navigator database list", ex);
         }
-        if (!ReferenceEquals(session, _session)) return [];
+        if (!IsStillOpen(session)) return [];
 
         var snapshot = session.Snapshot;
         return NavigatorTree.Databases(snapshot, server, session.Profile.Database)
@@ -285,7 +373,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     private async Task<IReadOnlyList<NavigatorNode>> LoadDatabaseAsync(NavigatorNode node, NavigatorDatabase db)
     {
-        if (_session is not { } session) return [];
+        if (SessionOf(node) is not { } session) return [];
         MetadataSnapshot snapshot;
         bool inSession;
         if (db.InCatalog)
@@ -296,8 +384,8 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         else
         {
             snapshot = await sessions.GetDatabaseSnapshotAsync(session, db.Name);
-            if (!ReferenceEquals(session, _session)) return [];
-            _otherCatalogs[db.Name] = snapshot;
+            if (!IsStillOpen(session)) return [];
+            OtherCatalogs(session)[db.Name] = snapshot;
             inSession = false;
         }
 
@@ -399,28 +487,58 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
             };
         }).ToList();
 
-    /// <summary>Filter mode: the matching objects of every catalog read so far, under their database, schema and
-    /// folder, all open. Saved connections are matched by name as well.</summary>
+    /// <summary>Filter mode: the matching objects of every catalog read so far on every open connection, under their
+    /// connection, database, schema and folder, all open. Saved connections are matched by name as well.</summary>
     private void BuildFiltered(string filter)
     {
+        var open = OpenSessions;
         var connectionMatches = (_profiles ?? []).Where(p => p.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                                                             && (_session is null || p.Id != _session.Profile.Id)).ToList();
+                                                             && open.All(s => s.Profile.Id != p.Id)).ToList();
         foreach (var profile in ConnectionFolders.Order(connectionMatches)) Roots.Add(ConnectionNode(profile));
 
-        if (_session is not { } session)
+        if (open.Count == 0)
         {
             FilterSummary = connectionMatches.Count == 0 ? "No connection matches. Connect to search objects." : "";
             return;
         }
 
+        var total = 0;
+        var shown = 0;
+        var noOtherCatalogs = true;
+        var insertAt = 0;
+        // The active connection first, then the others in the order they were opened.
+        foreach (var session in open.OrderBy(s => ReferenceEquals(s, _session) ? 0 : 1))
+        {
+            var (connection, matches, kept, others) = FilterConnection(session, filter, MaxMatches - shown);
+            total += matches;
+            shown += kept;
+            if (others) noOtherCatalogs = false;
+            Roots.Insert(insertAt++, connection);
+            connection.IsExpanded = true;
+            _ = ExpandContainersAsync(connection);
+        }
+
+        FilterSummary = total == 0
+            ? "No object matches" + (noOtherCatalogs ? open.Count > 1 ? " in the connections' catalogs" : " in the connection's catalog" : "")
+            : total > shown ? $"First {shown:N0} of {total:N0} matches" : $"{total:N0} match{(total == 1 ? "" : "es")}";
+    }
+
+    /// <returns>The connection row with its matches under it, how many matched, how many are shown (at most
+    /// <paramref name="limit"/>) and whether other databases' catalogs were searched too.</returns>
+    private (NavigatorNode Connection, int Matches, int Shown, bool OtherCatalogs) FilterConnection(DatabaseSession session, string filter, int limit)
+    {
+        var several = OpenSessions.Count > 1;
         var connection = new NavigatorNode(NavigatorNodeKind.Connection, session.Profile.DisplayName, ConnectionKey(session.Profile))
         {
-            Icon = Icons.Server, ColorKey = "AppStatusConnectedBrush", Profile = session.Profile, IsEmphasized = true
+            Icon = Icons.Server, ColorKey = "AppStatusConnectedBrush", Profile = session.Profile, Session = session,
+            IsEmphasized = ReferenceEquals(session, _session),
+            MarkBrush = several ? ConnectionMarks.Brush(IndexOfOpen(session)) : null
         };
+        var otherCatalogs = _otherCatalogs.TryGetValue(session, out var read) ? read : [];
         var catalogs = new List<(string Database, MetadataSnapshot Snapshot, bool InSession)>();
         foreach (var db in NavigatorTree.Databases(session.Snapshot, [], session.Profile.Database).Where(d => d.InCatalog))
             catalogs.Add((db.Name, session.Snapshot, true));
-        foreach (var (name, snapshot) in _otherCatalogs.OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
+        foreach (var (name, snapshot) in otherCatalogs.OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
             if (!catalogs.Any(c => string.Equals(c.Database, name, StringComparison.OrdinalIgnoreCase)))
                 catalogs.Add((name, snapshot, false));
 
@@ -439,7 +557,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
             .ThenBy(m => m.Object.Schema, StringComparer.OrdinalIgnoreCase)
             .ThenBy(m => m.Object.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(m => m.Catalog)
-            .Take(MaxMatches)
+            .Take(Math.Max(0, limit))
             .ToList();
         var shown = kept.Count;
 
@@ -462,13 +580,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
             databases.Add(dbNode);
         }
         connection.SetChildren(databases.Count > 0 ? databases : [NavigatorNode.Message("No object matches")]);
-        Roots.Insert(0, connection);
-        connection.IsExpanded = true;
-        _ = ExpandContainersAsync(connection);
-
-        FilterSummary = total == 0
-            ? "No object matches" + (_otherCatalogs.Count == 0 ? " in the connection's catalog" : "")
-            : total > shown ? $"First {shown:N0} of {total:N0} matches" : $"{total:N0} match{(total == 1 ? "" : "es")}";
+        return (connection, total, shown, otherCatalogs.Count > 0);
     }
 
     /// <summary>Opens every database, schema and folder under <paramref name="node"/> (the filter's results).</summary>
@@ -486,8 +598,16 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     // ----- Selection-dependent menu items -----
 
     public bool SelectedIsConnection => SelectedNode?.Kind == NavigatorNodeKind.Connection;
-    public bool SelectedIsActiveConnection => SelectedIsConnection && SelectedNode!.Profile?.Id == _session?.Profile.Id && _session is not null;
-    public bool SelectedIsOtherConnection => SelectedIsConnection && !SelectedIsActiveConnection;
+    public bool SelectedIsActiveConnection => SelectedIsConnection && SelectedNode!.Session is { } s && ReferenceEquals(s, _session);
+
+    /// <summary>A saved connection that is not open (Connect, Delete).</summary>
+    public bool SelectedIsClosedConnection => SelectedIsConnection && SelectedNode!.Session is null;
+
+    /// <summary>An open connection (Disconnect).</summary>
+    public bool SelectedIsOpenConnection => SelectedIsConnection && SelectedNode!.Session is not null;
+
+    /// <summary>An open connection other than the active one (Make active).</summary>
+    public bool SelectedIsOpenInactiveConnection => SelectedIsOpenConnection && !SelectedIsActiveConnection;
     public bool SelectedIsObject => SelectedObject is not null;
     public bool SelectedIsTableLike => SelectedObject?.IsTableLike == true;
     public bool SelectedIsTable => SelectedObject?.Type == DbObjectType.Table;
@@ -496,8 +616,8 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     /// <summary>The Objects tab's actions (Get data, Modify, Drop, Execute…) work on the session's own catalog.</summary>
     public bool SelectedHasCatalogActions => SelectedObject is not null && SelectedNode!.InSessionCatalog;
 
-    public bool SelectedHasDatabase => _session is not null && SelectedNode is { Kind: not (NavigatorNodeKind.ConnectionFolder or NavigatorNodeKind.Message) }
-                                       && (SelectedNode.Kind != NavigatorNodeKind.Connection || SelectedIsActiveConnection);
+    public bool SelectedHasDatabase => SessionOf(SelectedNode) is not null &&
+                                       SelectedNode is { Kind: not (NavigatorNodeKind.ConnectionFolder or NavigatorNodeKind.Message) };
 
     /// <summary>Export documentation: the connected connection, a database or a schema row.</summary>
     public bool SelectedCanDocument => SelectedHasDatabase &&
@@ -513,10 +633,10 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     // ----- Actions -----
 
     /// <summary>Rows a double-click shows instead of opening or closing: objects and their columns, indexes and keys,
-    /// and saved connections other than the connected one.</summary>
+    /// and saved connections that are not open (a double-click connects them).</summary>
     public static bool OpensOnDoubleClick(NavigatorNode node) =>
         node.Kind is NavigatorNodeKind.Object or NavigatorNodeKind.Detail ||
-        (node.Kind == NavigatorNodeKind.Connection && !node.IsEmphasized);
+        (node.Kind == NavigatorNodeKind.Connection && node.Session is null);
 
     /// <summary>Double-click / Enter: connect a saved connection, open an object (or a column's table).</summary>
     /// <returns>True when the row did something, so the tree does not also open or close it.</returns>
@@ -526,11 +646,11 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         SelectedNode = node;
         switch (node.Kind)
         {
-            case NavigatorNodeKind.Connection when node.Profile is { } profile && _session is null:
+            case NavigatorNodeKind.Connection when node.Profile is { } profile && node.Session is null:
                 ConnectionActionRequested?.Invoke(NavigatorConnectionAction.Connect, profile);
                 return true;
             case NavigatorNodeKind.Object or NavigatorNodeKind.Detail when node.Object is { } obj:
-                if (node.InSessionCatalog) ObjectActionRequested?.Invoke(NavigatorObjectAction.Open, obj);
+                if (node.InSessionCatalog) ObjectActionRequested?.Invoke(NavigatorObjectAction.Open, obj, SessionOf(node));
                 else SelectRows();
                 return true;
             default:
@@ -544,7 +664,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     {
         if (SelectedNode is { Kind: NavigatorNodeKind.DetailFolder, Object: { } obj } folder)
         {
-            if (folder.InSessionCatalog) ObjectActionRequested?.Invoke(NavigatorObjectAction.Open, obj);
+            if (folder.InSessionCatalog) ObjectActionRequested?.Invoke(NavigatorObjectAction.Open, obj, SessionOf(folder));
             return;
         }
         Activate(SelectedNode);
@@ -562,7 +682,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     private void RunObjectAction(NavigatorObjectAction action)
     {
-        if (SelectedObject is { } obj && SelectedNode!.InSessionCatalog) ObjectActionRequested?.Invoke(action, obj);
+        if (SelectedObject is { } obj && SelectedNode!.InSessionCatalog) ObjectActionRequested?.Invoke(action, obj, SessionOf(SelectedNode));
     }
 
     /// <summary>"Read data in SQL console": a SELECT of the first rows in a new Query tab, run by the user.</summary>
@@ -580,19 +700,19 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     private void OpenScript(string verb, Func<string, DbObject, IEnumerable<DbColumn>, string> script, bool tableLikeOnly)
     {
-        if (_session is not { } session || SelectedNode is not { } node || SelectedObject is not { } obj) return;
+        if (SelectedNode is not { } node || SessionOf(node) is not { } session || SelectedObject is not { } obj) return;
         if (tableLikeOnly ? !obj.IsTableLike : obj.Type != DbObjectType.Table) return;
         var snapshot = node.Snapshot ?? FindOwner(node)?.Snapshot ?? session.Snapshot;
         var columns = snapshot.ColumnsOf(LookupDatabase(snapshot, obj), obj.Schema, obj.Name).ToList();
-        OpenSqlRequested?.Invoke(script(session.Profile.ProviderKey, obj, columns), DatabaseOf(node), $"{verb} {obj.Name}");
+        OpenSqlRequested?.Invoke(script(session.Profile.ProviderKey, obj, columns), DatabaseOf(node), $"{verb} {obj.Name}", session.Profile);
     }
 
     /// <summary>A blank Query tab in the selected node's database.</summary>
     [RelayCommand]
     private void NewQuery()
     {
-        if (_session is null || SelectedNode is not { } node) return;
-        OpenSqlRequested?.Invoke("", DatabaseOf(node), null);
+        if (SelectedNode is not { } node || SessionOf(node) is not { } session) return;
+        OpenSqlRequested?.Invoke("", DatabaseOf(node), null, session.Profile);
     }
 
     [RelayCommand]
@@ -600,7 +720,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     {
         if (!SelectedCanDocument) return;
         var node = SelectedNode!;
-        DocumentationRequested?.Invoke(DatabaseOf(node), node.Kind == NavigatorNodeKind.Schema ? node.Title : null);
+        DocumentationRequested?.Invoke(DatabaseOf(node), node.Kind == NavigatorNodeKind.Schema ? node.Title : null, SessionOf(node));
     }
 
     [RelayCommand]
@@ -632,7 +752,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     private void Disconnect() => RunConnectionAction(NavigatorConnectionAction.Disconnect);
 
     [RelayCommand]
-    private void SwitchConnection() => RunConnectionAction(NavigatorConnectionAction.Switch);
+    private void ActivateConnection() => RunConnectionAction(NavigatorConnectionAction.Activate);
 
     [RelayCommand]
     private void EditConnection() => RunConnectionAction(NavigatorConnectionAction.Edit);
@@ -652,22 +772,24 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [RelayCommand]
     private async Task RefreshAsync()
     {
-        if (_session is not { } session) return;
+        // The selected row's connection; with nothing (or a closed connection) selected, the active one.
+        if ((SessionOf(SelectedNode) ?? _session) is not { } session) return;
         var node = SelectedNode;
         while (node is not null && node.Kind != NavigatorNodeKind.Database) node = node.Parent;
-        if (node?.Database is { } database && _otherCatalogs.ContainsKey(database))
+        if (node?.Database is { } database && SessionOf(node) is { } owner && ReferenceEquals(owner, session) &&
+            _otherCatalogs.TryGetValue(session, out var others) && others.ContainsKey(database))
         {
             try
             {
                 var fresh = await sessions.RefreshDatabaseSnapshotAsync(session, database);
-                if (!ReferenceEquals(session, _session)) return; // disconnected or switched meanwhile: not this tree's
-                _otherCatalogs[database] = fresh;
+                if (!IsStillOpen(session)) return; // disconnected meanwhile: not this tree's
+                OtherCatalogs(session)[database] = fresh;
             }
             catch (Exception ex)
             {
                 ErrorLog.Write("navigator refresh", ex);
             }
-            if (!ReferenceEquals(session, _session)) return;
+            if (!IsStillOpen(session)) return;
             Rebuild();
             return;
         }

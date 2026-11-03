@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddSingleton<MetadataSearchService>();
         services.AddSingleton<DataSearchService>();
         services.AddSingleton<SessionService>();
+        services.AddSingleton<OpenConnections>();
         services.AddSingleton<ScriptStore>();
         services.AddSingleton<LocalHistoryStore>();
         services.AddSingleton<RecentFiles>();

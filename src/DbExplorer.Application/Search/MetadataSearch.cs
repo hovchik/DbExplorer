@@ -34,4 +34,8 @@ public sealed record MetadataSearchResult(
     string ObjectName,
     DbObjectType ObjectType,
     string Detail,
-    int? Line);
+    int? Line,
+    string? Column = null)
+{
+    public string FullName => $"{Schema}.{ObjectName}";
+}

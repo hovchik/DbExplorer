@@ -132,6 +132,10 @@ public partial class MainWindowViewModel
         Command("Connection", "Import connections…", ImportConnectionsCommand, keywords: "load file");
         Command("Connection", "Export database documentation…", ExportDocumentationCommand,
             subtitle: "tables, columns, keys, comments and diagram as HTML or Markdown", keywords: "docs data dictionary schema report wiki");
+        Command("Connection", "Back up a database…", BackupDatabaseCommand,
+            subtitle: "to a .bak file on the server, or a pg_dump / mysqldump file here", keywords: "backup dump export save copy bak pg_dump mysqldump");
+        Command("Connection", "Restore a database…", RestoreDatabaseCommand,
+            subtitle: "from a backup file, into a new or an existing database", keywords: "restore load import bak dump pg_restore");
         Command("Connection", "Team sharing…", OpenTeamCommand, subtitle: "share connections, queries and snippets through a shared folder", keywords: "sync");
         if (!IsBusy)
         {
@@ -158,6 +162,12 @@ public partial class MainWindowViewModel
             Command("Comparer", "Compare data", Comparer.CompareDataCommand, keywords: "diff rows");
             Command("Locks", "Refresh locks", Locks.RefreshCommand, keywords: "blocking");
             Command("Activity", "Refresh activity", Activity.RefreshRequestsCommand, keywords: "sessions requests");
+            if (Jobs.NewJobCommand.CanExecute(null))
+                Add("Jobs", "New scheduled job…", () =>
+                {
+                    SelectedTab = AppTab.Jobs;
+                    Jobs.NewJobCommand.Execute(null);
+                }, keywords: "agent cron schedule event create", id: "new-job");
         }
         Command("ER model", "New ER model", ErModel.NewModelCommand, keywords: "diagram design");
         Command("ER model", "Open ER model…", ErModel.OpenModelCommand, keywords: "dbxmodel file");

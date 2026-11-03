@@ -43,6 +43,8 @@ public sealed class AppSettingsService
         DefaultRowLimit = ClampRowLimit(stored.DefaultRowLimit ?? DefaultRowLimitValue);
         DefaultAutoCommit = !stored.DefaultAutoCommitOff;
         LongRunNotifySeconds = ClampNotifySeconds(stored.LongRunNotifySeconds ?? DefaultLongRunNotifySeconds);
+        _backupToolFolders = new Dictionary<string, string>(stored.BackupToolFolders ?? [], StringComparer.OrdinalIgnoreCase);
+        LastBackupFolder = stored.LastBackupFolder;
         CheckForUpdates = !stored.UpdateCheckOff;
         IncludePreReleaseUpdates = stored.PreReleaseUpdates;
         LastUpdateCheck = stored.LastUpdateCheck;
@@ -206,6 +208,28 @@ public sealed class AppSettingsService
         Save();
     }
 
+    private readonly Dictionary<string, string> _backupToolFolders;
+
+    /// <summary>The folder the user picked for an engine's dump tools (pg_dump, mysqldump), or null to search for them.</summary>
+    public string? BackupToolFolder(string providerKey) => _backupToolFolders.GetValueOrDefault(providerKey);
+
+    public void SetBackupToolFolder(string providerKey, string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) _backupToolFolders.Remove(providerKey);
+        else _backupToolFolders[providerKey] = folder.Trim();
+        Save();
+    }
+
+    /// <summary>The folder on this computer the last backup was saved to.</summary>
+    public string? LastBackupFolder { get; private set; }
+
+    public void SetLastBackupFolder(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || folder == LastBackupFolder) return;
+        LastBackupFolder = folder;
+        Save();
+    }
+
     public const int MaxRecentCommands = 8;
     private List<string> _recentCommands;
 
@@ -334,7 +358,9 @@ public sealed class AppSettingsService
                 LastUpdateCheck = LastUpdateCheck,
                 SkippedUpdateVersion = SkippedUpdateVersion,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList(),
-                RecentCommands = _recentCommands.Count == 0 ? null : _recentCommands.ToList()
+                RecentCommands = _recentCommands.Count == 0 ? null : _recentCommands.ToList(),
+                BackupToolFolders = _backupToolFolders.Count == 0 ? null : new Dictionary<string, string>(_backupToolFolders),
+                LastBackupFolder = LastBackupFolder
             };
             AtomicFile.WriteAllText(_file, JsonSerializer.Serialize(stored, Json));
         }
@@ -382,5 +408,10 @@ public sealed class AppSettingsService
 
         /// <summary>Command palette commands, most recent first.</summary>
         public List<string>? RecentCommands { get; set; }
+
+        /// <summary>Dump tool folder per engine key, only for engines where the user picked one.</summary>
+        public Dictionary<string, string>? BackupToolFolders { get; set; }
+
+        public string? LastBackupFolder { get; set; }
     }
 }

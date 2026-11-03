@@ -292,13 +292,22 @@ public sealed class SqliteFeatureTests : IAsyncLifetime
     {
         var file = new ConnectionProfile { Name = "Shop", ProviderKey = SqlDialect.SqliteKey, Host = Path.Combine(_root, "shop.db") };
         Assert.True(file.IsFile);
-        Assert.False(file.NeedsDatabasePassword);
-        Assert.True(new ConnectionProfile { ProviderKey = SqlDialect.PostgresKey, UserName = "u" }.NeedsDatabasePassword);
+        Assert.False(file.MissingPassword);
+        Assert.True(new ConnectionProfile { ProviderKey = SqlDialect.PostgresKey, UserName = "u" }.MissingPassword);
 
         // Reopened on start like any connection with its password saved.
         var (action, _, note) = DbExplorer.Application.Workspace.StartupConnection.Decide(
             new DbExplorer.Application.Workspace.WorkspaceState { ConnectionId = file.Id, WasConnected = true }, [file], true);
         Assert.Equal(DbExplorer.Application.Workspace.StartupConnectionAction.Connect, action);
         Assert.Null(note);
+    }
+
+    [Fact]
+    public async Task Jobs_explain_that_a_file_has_no_scheduler()
+    {
+        await using var provider = new SqliteProviderFactory().Create(Profile());
+        var catalog = await DbExplorer.Application.Jobs.JobCatalogLoader.LoadAsync(provider, null);
+        Assert.False(catalog.Available);
+        Assert.Contains("no job scheduler", catalog.Setup);
     }
 }

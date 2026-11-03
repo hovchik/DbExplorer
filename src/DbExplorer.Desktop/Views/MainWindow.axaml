@@ -618,6 +618,9 @@
         <TabItem Header="Security" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Logins, users and roles: memberships and permissions, edited as a reviewed script">
           <views:SecurityView DataContext="{Binding Security}" />
         </TabItem>
+        <TabItem Header="Jobs" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Scheduled jobs: SQL Server Agent, pg_cron or MySQL events, with their runs">
+          <views:JobsView DataContext="{Binding Jobs}" />
+        </TabItem>
       </TabControl>
     </Grid>
   </DockPanel>

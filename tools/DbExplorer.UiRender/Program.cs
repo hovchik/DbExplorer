@@ -12,6 +12,7 @@ using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Updates;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop;
@@ -114,6 +115,7 @@ namespace DbExplorer.UiRender
             var root = Path.Combine(Path.GetTempPath(), "DbExplorer.UiRender", Guid.NewGuid().ToString("N"));
             var services = App.ConfigureServices();
             services.AddSingleton(new AppPaths(root)); // never the user's own connections and settings
+            services.AddSingleton<IReleaseSource>(new SampleReleases()); // never GitHub
             _provider = services.BuildServiceProvider();
 
             _window = App.CreateMainWindow(_provider);
@@ -159,6 +161,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("updates", RenderUpdatesAsync);
             await Step("charts", RenderChartsAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -708,6 +711,27 @@ namespace DbExplorer.UiRender
             badVm.FillFromConnectionStringCommand.Execute(null);
             await ShowAndShoot(new ConnectionDialog { DataContext = badVm, Title = "New connection" }, "connection-string-error");
 
+            // Microsoft Entra ID: the offer on an Azure host, browser sign-in on Azure SQL, and an app on Azure PostgreSQL.
+            var sqlKey = registry.All.First(p => p.Key == "SqlServer");
+            var azureVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = sqlKey.Key }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "shop-prod.database.windows.net", Database = "shop"
+            };
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-offer");
+            azureVm.UserName = "ann@contoso.com";
+            azureVm.UseEntraSignInCommand.Execute(null);
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-interactive");
+            var pgAppVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = "Postgres" }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "pg-prod.postgres.database.azure.com", Database = "shop"
+            };
+            pgAppVm.SelectedSignIn = pgAppVm.SignInOptions.First(o => o.Method == SignInMethod.EntraServicePrincipal);
+            pgAppVm.UserName = "reporting-app";
+            pgAppVm.ClientId = "6f1c2b0e-4d1a-4c55-9a7e-2f0b8c1d3e42";
+            pgAppVm.Password = "secret";
+            pgAppVm.TenantId = "contoso.onmicrosoft.com";
+            await ShowAndShoot(new ConnectionDialog { DataContext = pgAppVm, Title = "New connection" }, "entra-postgres-app");
+
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
             sshDraft.Ssh.Host = "bastion.example.com";
@@ -1133,6 +1157,59 @@ namespace DbExplorer.UiRender
             await Settle(8);
             await Shot(window, "preferences-small-notifications");
             window.Close();
+            await Settle();
+        }
+
+        /// <summary>A sample release list instead of GitHub's, so the update bar has something to offer.</summary>
+        private sealed class SampleReleases : IReleaseSource
+        {
+            public Task<IReadOnlyList<ReleaseInfo>> GetReleasesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<ReleaseInfo>>(
+            [
+                new ReleaseInfo(AppVersion.Parse("1.1.0"), "v1.1.0", "DB Explorer 1.1.0", "https://github.com/hovchik/DbExplorer/releases/tag/v1.1.0",
+                    "https://github.com/hovchik/DbExplorer/releases/download/v1.1.0/DbExplorer-Setup-1.1.0.exe", 48_600_000,
+                    new DateTimeOffset(2026, 11, 1, 10, 0, 0, TimeSpan.Zero), "", false)
+            ]);
+        }
+
+        /// <summary>The update bar under the toolbar (both sizes), the palette entries and Preferences' Updates section
+        /// after Check now.</summary>
+        private async Task RenderUpdatesAsync()
+        {
+            _window.Width = 1400;
+            _window.Height = 900;
+            _vm.SelectedTab = AppTab.Query;
+            _vm.OpenLink = _ => { };
+            var result = await _vm.CheckForUpdatesNowAsync();
+            Console.WriteLine("Update check: " + result?.Describe());
+            await Settle(6);
+            await Shot(_window, "update-bar");
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-update-bar");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            _vm.OpenCommandPaletteCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<CommandPaletteWindow>().Any(), "palette", 10_000);
+            var palette = _window.OwnedWindows.OfType<CommandPaletteWindow>().First();
+            ((CommandPaletteViewModel)palette.DataContext!).Query = "update";
+            await Settle(6);
+            await Shot(palette, "update-palette");
+            palette.Close();
+            await Settle();
+
+            _vm.OpenPreferencesCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);
+            var window = _window.OwnedWindows.OfType<PreferencesWindow>().First();
+            var prefs = (PreferencesViewModel)window.DataContext!;
+            await prefs.CheckUpdatesNowCommand.ExecuteAsync(null);
+            var list = window.FindControl<ListBox>("SectionList")!;
+            list.SelectedIndex = list.Items.Cast<ListBoxItem>().ToList().FindIndex(i => (string?)i.Tag == "UpdatesSection");
+            await Settle(8);
+            await Shot(window, "preferences-updates");
+            window.Close();
+            _vm.DismissUpdateCommand.Execute(null);
             await Settle();
         }
 

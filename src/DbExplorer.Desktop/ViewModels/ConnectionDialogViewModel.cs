@@ -35,7 +35,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _host = draft.Host;
         _port = draft.Port?.ToString() ?? "";
         _database = draft.Database;
-        _integratedSecurity = draft.IntegratedSecurity;
+        _tenantId = draft.EntraTenantId ?? "";
+        _clientId = draft.EntraClientId ?? "";
         _userName = draft.UserName ?? "";
         _password = draft.Password ?? "";
         _savePassword = draft.SavePassword;
@@ -44,6 +45,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _readOnlyIntent = draft.ReadOnlyIntent;
         _readOnly = draft.ReadOnly;
         _environment = draft.Environment;
+        _signInOptions = OptionsFor(_selectedProvider);
+        _selectedSignIn = _signInOptions.FirstOrDefault(o => o.Method == SignInMethods.Of(draft)) ?? _signInOptions[0];
         // A new connection's TLS boxes follow the host (encrypt and verify unless the server is on this computer)
         // until the user ticks one of them; an existing connection keeps what it was saved with.
         _tlsFollowsHost = isNew;
@@ -126,8 +129,11 @@ public partial class ConnectionDialogViewModel : ViewModelBase
             else if (ConnectionStrings.LooksLikeConnectionString(Host)) Host = "localhost";
             Port = parsed.Port?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
             Database = parsed.Database ?? "";
-            IntegratedSecurity = (parsed.IntegratedSecurity ?? false) && CanUseIntegratedSecurity;
-            UserName = parsed.UserName ?? (IntegratedSecurity ? "" : UserName);
+            var method = parsed.EntraAuth is { } entra && entra != EntraAuthMode.None
+                ? SignInMethods.Of(new ConnectionProfile { EntraAuth = entra })
+                : (parsed.IntegratedSecurity ?? false) && CanUseIntegratedSecurity ? SignInMethod.Windows : SignInMethod.Password;
+            SelectSignIn(method);
+            UserName = parsed.UserName ?? (UsesUser ? UserName : "");
             Password = parsed.Password ?? (sameUser ? Password : "");
             if (parsed.ReadOnlyIntent is { } intent) ReadOnlyIntent = intent;
             if (parsed.Encrypt is not null || parsed.TrustServerCertificate is not null)
@@ -173,6 +179,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
 
     partial void OnHostChanged(string value)
     {
+        OnPropertyChanged(nameof(ShowEntraOffer));
         // A connection string pasted straight into Host fills in every field instead.
         if (!_fillingFromConnectionString && ConnectionStrings.LooksLikeConnectionString(value))
         {
@@ -215,7 +222,60 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private string _host;
     [ObservableProperty] private string _port;
     [ObservableProperty] private string _database;
-    [ObservableProperty] private bool _integratedSecurity;
+
+    // ---- Sign-in: database login, Windows, or one of the Microsoft Entra ID methods ---------------------------
+
+    public sealed record SignInOption(SignInMethod Method, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    [ObservableProperty] private IReadOnlyList<SignInOption> _signInOptions;
+    [ObservableProperty] private SignInOption _selectedSignIn;
+
+    /// <summary>Entra directory (tenant) ID or domain; empty for the account's home directory.</summary>
+    [ObservableProperty] private string _tenantId;
+
+    /// <summary>PostgreSQL with a service principal: the app's client ID (the User is its role name there).</summary>
+    [ObservableProperty] private string _clientId;
+    public bool UsesClientId => IsPostgres && SignIn == SignInMethod.EntraServicePrincipal;
+
+    public SignInMethod SignIn => SelectedSignIn.Method;
+    public bool IntegratedSecurity => SignIn is SignInMethod.Windows or SignInMethod.EntraIntegrated;
+    public bool UsesUser => SignInMethods.UsesUser(SignIn, SelectedProvider.Key);
+    public bool UsesPassword => SignInMethods.UsesPassword(SignIn);
+    public bool UsesTenant => SignInMethods.UsesTenant(SignIn);
+    public string UserLabel => !IsPostgres ? SignInMethods.UserLabel(SignIn)
+        : SignIn == SignInMethod.EntraServicePrincipal ? "User (app's role name)"
+        : SignInMethods.IsEntra(SignIn) ? "User" : SignInMethods.UserLabel(SignIn);
+    public string PasswordLabel => SignInMethods.PasswordLabel(SignIn);
+    public string? SignInHint => SignInMethods.Hint(SignIn, SelectedProvider.Key);
+    public bool HasSignInHint => SignInHint is not null;
+    public string TenantHint => SignIn == SignInMethod.EntraServicePrincipal && IsPostgres ? "required for an app" : "optional, e.g. contoso.com";
+    private bool IsPostgres => string.Equals(SelectedProvider.Key, SignInMethods.PostgresKey, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>An Azure server signed in to with a password: Entra sign-in is one click away.</summary>
+    public bool ShowEntraOffer => SignIn == SignInMethod.Password && SignInMethods.IsAzureHost(Host)
+                                  && SignInOptions.Any(o => SignInMethods.IsEntra(o.Method));
+
+    private static IReadOnlyList<SignInOption> OptionsFor(IDatabaseProviderFactory provider) =>
+        SignInMethods.For(provider.Key, provider.SupportsIntegratedSecurity).Select(m => new SignInOption(m, SignInMethods.Label(m))).ToList();
+
+    private void SelectSignIn(SignInMethod method) =>
+        SelectedSignIn = SignInOptions.FirstOrDefault(o => o.Method == method) ?? SignInOptions[0];
+
+    [RelayCommand]
+    private void UseEntraSignIn() => SelectSignIn(SignInMethod.EntraInteractive);
+
+    partial void OnSelectedSignInChanged(SignInOption value)
+    {
+        // A combo box clears its selection while its items are replaced; keep a real choice.
+        if (value is null) { SelectedSignIn = SignInOptions[0]; return; }
+        foreach (var name in new[] { nameof(SignIn), nameof(IntegratedSecurity), nameof(UsesUser), nameof(UsesPassword), nameof(UsesTenant),
+                     nameof(UserLabel), nameof(PasswordLabel), nameof(SignInHint), nameof(HasSignInHint), nameof(TenantHint), nameof(ShowEntraOffer), nameof(UsesClientId) })
+            OnPropertyChanged(name);
+    }
+
     [ObservableProperty] private string _userName;
     [ObservableProperty] private string _password;
     [ObservableProperty] private bool _savePassword;
@@ -261,6 +321,10 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         OnPropertyChanged(nameof(PortHint));
         OnPropertyChanged(nameof(CanUseIntegratedSecurity));
         OnPropertyChanged(nameof(CanUseReadOnlyIntent));
+        var current = SelectedSignIn?.Method ?? SignInMethod.Password;
+        SignInOptions = OptionsFor(value);
+        SelectSignIn(current);
+        OnSelectedSignInChanged(SelectedSignIn);
         Databases.Clear();
     }
 
@@ -273,6 +337,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [RelayCommand]
     private async Task TestAsync()
     {
+        if (SignInProblem() is { } problem) { Message = problem; return; }
         IsBusy = true;
         var profile = ToProfile();
         SshTunnel? tunnel = null;
@@ -317,6 +382,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoadDatabasesAsync()
     {
+        if (SignInProblem() is { } problem) { Message = problem; return; }
         IsBusy = true;
         Message = "Loading databases…";
         try
@@ -360,8 +426,22 @@ public partial class ConnectionDialogViewModel : ViewModelBase
             if (string.IsNullOrWhiteSpace(SshUserName)) { Message = "SSH: enter the user."; return; }
             if (SshUseKey && string.IsNullOrWhiteSpace(SshKeyPath)) { Message = "SSH: choose the private key file."; return; }
         }
+        if (SignInProblem() is { } problem) { Message = problem; return; }
         CloseRequested?.Invoke(true);
     }
+
+    /// <summary>What the chosen sign-in still needs before it can work, or null.</summary>
+    public string? SignInProblem() => SignIn switch
+    {
+        SignInMethod.EntraServicePrincipal when !IsPostgres && string.IsNullOrWhiteSpace(UserName) => "Enter the app's client ID as the user.",
+        SignInMethod.EntraServicePrincipal when IsPostgres && string.IsNullOrWhiteSpace(ClientId) => "Enter the app's client ID.",
+        SignInMethod.EntraServicePrincipal when IsPostgres && string.IsNullOrWhiteSpace(TenantId) =>
+            "Enter the directory (tenant) ID: a service principal signs in to one directory.",
+        SignInMethod.EntraPassword when string.IsNullOrWhiteSpace(UserName) => "Enter the Entra user name (name@company.com).",
+        _ when IsPostgres && SignInMethods.IsEntra(SignIn) && string.IsNullOrWhiteSpace(UserName) =>
+            "Enter the user: the Entra user (name@company.com), group or app name the PostgreSQL server has a role for.",
+        _ => null
+    };
 
     [RelayCommand]
     private void Cancel() => CloseRequested?.Invoke(false);
@@ -375,9 +455,12 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         Host = Host.Trim(),
         Port = int.TryParse(Port, out var port) ? port : null,
         Database = Database.Trim(),
-        IntegratedSecurity = IntegratedSecurity && CanUseIntegratedSecurity,
-        UserName = string.IsNullOrWhiteSpace(UserName) ? null : UserName.Trim(),
-        Password = string.IsNullOrEmpty(Password) ? null : Password,
+        IntegratedSecurity = SignIn == SignInMethod.Windows && CanUseIntegratedSecurity,
+        EntraAuth = SignInMethods.EntraModeOf(SignIn),
+        EntraTenantId = UsesTenant && !string.IsNullOrWhiteSpace(TenantId) ? TenantId.Trim() : null,
+        EntraClientId = UsesClientId && !string.IsNullOrWhiteSpace(ClientId) ? ClientId.Trim() : null,
+        UserName = !UsesUser || string.IsNullOrWhiteSpace(UserName) ? null : UserName.Trim(),
+        Password = !UsesPassword || string.IsNullOrEmpty(Password) ? null : Password,
         SavePassword = SavePassword,
         Encrypt = Encrypt,
         TrustServerCertificate = TrustServerCertificate,

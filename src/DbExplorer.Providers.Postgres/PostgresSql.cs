@@ -51,7 +51,7 @@ public static class PostgresSql
     /// </summary>
     public const string DefaultDatabase = "postgres";
 
-    public static string BuildConnectionString(ConnectionProfile p, string? databaseOverride = null)
+    public static string BuildConnectionString(ConnectionProfile p, string? databaseOverride = null, bool includeEntraToken = true)
     {
         var database = string.IsNullOrWhiteSpace(databaseOverride) ? p.Database : databaseOverride;
         var b = new NpgsqlConnectionStringBuilder
@@ -70,7 +70,16 @@ public static class PostgresSql
                 : p.CertificateHostName is null ? SslMode.VerifyFull : SslMode.VerifyCA
         };
 
-        if (!p.IntegratedSecurity)
+        if (p.EntraAuth != EntraAuthMode.None)
+        {
+            // An Entra access token is the password. Short-lived connections get one now; data sources from
+            // CreateDataSource ask for a fresh one on every new physical connection instead.
+            b.Username = PostgresEntra.UserFor(p);
+            b.Password = includeEntraToken ? PostgresEntra.GetToken(p) : null;
+            // The token is 1–2 KB: never let it end up in a connection string the driver prints.
+            b.PersistSecurityInfo = false;
+        }
+        else if (!p.IntegratedSecurity)
         {
             b.Username = p.UserName;
             b.Password = p.Password;
@@ -80,5 +89,22 @@ public static class PostgresSql
         if (p.ReadOnly) b.Options = "-c default_transaction_read_only=on";
 
         return b.ConnectionString;
+    }
+
+    /// <summary>
+    /// A pooled data source for the profile. With Entra ID sign-in every new physical connection gets a current
+    /// token (pooled connections outlive the one-hour tokens), so the password is never fixed in the string.
+    /// </summary>
+    public static NpgsqlDataSource CreateDataSource(ConnectionProfile p, string? databaseOverride = null)
+    {
+        if (p.EntraAuth == EntraAuthMode.None) return NpgsqlDataSource.Create(BuildConnectionString(p, databaseOverride));
+
+        // No sign-in here: the first connection opened asks for the token, asynchronously (a browser sign-in
+        // must not block the thread that creates the provider).
+        var builder = new NpgsqlDataSourceBuilder(BuildConnectionString(p, databaseOverride, includeEntraToken: false));
+        builder.UsePasswordProvider(
+            _ => PostgresEntra.GetToken(p),
+            (_, ct) => PostgresEntra.GetTokenAsync(p, ct));
+        return builder.Build();
     }
 }

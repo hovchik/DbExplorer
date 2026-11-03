@@ -127,7 +127,7 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         return ok ? vm.ToProfile() : null;
     }
 
-    private static bool NeedsDatabasePassword(ConnectionProfile p) => !p.IntegratedSecurity && string.IsNullOrEmpty(p.Password);
+    private static bool NeedsDatabasePassword(ConnectionProfile p) => p.MissingPassword;
 
     public async Task ShowSearchResultAsync(
         DefinitionService definitions, DatabaseSession session,

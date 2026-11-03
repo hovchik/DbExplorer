@@ -43,6 +43,10 @@ public sealed class AppSettingsService
         DefaultRowLimit = ClampRowLimit(stored.DefaultRowLimit ?? DefaultRowLimitValue);
         DefaultAutoCommit = !stored.DefaultAutoCommitOff;
         LongRunNotifySeconds = ClampNotifySeconds(stored.LongRunNotifySeconds ?? DefaultLongRunNotifySeconds);
+        CheckForUpdates = !stored.UpdateCheckOff;
+        IncludePreReleaseUpdates = stored.PreReleaseUpdates;
+        LastUpdateCheck = stored.LastUpdateCheck;
+        SkippedUpdateVersion = string.IsNullOrWhiteSpace(stored.SkippedUpdateVersion) ? null : stored.SkippedUpdateVersion.Trim();
         _recentCommands = (stored.RecentCommands ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().Take(MaxRecentCommands).ToList();
         _disabled = (stored.DisabledExperiments ?? [])
             .Select(name => Enum.TryParse<ExperimentalFeature>(name, out var f) ? f : (ExperimentalFeature?)null)
@@ -139,8 +143,48 @@ public sealed class AppSettingsService
 
     public static int ClampNotifySeconds(int seconds) => Math.Clamp(seconds, 0, MaxLongRunNotifySeconds);
 
+    /// <summary>Whether DB Explorer looks for a newer release on GitHub at start-up (at most once a day).</summary>
+    public bool CheckForUpdates { get; private set; }
+
+    public void SetCheckForUpdates(bool on)
+    {
+        if (CheckForUpdates == on) return;
+        CheckForUpdates = on;
+        Save();
+    }
+
+    /// <summary>Whether pre-releases (1.2.0-rc1) are offered as updates too.</summary>
+    public bool IncludePreReleaseUpdates { get; private set; }
+
+    public void SetIncludePreReleaseUpdates(bool on)
+    {
+        if (IncludePreReleaseUpdates == on) return;
+        IncludePreReleaseUpdates = on;
+        Save();
+    }
+
+    /// <summary>When the releases were last read successfully (automatic or "Check now").</summary>
+    public DateTimeOffset? LastUpdateCheck { get; private set; }
+
+    public void SetLastUpdateCheck(DateTimeOffset when)
+    {
+        LastUpdateCheck = when;
+        Save();
+    }
+
+    /// <summary>A version the user chose to skip: the start-up check stays quiet about it (not about newer ones).</summary>
+    public string? SkippedUpdateVersion { get; private set; }
+
+    public void SetSkippedUpdateVersion(string? version)
+    {
+        version = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+        if (SkippedUpdateVersion == version) return;
+        SkippedUpdateVersion = version;
+        Save();
+    }
+
     /// <summary>Puts every preference shown in the Preferences window back to its default (theme, editor, new tab
-    /// defaults, notifications, start-up, rendering and experiments). The navigator's width and visibility and the
+    /// defaults, notifications, start-up, updates, rendering and experiments). The navigator's width and visibility and the
     /// command palette's recent list are left alone.</summary>
     public void ResetPreferences()
     {
@@ -155,6 +199,9 @@ public sealed class AppSettingsService
         LongRunNotifySeconds = DefaultLongRunNotifySeconds;
         ReconnectOnStart = true;
         SoftwareRendering = false;
+        CheckForUpdates = true;
+        IncludePreReleaseUpdates = false;
+        SkippedUpdateVersion = null;
         foreach (var feature in _disabled.ToList()) SetEnabled(feature, true);
         Save();
     }
@@ -282,6 +329,10 @@ public sealed class AppSettingsService
                 DefaultRowLimit = DefaultRowLimit == DefaultRowLimitValue ? null : DefaultRowLimit,
                 DefaultAutoCommitOff = !DefaultAutoCommit,
                 LongRunNotifySeconds = LongRunNotifySeconds == DefaultLongRunNotifySeconds ? null : LongRunNotifySeconds,
+                UpdateCheckOff = !CheckForUpdates,
+                PreReleaseUpdates = IncludePreReleaseUpdates,
+                LastUpdateCheck = LastUpdateCheck,
+                SkippedUpdateVersion = SkippedUpdateVersion,
                 DisabledExperiments = _disabled.Count == 0 ? null : _disabled.Order().Select(f => f.ToString()).ToList(),
                 RecentCommands = _recentCommands.Count == 0 ? null : _recentCommands.ToList()
             };
@@ -318,6 +369,13 @@ public sealed class AppSettingsService
         public bool DefaultAutoCommitOff { get; set; }
 
         public int? LongRunNotifySeconds { get; set; }
+
+        /// <summary>Stored as "off" so the update check starts on.</summary>
+        public bool UpdateCheckOff { get; set; }
+
+        public bool PreReleaseUpdates { get; set; }
+        public DateTimeOffset? LastUpdateCheck { get; set; }
+        public string? SkippedUpdateVersion { get; set; }
 
         /// <summary>Experimental features turned off; stored as the off ones so new experiments start on.</summary>
         public List<string>? DisabledExperiments { get; set; }

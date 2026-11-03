@@ -239,7 +239,8 @@ public sealed class DataSearchRedesignTests : IAsyncLifetime
         Assert.False(vm.ScopeChanged);
         Assert.Equal("50 rows/table · 30 s timeout · 3 at a time", vm.LimitsSummary);
 
-        vm.TableFilter = "cust";
+        vm.TableChoices.Single(c => c.Table == "customers").IsSelected = true;
+        Assert.True(vm.ScopeChanged);
         vm.IncludeViews = true;
         vm.MaxTableRows = 1_000_000;
         Assert.True(vm.ScopeChanged);
@@ -247,6 +248,65 @@ public sealed class DataSearchRedesignTests : IAsyncLifetime
 
         vm.ResetScopeCommand.Execute(null);
         Assert.False(vm.ScopeChanged);
+        Assert.DoesNotContain(vm.TableChoices, c => c.IsSelected);
+    }
+
+    [Fact]
+    public async Task Ticking_tables_searches_only_those()
+    {
+        var vm = ViewModel();
+        Assert.Equal(["main"], vm.SchemaChoices.Select(c => c.Name));
+        Assert.Equal(["customers", "notes", "suppliers"], vm.TableChoices.Select(c => c.Name));
+        Assert.Equal("All tables", vm.TableSummary);
+
+        vm.TableChoices.Single(c => c.Name == "customers").IsSelected = true;
+        vm.TableChoices.Single(c => c.Name == "notes").IsSelected = true;
+        Assert.Equal("customers, notes", vm.TableSummary);
+
+        vm.Term = "example.com";
+        await vm.StartCommand.ExecuteAsync(null);
+        Assert.Equal(3, vm.Matches.Count);
+        Assert.DoesNotContain(vm.Matches, m => m.Match.Table == "suppliers");
+    }
+
+    [Fact]
+    public void Schemas_list_the_connection_and_narrow_the_tables()
+    {
+        var snapshot = new MetadataSnapshot
+        {
+            Objects =
+            [
+                Table("sales", "orders"), Table("sales", "customers"), Table("hr", "people"), Table("hr", "orders"),
+                new DbExplorer.Core.Models.DbObject { Database = "db", Schema = "reports", Name = "v_totals", Type = DbExplorer.Core.Models.DbObjectType.View }
+            ],
+            Columns = [], Modules = [], ForeignKeys = [], Indexes = [], RefreshedAt = DateTimeOffset.Now
+        };
+        var vm = new DataSearchViewModel(new DataSearchService(), new QueryExecutionService(), DesktopTabTests.DialogFake.Create(out _));
+        vm.Attach(new DatabaseSession(new ConnectionProfile { Name = "x" }, null!, _session.Provider, "1", snapshot));
+
+        // Views' schemas only once views are searched too.
+        Assert.Equal(["hr", "sales"], vm.SchemaChoices.Select(c => c.Name));
+        Assert.Equal(["hr.orders", "hr.people", "sales.customers", "sales.orders"], vm.TableChoices.Select(c => c.Name));
+
+        vm.TableChoices.Single(c => c.Name == "sales.orders").IsSelected = true;
+        vm.SchemaChoices.Single(c => c.Name == "sales").IsSelected = true;
+        Assert.Equal("sales", vm.SchemaSummary);
+        Assert.Equal(["customers", "orders"], vm.TableChoices.Select(c => c.Name)); // one schema: plain names
+        Assert.True(vm.TableChoices.Single(c => c.Name == "orders").IsSelected);   // the tick survives
+        Assert.Equal([("sales", "orders")], vm.SelectedTables);
+
+        vm.SchemaChoices.Single(c => c.Name == "hr").IsSelected = true;
+        Assert.Equal("hr, sales", vm.SchemaSummary);
+        Assert.Equal(4, vm.TableChoices.Count);
+
+        vm.IncludeViews = true;
+        Assert.Equal(["hr", "reports", "sales"], vm.SchemaChoices.Select(c => c.Name));
+        Assert.True(vm.SchemaChoices.Single(c => c.Name == "hr").IsSelected);
+        vm.SchemaChoices.Single(c => c.Name == "reports").IsSelected = true;
+        Assert.Equal("3 schemas", vm.SchemaSummary);
+
+        static DbExplorer.Core.Models.DbObject Table(string schema, string name) =>
+            new() { Database = "db", Schema = schema, Name = name, Type = DbExplorer.Core.Models.DbObjectType.Table };
     }
 
     [Fact]

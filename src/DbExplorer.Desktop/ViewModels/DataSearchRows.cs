@@ -56,3 +56,13 @@ public sealed partial class DataSearchTableHit : ObservableObject
 
 /// <summary>One column of the found row shown under the results.</summary>
 public sealed record DataRecordField(string Column, string Value, bool IsMatch, bool IsKey, bool IsNull);
+
+/// <summary>One name in a multi-select picker (a schema or a table in Search data's scope).</summary>
+public sealed partial class PickChoice(string name, string schema = "", string table = "") : ObservableObject
+{
+    public string Name { get; } = name;
+    public string Schema { get; } = schema;
+    public string Table { get; } = table;
+
+    [ObservableProperty] private bool _isSelected;
+}

@@ -58,9 +58,16 @@ public partial class DataSearchViewModel(
 
     [ObservableProperty] private string _term = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(LimitsSummary))] private SearchMatchMode _mode = SearchMatchMode.Contains;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ScopeChanged))] private string _schemas = "";
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ScopeChanged))] private string _tableFilter = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ScopeChanged))] private bool _includeViews;
+
+    /// <summary>The connection's schemas to tick; none ticked searches every schema.</summary>
+    public ObservableCollection<PickChoice> SchemaChoices { get; } = [];
+
+    /// <summary>The tables (and views, when ticked) in the ticked schemas, or in every schema; none ticked searches them all.</summary>
+    public ObservableCollection<PickChoice> TableChoices { get; } = [];
+
+    [ObservableProperty] private string _schemaSummary = "All schemas";
+    [ObservableProperty] private string _tableSummary = "All tables";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ScopeChanged))] private bool _includeNumeric = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ScopeChanged))] private bool _includeGuid = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(LimitsSummary))] private decimal? _maxMatchesPerTable = 50;
@@ -149,7 +156,102 @@ public partial class DataSearchViewModel(
 
     /// <summary>True when the scope differs from the defaults (all schemas and tables, tables only, every column kind).</summary>
     public bool ScopeChanged =>
-        !string.IsNullOrWhiteSpace(Schemas) || !string.IsNullOrWhiteSpace(TableFilter) || IncludeViews || !IncludeNumeric || !IncludeGuid;
+        SchemaChoices.Any(c => c.IsSelected) || TableChoices.Any(c => c.IsSelected) || IncludeViews || !IncludeNumeric || !IncludeGuid;
+
+    /// <summary>The ticked schemas' names.</summary>
+    public IReadOnlyList<string> SelectedSchemas => SchemaChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+
+    /// <summary>The ticked tables as (schema, table).</summary>
+    public IReadOnlyList<(string Schema, string Table)> SelectedTables =>
+        TableChoices.Where(c => c.IsSelected).Select(c => (c.Schema, c.Table)).ToList();
+
+    /// <summary>Lists the connection's schemas again, keeping the ticks of those that still exist.</summary>
+    private void LoadSchemaChoices()
+    {
+        _choicesSnapshot = _session?.Snapshot;
+        var ticked = SelectedSchemas.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in SchemaChoices) c.PropertyChanged -= OnSchemaChoiceChanged;
+        SchemaChoices.Clear();
+        var names = _session?.Snapshot.Objects
+            .Where(IsSearchableObject)
+            .Select(o => o.Schema)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase) ?? Enumerable.Empty<string>();
+        foreach (var name in names)
+        {
+            var choice = new PickChoice(name) { IsSelected = ticked.Contains(name) };
+            choice.PropertyChanged += OnSchemaChoiceChanged;
+            SchemaChoices.Add(choice);
+        }
+        SchemaSummary = Summary(SchemaChoices, "All schemas", "schemas");
+        LoadTableChoices();
+    }
+
+    private object? _choicesSnapshot;
+
+    /// <summary>Called when a scope list opens: lists schemas and tables again if the metadata was refreshed since.</summary>
+    public void RefreshScopeChoices()
+    {
+        if (!ReferenceEquals(_choicesSnapshot, _session?.Snapshot)) LoadSchemaChoices();
+    }
+
+    private bool IsSearchableObject(DbObject o) =>
+        o.Type == DbObjectType.Table || (IncludeViews && o.Type is DbObjectType.View or DbObjectType.MaterializedView);
+
+    /// <summary>Lists the tables in the ticked schemas (every schema when none is ticked), keeping ticks still in scope.</summary>
+    private void LoadTableChoices()
+    {
+        var ticked = SelectedTables.Select(t => (t.Schema.ToUpperInvariant(), t.Table.ToUpperInvariant())).ToHashSet();
+        foreach (var c in TableChoices) c.PropertyChanged -= OnTableChoiceChanged;
+        TableChoices.Clear();
+        var schemas = SelectedSchemas.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tables = (_session?.Snapshot.Objects ?? [])
+            .Where(o => IsSearchableObject(o) && (schemas.Count == 0 || schemas.Contains(o.Schema)))
+            .Select(o => (o.Schema, Table: o.Name))
+            .Distinct()
+            .ToList();
+        // Names alone when they are all in one schema, "schema.table" otherwise.
+        var qualify = tables.Select(t => t.Schema).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any();
+        foreach (var (schema, table) in tables
+                     .OrderBy(t => qualify ? t.Schema : "", StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(t => t.Table, StringComparer.OrdinalIgnoreCase))
+        {
+            var label = qualify && !string.IsNullOrEmpty(schema) ? $"{schema}.{table}" : table;
+            var choice = new PickChoice(label, schema, table) { IsSelected = ticked.Contains((schema.ToUpperInvariant(), table.ToUpperInvariant())) };
+            choice.PropertyChanged += OnTableChoiceChanged;
+            TableChoices.Add(choice);
+        }
+        TableSummary = Summary(TableChoices, "All tables", "tables");
+        OnPropertyChanged(nameof(ScopeChanged));
+    }
+
+    private void OnSchemaChoiceChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PickChoice.IsSelected)) return;
+        SchemaSummary = Summary(SchemaChoices, "All schemas", "schemas");
+        LoadTableChoices();
+    }
+
+    private void OnTableChoiceChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PickChoice.IsSelected)) return;
+        TableSummary = Summary(TableChoices, "All tables", "tables");
+        OnPropertyChanged(nameof(ScopeChanged));
+    }
+
+    private static string Summary(IEnumerable<PickChoice> choices, string all, string plural)
+    {
+        var picked = choices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+        return picked.Count switch
+        {
+            0 => all,
+            1 or 2 => string.Join(", ", picked),
+            _ => $"{picked.Count} {plural}"
+        };
+    }
+
+    partial void OnIncludeViewsChanged(bool value) => LoadSchemaChoices();
 
     /// <summary>The safety limits in one line, shown next to the Limits button.</summary>
     public string LimitsSummary
@@ -172,6 +274,7 @@ public partial class DataSearchViewModel(
         _cts?.Cancel();
         _previewCts?.Cancel();
         _session = session;
+        LoadSchemaChoices();
         ClearResults();
         Skipped.Clear();
         OnSkippedChanged();
@@ -191,8 +294,8 @@ public partial class DataSearchViewModel(
         {
             Term = Term.Trim(),
             Mode = Mode,
-            Schemas = Schemas.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-            TableNameFilter = TableFilter,
+            Schemas = SelectedSchemas,
+            OnlyTables = SelectedTables is { Count: > 0 } tables ? tables : null,
             IncludeViews = IncludeViews,
             IncludeNumericColumns = IncludeNumeric,
             IncludeGuidColumns = IncludeGuid,
@@ -324,8 +427,8 @@ public partial class DataSearchViewModel(
     [RelayCommand]
     private void ResetScope()
     {
-        Schemas = "";
-        TableFilter = "";
+        foreach (var c in TableChoices) c.IsSelected = false;
+        foreach (var c in SchemaChoices) c.IsSelected = false;
         IncludeViews = false;
         IncludeNumeric = true;
         IncludeGuid = true;

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using DbExplorer.Desktop.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using DbExplorer.Desktop.ViewModels;
@@ -17,7 +18,7 @@ public partial class ImportDataWindow : Window
 
     private void OnPickerFocus(object? sender, GotFocusEventArgs e)
     {
-        if (sender is AutoCompleteBox box) box.IsDropDownOpen = true;
+        PickerDropDown.OpenOnFocus(sender);
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();

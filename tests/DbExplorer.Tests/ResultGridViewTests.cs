@@ -18,6 +18,7 @@ public sealed class HeadlessTestApp
         AppBuilder.Configure<DbExplorer.Desktop.App>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
 }
 
+[Collection(nameof(HeadlessUiCollection))]
 public class ResultGridViewTests
 {
     [AvaloniaTheory]

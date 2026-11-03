@@ -1,0 +1,168 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:controls="using:DbExplorer.Desktop.Controls"
+        x:Class="DbExplorer.Desktop.Views.BackupRestoreWindow"
+        x:DataType="vm:BackupRestoreViewModel"
+        Title="{Binding Title}"
+        Width="860" Height="760" MinWidth="640" MinHeight="540"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBox.log">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource AppCodeBackgroundBrush}" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,12,0" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="12">
+    <!-- Connection and tools -->
+    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+      <Border Background="{DynamicResource AppDangerBrush}" CornerRadius="4" Padding="10,5" IsVisible="{Binding IsProduction}">
+        <TextBlock Text="{Binding ProductionBanner}" Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap" />
+      </Border>
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel VerticalAlignment="Center" Spacing="2">
+          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" />
+          <TextBlock Classes="hint" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Grid>
+      <Border Classes="card">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4" VerticalAlignment="Center">
+            <TextBlock Classes="hint" Text="{Binding ToolText}" TextWrapping="Wrap"
+                       IsVisible="{Binding ToolText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBlock Text="{Binding ProblemText}" TextWrapping="Wrap" Foreground="{DynamicResource AppDangerBrush}"
+                       IsVisible="{Binding ProblemText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+          <Button Grid.Column="1" Content="Tool folder…" Command="{Binding PickToolFolderCommand}" IsVisible="{Binding CanPickToolFolder}"
+                  Margin="10,0,0,0" VerticalAlignment="Center"
+                  ToolTip.Tip="The folder with pg_dump, pg_restore and psql (or mysqldump and mysql), when they aren't found on their own" />
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <!-- Status and actions -->
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" />
+        <Button Content="Show file" Command="{Binding ShowFileCommand}" IsVisible="{Binding CanShowFile}"
+                ToolTip.Tip="Open the folder the backup was saved to" />
+        <Button Content="Close" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Progress and output -->
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" Height="160">
+      <ProgressBar DockPanel.Dock="Top" Minimum="0" Maximum="100" Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}"
+                   Height="4" MinHeight="4" Margin="0,0,0,6" />
+      <TextBox x:Name="LogBox" Classes="log" Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+               VerticalContentAlignment="Top" Watermark="What runs, and the server's or tool's messages, show here."
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+    </DockPanel>
+
+    <TabControl SelectedIndex="{Binding SelectedTabIndex}">
+      <!-- Back up -->
+      <TabItem Header="Back up">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="2,12,2,0">
+            <TextBlock Classes="label" Text="Database" />
+            <controls:DatabasePicker Grid.Column="1" Width="280" HorizontalAlignment="Left" ItemsSource="{Binding Databases}"
+                                     SelectedItem="{Binding BackupDatabase}" PlaceholderText="Pick a database" />
+
+            <TextBlock Grid.Row="1" Classes="label" Text="Format" Margin="0,12,12,0" IsVisible="{Binding ShowFormat}" />
+            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2" Margin="0,12,0,0" IsVisible="{Binding ShowFormat}">
+              <RadioButton GroupName="format" IsChecked="{Binding IsCustomFormat}">
+                <TextBlock Text="Custom archive (.dump): compressed, restored with pg_restore. Recommended." TextWrapping="Wrap" />
+              </RadioButton>
+              <RadioButton GroupName="format" IsChecked="{Binding IsPlainFormat}">
+                <TextBlock Text="Plain SQL script (.sql): readable, runs in any SQL client; leaves out owners and privileges." TextWrapping="Wrap" />
+              </RadioButton>
+            </StackPanel>
+
+            <TextBlock Grid.Row="2" Classes="label" Text="File" Margin="0,12,12,0" />
+            <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+              <TextBox Text="{Binding BackupPath}" Watermark="Full path of the backup file" />
+              <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseBackupPathCommand}" IsVisible="{Binding CanBrowseFiles}" Margin="6,0,0,0" />
+            </Grid>
+            <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" FontSize="11" Text="{Binding FileHint}" TextWrapping="Wrap" Margin="2,4,0,0" />
+
+            <TextBlock Grid.Row="4" Classes="label" Text="Options" Margin="0,12,12,0" VerticalAlignment="Top" />
+            <StackPanel Grid.Row="4" Grid.Column="1" Spacing="2" Margin="0,8,0,0">
+              <CheckBox Content="Schema only (no rows)" IsChecked="{Binding SchemaOnly}" IsVisible="{Binding ShowSchemaOnly}"
+                        ToolTip.Tip="Tables, views, routines and the rest, without their data" />
+              <CheckBox Content="Copy-only (doesn't affect scheduled backups)" IsChecked="{Binding CopyOnly}" IsVisible="{Binding ShowCopyOnly}"
+                        ToolTip.Tip="COPY_ONLY: later differential backups still build on the last regular full backup" />
+              <CheckBox Content="Compress" IsChecked="{Binding Compress}" IsVisible="{Binding ShowCompress}"
+                        ToolTip.Tip="Smaller file and usually faster; costs some CPU on the server" />
+              <CheckBox Content="Verify the file afterwards" IsChecked="{Binding Verify}" IsVisible="{Binding ShowVerify}"
+                        ToolTip.Tip="RESTORE VERIFYONLY: reads the whole file back and checks its checksums" />
+            </StackPanel>
+
+            <Button Grid.Row="5" Grid.Column="1" Classes="accent" Content="Back up" Command="{Binding StartBackupCommand}"
+                    HorizontalAlignment="Left" Margin="0,14,0,4" MinWidth="120" />
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Restore -->
+      <TabItem Header="Restore">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="2,12,2,0">
+            <TextBlock Classes="label" Text="File" />
+            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto">
+              <TextBox Text="{Binding RestorePath}" Watermark="Full path of the backup file" />
+              <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseRestorePathCommand}" IsVisible="{Binding CanBrowseFiles}" Margin="6,0,0,0" />
+              <Button Grid.Column="2" Content="Read" Command="{Binding ReadFileCommand}" Margin="6,0,0,0"
+                      ToolTip.Tip="Show what the file holds without restoring anything" />
+            </Grid>
+            <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" FontSize="11" Text="{Binding FileHint}" TextWrapping="Wrap" Margin="2,4,0,0" />
+
+            <Border Grid.Row="2" Grid.Column="1" Classes="card" Margin="0,8,0,0">
+              <TextBlock Text="{Binding FileInfoText}" TextWrapping="Wrap" />
+            </Border>
+
+            <TextBlock Grid.Row="3" Classes="label" Text="Restore into" Margin="0,14,12,0" VerticalAlignment="Top" />
+            <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,12,0,0">
+              <RadioButton GroupName="target" Content="A new database" IsChecked="{Binding RestoreToNew}" VerticalAlignment="Center" MinWidth="170" />
+              <TextBox Grid.Column="1" Width="280" HorizontalAlignment="Left" Text="{Binding NewDatabaseName}" Watermark="Name of the new database"
+                       IsEnabled="{Binding RestoreToNew}" />
+              <RadioButton Grid.Row="1" GroupName="target" Content="An existing database" IsChecked="{Binding RestoreToExisting}"
+                           VerticalAlignment="Center" Margin="0,6,0,0" />
+              <controls:DatabasePicker Grid.Row="1" Grid.Column="1" Width="280" HorizontalAlignment="Left" Margin="0,6,0,0"
+                                       ItemsSource="{Binding Databases}" SelectedItem="{Binding RestoreTargetDatabase}"
+                                       PlaceholderText="Pick a database" IsEnabled="{Binding RestoreToExisting}" />
+            </Grid>
+            <TextBlock Grid.Row="4" Grid.Column="1" Classes="hint" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0"
+                       Text="{Binding RestoreOverExisting, StringFormat='Into an existing database: {0}'}" IsVisible="{Binding RestoreToExisting}" />
+
+            <TextBlock Grid.Row="5" Classes="label" Text="Options" Margin="0,12,12,0" VerticalAlignment="Top"
+                       IsVisible="{Binding ShowCloseConnections}" />
+            <StackPanel Grid.Row="5" Grid.Column="1" Spacing="2" Margin="0,8,0,0">
+              <CheckBox Content="Leave out owners and privileges" IsChecked="{Binding SkipOwnership}" IsVisible="{Binding ShowSkipOwnership}"
+                        ToolTip.Tip="--no-owner --no-privileges: everything is owned by the login you restore with, so a backup from another server restores without its roles" />
+              <CheckBox Content="Disconnect other sessions first" IsChecked="{Binding CloseConnections}" IsVisible="{Binding ShowCloseConnections}"
+                        IsEnabled="{Binding RestoreToExisting}"
+                        ToolTip.Tip="Their open transactions are rolled back. Without this the restore waits for, or fails on, sessions using the database." />
+            </StackPanel>
+
+            <Button Grid.Row="6" Grid.Column="1" Classes="accent" Content="Restore…" Command="{Binding StartRestoreCommand}"
+                    IsEnabled="{Binding !IsReadOnly}" HorizontalAlignment="Left" Margin="0,14,0,4" MinWidth="120"
+                    ToolTip.Tip="Shows exactly what will run and asks first" />
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

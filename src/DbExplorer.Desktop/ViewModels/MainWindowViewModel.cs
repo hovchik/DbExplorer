@@ -164,6 +164,7 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.HideRequested += () => ShowNavigator = false;
         navigator.ObjectActionRequested += OnNavigatorObjectAction;
         navigator.DocumentationRequested += (database, schema) => _ = ExportDocumentationAsync(database, schema);
+        navigator.BackupRequested += OpenBackupRestore;
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
 
@@ -976,6 +977,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
         ExportDocumentationCommand.NotifyCanExecuteChanged();
+        BackupDatabaseCommand.NotifyCanExecuteChanged();
+        RestoreDatabaseCommand.NotifyCanExecuteChanged();
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 }

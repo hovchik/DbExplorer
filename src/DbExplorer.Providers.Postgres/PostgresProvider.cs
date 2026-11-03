@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using Dapper;
 using DbExplorer.Core.Abstractions;
+using DbExplorer.Core.Backup;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Debugging;
 using DbExplorer.Core.Models;
@@ -11,7 +12,7 @@ using NpgsqlTypes;
 
 namespace DbExplorer.Providers.Postgres;
 
-public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
+public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider, IDatabaseBackupProvider
 {
     private const int MetadataStatementTimeoutMs = 120_000;
     private const int MetadataLockTimeoutMs = 5000;
@@ -51,6 +52,24 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
         PostgresDebugSession.StartAsync(_profile, target, arguments, breakpoints, commit, ct);
 
     public string QuoteIdentifier(string identifier) => PostgresSql.Quote(identifier);
+
+    private async Task<Version> ServerVersionAsync(CancellationToken ct) =>
+        ClientTools.ParseVersion(await GetServerVersionAsync(ct))?.Version ?? new Version(0, 0);
+
+    public async Task<BackupSupport> GetBackupSupportAsync(string? toolFolder, CancellationToken ct = default) =>
+        await PostgresBackup.GetSupportAsync(_profile, await ServerVersionAsync(ct), toolFolder, ct);
+
+    public async Task BackupAsync(BackupRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        await PostgresBackup.BackupAsync(_profile, await ServerVersionAsync(ct), request, toolFolder, progress, ct);
+
+    public Task<BackupFileInfo> InspectBackupAsync(string path, string? toolFolder, CancellationToken ct = default) =>
+        PostgresBackup.InspectAsync(path, toolFolder, ct);
+
+    public Task<string> DescribeRestoreAsync(RestoreRequest request, string? toolFolder, CancellationToken ct = default) =>
+        PostgresBackup.DescribeRestoreAsync(_profile, request, toolFolder, ct);
+
+    public Task RestoreAsync(RestoreRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        PostgresBackup.RestoreAsync(_profile, request, toolFolder, progress, ct);
 
     public async Task<string> GetServerVersionAsync(CancellationToken ct = default) =>
         await ScalarAsync<string>(PostgresQueries.ServerVersion, null, ct) ?? "";

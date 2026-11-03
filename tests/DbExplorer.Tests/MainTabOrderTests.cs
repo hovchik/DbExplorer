@@ -11,7 +11,7 @@ public class MainTabOrderTests
     [
         AppTab.Objects, AppTab.Query, AppTab.QueryBuilder, AppTab.TableDesigner, AppTab.Comparer, AppTab.Diagram,
         AppTab.SearchNamesAndCode, AppTab.SearchData, AppTab.ErModel, AppTab.Indexes, AppTab.Locks, AppTab.Activity,
-        AppTab.Lab, AppTab.Security
+        AppTab.Lab, AppTab.Security, AppTab.Jobs
     ];
 
     private static readonly Dictionary<string, AppTab> Headers = new()
@@ -20,7 +20,7 @@ public class MainTabOrderTests
         ["Table designer"] = AppTab.TableDesigner, ["Comparer"] = AppTab.Comparer, ["Diagram"] = AppTab.Diagram,
         ["Search names &amp; code"] = AppTab.SearchNamesAndCode, ["Search data"] = AppTab.SearchData,
         ["ER model"] = AppTab.ErModel, ["Indexes"] = AppTab.Indexes, ["Locks"] = AppTab.Locks,
-        ["Activity"] = AppTab.Activity, ["Lab"] = AppTab.Lab, ["Security"] = AppTab.Security
+        ["Activity"] = AppTab.Activity, ["Lab"] = AppTab.Lab, ["Security"] = AppTab.Security, ["Jobs"] = AppTab.Jobs
     };
 
     [Fact]

@@ -55,6 +55,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<ErModelViewModel>();
         services.AddSingleton<QueryBuilderViewModel>();
         services.AddSingleton<SecurityViewModel>();
+        services.AddSingleton<JobsViewModel>();
         services.AddTransient<QueryViewModel>();
         services.AddSingleton<Func<QueryViewModel>>(sp => sp.GetRequiredService<QueryViewModel>);
         services.AddSingleton<QueryWorkspaceViewModel>();

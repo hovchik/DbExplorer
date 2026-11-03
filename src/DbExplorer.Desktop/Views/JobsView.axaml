@@ -1,0 +1,299 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             xmlns:jobs="using:DbExplorer.Application.Jobs"
+             x:Class="DbExplorer.Desktop.Views.JobsView"
+             x:DataType="vm:JobsViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.badge">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Background" Value="{DynamicResource AppObjectViewBrush}" />
+    </Style>
+    <Style Selector="Border.badge TextBlock">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.badge.running">
+      <Setter Property="Background" Value="{DynamicResource AppObjectProcedureBrush}" />
+    </Style>
+    <Style Selector="Border.badge.failed">
+      <Setter Property="Background" Value="{DynamicResource AppObjectTriggerBrush}" />
+    </Style>
+    <Style Selector="Border.badge.idle">
+      <Setter Property="Background" Value="{DynamicResource AppObjectOtherBrush}" />
+    </Style>
+    <Style Selector="Border.badge.disabled">
+      <Setter Property="Background" Value="{DynamicResource AppObjectOtherBrush}" />
+    </Style>
+    <Style Selector="TextBlock.failed">
+      <Setter Property="Foreground" Value="{DynamicResource AppObjectTriggerBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.succeeded">
+      <Setter Property="Foreground" Value="{DynamicResource AppObjectViewBrush}" />
+    </Style>
+    <Style Selector="Grid.header TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="WrapPanel.actions > Button">
+      <Setter Property="Margin" Value="0,0,6,4" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel Margin="4">
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
+      <Button Content="Refresh" Command="{Binding RefreshCommand}" ToolTip.Tip="Read the jobs, their last runs and next runs again" />
+      <Button Content="{Binding NewJobLabel}" Command="{Binding NewJobCommand}"
+              ToolTip.Tip="A job that runs SQL on a schedule; the script is shown before anything is created" />
+      <TextBox Width="200" Text="{Binding Filter}" Watermark="Filter by name, database or SQL" />
+      <CheckBox Content="Auto-refresh" IsChecked="{Binding AutoRefresh}" ToolTip.Tip="Read the jobs again every 10 seconds, to follow a run" />
+      <ProgressBar Width="80" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+      <TextBlock Text="{Binding Source}" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </WrapPanel>
+
+    <!-- Setup guidance: no Agent, pg_cron not installed, event scheduler off -->
+    <Border DockPanel.Dock="Top" IsVisible="{Binding HasSetup}" Padding="10,8" Margin="0,0,0,6" CornerRadius="6"
+            Background="{DynamicResource AppCellEditedBrush}">
+      <StackPanel Spacing="6">
+        <SelectableTextBlock Text="{Binding Setup}" TextWrapping="Wrap" />
+        <Button Content="Turn the event scheduler on…" Command="{Binding StartSchedulerCommand}" IsVisible="{Binding CanStartScheduler}"
+                ToolTip.Tip="SET GLOBAL event_scheduler = ON (until the server restarts)" />
+      </StackPanel>
+    </Border>
+    <Border DockPanel.Dock="Top" IsVisible="{Binding HasWarnings}" Padding="8,4" Margin="0,0,0,4" CornerRadius="6"
+            Background="{DynamicResource AppCodeBackgroundBrush}">
+      <TextBlock Classes="hint" Text="{Binding Warnings}" TextWrapping="Wrap" />
+    </Border>
+
+    <Grid MinHeight="0" IsVisible="{Binding IsAvailable}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="2*" MinWidth="260" MaxWidth="460" />
+        <ColumnDefinition Width="6" />
+        <ColumnDefinition Width="3*" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Jobs -->
+      <Panel Grid.Column="0">
+        <ListBox ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}" IsEnabled="{Binding !IsEditing}"
+                 BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:JobItem">
+              <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                <Border Grid.Column="0" Classes="badge" Classes.running="{Binding IsRunning}" Classes.failed="{Binding IsFailed}"
+                        Classes.disabled="{Binding IsDisabled}" Classes.idle="{Binding IsIdle}" Margin="0,0,8,0" VerticalAlignment="Top" ToolTip.Tip="{Binding StateTip}">
+                  <TextBlock Text="{Binding Badge}" />
+                </Border>
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="hint" Text="{Binding Schedule}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="hint" Classes.failed="{Binding IsFailed}" Text="{Binding RunsText}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Classes="hint" Margin="16" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                   IsVisible="{Binding HasNoJobs}" Text="{Binding EmptyHint}" />
+      </Panel>
+
+      <GridSplitter Grid.Column="1" Width="6" Background="Transparent" ResizeDirection="Columns" />
+
+      <Grid Grid.Column="2">
+        <TextBlock Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="380" TextAlignment="Center"
+                   IsVisible="{Binding ShowEmptyHint}"
+                   Text="Pick a job to see its schedule, command and runs. Every change shows its script and asks before it runs." />
+
+        <!-- Details of the selected job -->
+        <ScrollViewer IsVisible="{Binding HasSelection}" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="12" Margin="4,0,8,8">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding DetailTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DetailSchedule}" TextWrapping="Wrap" />
+              <TextBlock Classes="hint" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" Text="{Binding DetailScheduleText}"
+                         IsVisible="{Binding DetailScheduleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="hint" Text="{Binding DetailFacts}" TextWrapping="Wrap" />
+              <TextBlock Classes="hint" Text="{Binding DetailRuns}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding DetailDescription}" TextWrapping="Wrap" IsVisible="{Binding HasDetailDescription}" Margin="0,4,0,0" />
+              <WrapPanel Classes="actions" Margin="0,8,0,0" IsEnabled="{Binding !IsBusy}">
+                <Button Content="▶ Run now…" Command="{Binding RunNowCommand}" IsVisible="{Binding CanRunNow}"
+                        ToolTip.Tip="Start the job now (sp_start_job), whatever its schedule" />
+                <Button Content="■ Stop…" Command="{Binding StopCommand}" IsVisible="{Binding CanStop}" ToolTip.Tip="Stop the running job (sp_stop_job)" />
+                <Button Content="Edit…" Command="{Binding EditCommand}" ToolTip.Tip="Change the name, schedule, database or SQL" />
+                <Button Content="{Binding ToggleLabel}" Command="{Binding ToggleEnabledCommand}" ToolTip.Tip="Turn the schedule on or off; the job stays" />
+                <Button Content="Open in Query tab" Command="{Binding OpenInQueryCommand}" ToolTip.Tip="The job's SQL in a new Query tab, to run or test it by hand" />
+                <Button Content="Script job" Command="{Binding ScriptJobCommand}" ToolTip.Tip="A script that creates this job, to keep or to copy to another server" />
+                <Button Content="Delete…" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete the job (and on SQL Server its history)" />
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="4" IsVisible="{Binding HasDetailMessage}">
+              <TextBlock Classes="section" Text="Last run message" />
+              <SelectableTextBlock Text="{Binding DetailMessage}" TextWrapping="Wrap" />
+              <SelectableTextBlock Text="{Binding StepError}" TextWrapping="Wrap" IsVisible="{Binding HasStepError}" Foreground="{DynamicResource AppObjectTriggerBrush}" />
+            </StackPanel>
+
+            <StackPanel Spacing="4" IsVisible="{Binding ShowCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="SQL" />
+                <Button Grid.Column="1" Content="Copy" Command="{Binding CopyCommandCommand}" Padding="8,2" />
+              </Grid>
+              <TextBox Classes="code" Text="{Binding DetailCommand}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" MaxHeight="260" MinHeight="60" />
+            </StackPanel>
+
+            <StackPanel Spacing="6" IsVisible="{Binding ShowSteps}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="Steps" />
+                <Button Grid.Column="1" Content="Copy all" Command="{Binding CopyCommandCommand}" Padding="8,2" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding DetailSteps}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="jobs:JobStep">
+                    <StackPanel Spacing="2" Margin="0,0,0,8">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding Id}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                        <TextBlock Classes="hint" Text="{Binding Subsystem}" />
+                        <TextBlock Classes="hint" Text="{Binding Database}" />
+                      </StackPanel>
+                      <TextBox Classes="code" Text="{Binding Command}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" MaxHeight="160" />
+                      <TextBlock Classes="hint" FontSize="12">
+                        <Run Text="on success:" /> <Run Text="{Binding OnSuccess}" /> <Run Text=" · on failure:" /> <Run Text="{Binding OnFailure}" />
+                      </TextBlock>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- History -->
+            <StackPanel Spacing="4" IsVisible="{Binding ShowHistory}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="Runs" />
+                <CheckBox Grid.Column="1" Content="Job outcomes only" IsChecked="{Binding OnlyJobOutcomes}" IsVisible="{Binding IsSqlServer}"
+                          ToolTip.Tip="Untick to also list every step of each run" />
+              </Grid>
+              <TextBlock Classes="hint" Text="{Binding HistoryStatus}" TextWrapping="Wrap" />
+              <Grid Classes="header" ColumnDefinitions="150,80,90,Auto,*" IsVisible="{Binding HasHistory}">
+                <TextBlock Grid.Column="0" Text="Started" />
+                <TextBlock Grid.Column="1" Text="Took" />
+                <TextBlock Grid.Column="2" Text="Outcome" />
+                <TextBlock Grid.Column="3" Text="Step" Margin="0,0,10,0" IsVisible="{Binding IsSqlServer}" />
+                <TextBlock Grid.Column="4" Text="Message" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding History}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:JobRunItem">
+                    <Grid ColumnDefinitions="150,80,90,Auto,*" Margin="0,2">
+                      <TextBlock Grid.Column="0" Text="{Binding Started}" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="12" />
+                      <TextBlock Grid.Column="1" Text="{Binding Duration}" />
+                      <TextBlock Grid.Column="2" Text="{Binding Outcome}" Classes.failed="{Binding IsFailed}" Classes.succeeded="{Binding IsSucceeded}" />
+                      <TextBlock Grid.Column="3" Text="{Binding Step}" Margin="0,0,10,0" MaxWidth="160" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="4" Classes="hint" Text="{Binding Message}" TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding Message}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <TextBlock Classes="hint" IsVisible="{Binding ShowNoHistoryNote}" TextWrapping="Wrap"
+                       Text="MySQL keeps no run history for events: only when each last started (LAST_EXECUTED). Errors go to the server's error log." />
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Create / edit -->
+        <ScrollViewer IsVisible="{Binding IsEditing}" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="10" Margin="4,0,8,8" IsEnabled="{Binding !IsBusy}">
+            <TextBlock Text="{Binding EditorTitle}" FontSize="18" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" >
+              <TextBlock Grid.Row="0" Text="Name" VerticalAlignment="Center" />
+              <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding EditName}" IsEnabled="{Binding CanEditName}" Margin="0,0,0,6"
+                       ToolTip.Tip="pg_cron cannot rename a job: delete it and create a new one instead" />
+              <TextBlock Grid.Row="1" Text="{Binding DatabaseLabel}" VerticalAlignment="Center" />
+              <controls:DatabasePicker Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" Width="260" Margin="0,0,0,6"
+                                       ItemsSource="{Binding Databases}" SelectedItem="{Binding EditDatabase}"
+                                       ToolTip.Tip="Where the SQL runs. Type to filter the list." />
+              <TextBlock Grid.Row="2" Text="Description" VerticalAlignment="Center" IsVisible="{Binding CanEditDescription}" />
+              <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding EditDescription}" IsVisible="{Binding CanEditDescription}" Margin="0,0,0,6" />
+              <CheckBox Grid.Row="3" Grid.Column="1" Content="Enabled" IsChecked="{Binding EditEnabled}" Margin="0,0,0,2"
+                        ToolTip.Tip="A disabled job keeps its schedule but does not run until enabled" />
+              <CheckBox Grid.Row="4" Grid.Column="1" Content="Keep a one-time event after it ran (ON COMPLETION PRESERVE)" IsChecked="{Binding EditPreserve}"
+                        IsVisible="{Binding ShowPreserve}" />
+            </Grid>
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="Schedule" />
+              <CheckBox Content="{Binding KeepScheduleLabel}" IsChecked="{Binding KeepSchedule}" IsVisible="{Binding CanKeepSchedule}" />
+              <StackPanel Spacing="6" IsVisible="{Binding ShowScheduleForm}">
+                <WrapPanel>
+                  <ComboBox Width="190" ItemsSource="{Binding ScheduleKinds}" SelectedItem="{Binding EditKind}" Margin="0,0,10,4" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowInterval}" Margin="0,0,10,4">
+                    <TextBlock Text="every" VerticalAlignment="Center" />
+                    <NumericUpDown Width="110" Value="{Binding EditInterval}" Minimum="1" Maximum="59" Increment="1" FormatString="0" />
+                    <TextBlock Text="{Binding IntervalUnit}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowDayOfMonth}" Margin="0,0,10,4">
+                    <TextBlock Text="on day" VerticalAlignment="Center" />
+                    <NumericUpDown Width="100" Value="{Binding EditDayOfMonth}" Minimum="1" Maximum="31" Increment="1" FormatString="0" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowTime}" Margin="0,0,10,4">
+                    <TextBlock Text="{Binding TimeLabel}" VerticalAlignment="Center" />
+                    <TextBox Width="80" Text="{Binding EditTime}" Watermark="03:00" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowOnceAt}" Margin="0,0,10,4">
+                    <TextBlock Text="at" VerticalAlignment="Center" />
+                    <TextBox Width="160" Text="{Binding EditOnceAt}" Watermark="yyyy-MM-dd HH:mm" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowCron}" Margin="0,0,10,4">
+                    <TextBox Width="200" Text="{Binding EditCron}" Watermark="0 3 * * *" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace"
+                             ToolTip.Tip="minute hour day-of-month month day-of-week, e.g. */10 * * * * or 30 2 * * 1-5; also @daily, '30 seconds'" />
+                  </StackPanel>
+                </WrapPanel>
+                <WrapPanel IsVisible="{Binding ShowDays}">
+                  <CheckBox Content="Mon" IsChecked="{Binding EditMonday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Tue" IsChecked="{Binding EditTuesday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Wed" IsChecked="{Binding EditWednesday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Thu" IsChecked="{Binding EditThursday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Fri" IsChecked="{Binding EditFriday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Sat" IsChecked="{Binding EditSaturday}" Margin="0,0,10,0" />
+                  <CheckBox Content="Sun" IsChecked="{Binding EditSunday}" Margin="0,0,10,0" />
+                </WrapPanel>
+                <TextBlock Classes="hint" Text="{Binding SchedulePreview}" TextWrapping="Wrap" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Classes="section" Text="SQL to run" />
+              <TextBlock Classes="hint" IsVisible="{Binding CommandLockedNote}" TextWrapping="Wrap"
+                         Text="This job has several steps (or a step that is not T-SQL). Change its steps with Script job or in SQL Server Management Studio; here you can change the name, schedule and state." />
+              <TextBox Classes="code" Text="{Binding EditSql}" IsVisible="{Binding CanEditCommand}" AcceptsReturn="True" AcceptsTab="True"
+                       TextWrapping="NoWrap" MinHeight="120" MaxHeight="320" Watermark="e.g. DELETE FROM audit_log WHERE created_at &lt; now() - interval '90 days'" />
+            </StackPanel>
+
+            <Border IsVisible="{Binding HasEditorProblem}" Padding="8,4" CornerRadius="6" Background="{DynamicResource AppCellEditedBrush}">
+              <TextBlock Text="{Binding EditorProblem}" TextWrapping="Wrap" />
+            </Border>
+
+            <StackPanel Spacing="4" IsVisible="{Binding EditorScript, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Classes="section" Text="Script" />
+              <TextBox Classes="code" Text="{Binding EditorScript}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="220" />
+            </StackPanel>
+
+            <WrapPanel Classes="actions">
+              <Button Classes="accent" Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" />
+              <Button Content="Open script in Query tab" Command="{Binding OpenEditorScriptCommand}" />
+              <Button Content="Cancel" Command="{Binding CancelEditCommand}" />
+            </WrapPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</UserControl>

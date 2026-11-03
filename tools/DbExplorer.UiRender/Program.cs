@@ -159,6 +159,7 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("jobs", () => RenderJobsAsync("postgres"));
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -722,6 +723,8 @@ namespace DbExplorer.UiRender
             await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "connect " + suffix, 90_000);
             if (!_vm.IsConnected) throw new InvalidOperationException(_vm.StatusText);
 
+            await RenderJobsAsync(suffix);
+
             _vm.SelectedTab = AppTab.Security;
             await WaitFor(() => _vm.Security.Principals.Count > 0, "security " + suffix, 30_000);
             _vm.Security.SelectedPrincipal = _vm.Security.Principals.FirstOrDefault(); // a server with only built-in accounts shows the empty state
@@ -756,6 +759,116 @@ namespace DbExplorer.UiRender
             await _vm.Activity.LoadTopQueriesCommand.ExecuteAsync(null);
             await Settle(4);
             await Shot(_window, $"activity-{suffix}");
+        }
+
+        /// <summary>The Jobs tab with sample jobs (one that failed, one disabled, one with a run history) and the new-job form.</summary>
+        private async Task RenderJobsAsync(string suffix)
+        {
+            var provider = _vm.Session!.Provider;
+            var catalog = await DbExplorer.Application.Jobs.JobCatalogLoader.LoadAsync(provider, _vm.Session.Profile.Database);
+            if (!catalog.Available)
+            {
+                _vm.SelectedTab = AppTab.Jobs;
+                await Settle(6);
+                await Shot(_window, $"jobs-unavailable-{suffix}");
+                return;
+            }
+            await SeedJobsAsync(provider, catalog);
+            _vm.SelectedTab = AppTab.Jobs;
+            await _vm.Jobs.RefreshCommand.ExecuteAsync(null);
+            await WaitFor(() => _vm.Jobs.Jobs.Count > 0 && !_vm.Jobs.IsBusy, "jobs " + suffix, 30_000);
+            _vm.Jobs.SelectedJob = _vm.Jobs.Jobs.FirstOrDefault(j => j.IsFailed) ?? _vm.Jobs.Jobs[0];
+            await WaitFor(() => !_vm.Jobs.HistoryStatus.StartsWith("Reading", StringComparison.Ordinal), "job history " + suffix);
+            await Settle(6);
+            await Shot(_window, $"jobs-{suffix}");
+
+            if (_vm.Jobs.Jobs.FirstOrDefault(j => j.Job.Steps.Count > 1) is { } multi)
+            {
+                _vm.Jobs.SelectedJob = multi;
+                await WaitFor(() => !_vm.Jobs.HistoryStatus.StartsWith("Reading", StringComparison.Ordinal), "job history " + suffix);
+                await Settle(6);
+                await Shot(_window, $"jobs-steps-{suffix}");
+            }
+
+            _vm.Jobs.NewJobCommand.Execute(null);
+            _vm.Jobs.EditName = "Archive old orders";
+            _vm.Jobs.EditKind = _vm.Jobs.ScheduleKinds.First(k => k.Kind == DbExplorer.Application.Jobs.ScheduleKind.Weekly);
+            _vm.Jobs.EditTime = "01:30";
+            _vm.Jobs.EditSaturday = true;
+            _vm.Jobs.EditMonday = false;
+            _vm.Jobs.EditDescription = "Moves orders older than two years to orders_archive";
+            _vm.Jobs.EditSql = "INSERT INTO orders_archive SELECT * FROM orders WHERE ordered_at < CURRENT_DATE - 730;\nDELETE FROM orders WHERE ordered_at < CURRENT_DATE - 730;";
+            await Settle(6);
+            await Shot(_window, $"jobs-new-{suffix}");
+            _vm.Jobs.CancelEditCommand.Execute(null);
+            await Settle();
+        }
+
+        /// <summary>Creates the render's sample jobs again (through the Jobs tab's own scripts), with some run history.</summary>
+        private static async Task SeedJobsAsync(DbExplorer.Core.Abstractions.IDatabaseProvider provider, DbExplorer.Application.Jobs.JobCatalog catalog)
+        {
+            string[] names = ["Nightly vacuum", "Purge old sessions", "Refresh sales report", "Weekly summary", "Nightly index maintenance", "Load and copy",
+                              "purge_sessions", "daily_rollup", "year_end_close"];
+            foreach (var old in catalog.Jobs.Where(j => names.Contains(j.Name)))
+                await DbExplorer.Application.Jobs.JobScriptBuilder.RunAsync(provider, DbExplorer.Application.Jobs.JobScriptBuilder.Delete(catalog, old), 30);
+            catalog = await DbExplorer.Application.Jobs.JobCatalogLoader.LoadAsync(provider, null);
+            var now = catalog.ServerNow ?? DateTime.Now;
+            async Task Create(string name, string command, DbExplorer.Application.Jobs.JobScheduleSpec schedule, bool enabled = true, string? database = null, string? description = null)
+            {
+                var draft = new DbExplorer.Application.Jobs.JobDraft
+                {
+                    Name = name, Command = command, Schedule = schedule, Enabled = enabled, Description = description,
+                    Database = database ?? (catalog.Engine == DbExplorer.Application.Jobs.JobEngine.PgCron ? "uirender_shop" : null)
+                };
+                await DbExplorer.Application.Jobs.JobScriptBuilder.RunAsync(provider, DbExplorer.Application.Jobs.JobScriptBuilder.Create(catalog, draft, now), 30);
+            }
+            static DbExplorer.Application.Jobs.JobScheduleSpec S(DbExplorer.Application.Jobs.ScheduleKind kind, int interval = 1, int hour = 3, int minute = 0, string? cron = null,
+                DayOfWeek day = DayOfWeek.Monday) =>
+                new() { Kind = kind, Interval = interval, At = new TimeOnly(hour, minute), Cron = cron, Days = [day] };
+
+            switch (catalog.Engine)
+            {
+                case DbExplorer.Application.Jobs.JobEngine.PgCron:
+                    await Create("Nightly vacuum", "VACUUM (ANALYZE) orders;", S(DbExplorer.Application.Jobs.ScheduleKind.Daily, hour: 3));
+                    await Create("Purge old sessions", "SELECT count(*) FROM customers;", S(DbExplorer.Application.Jobs.ScheduleKind.Cron, cron: "1 seconds"));
+                    await Create("Refresh sales report", "REFRESH MATERIALIZED VIEW sales_report;", S(DbExplorer.Application.Jobs.ScheduleKind.Cron, cron: "1 seconds"));
+                    await Create("Weekly summary", "SELECT 1;", S(DbExplorer.Application.Jobs.ScheduleKind.Weekly, hour: 6, day: DayOfWeek.Monday), enabled: false);
+                    await Task.Delay(3500);
+                    catalog = await DbExplorer.Application.Jobs.JobCatalogLoader.LoadAsync(provider, null);
+                    foreach (var (name, spec) in new[] { ("Purge old sessions", S(DbExplorer.Application.Jobs.ScheduleKind.EveryMinutes, 15)), ("Refresh sales report", S(DbExplorer.Application.Jobs.ScheduleKind.EveryHours, minute: 5)) })
+                    {
+                        var job = catalog.Jobs.First(j => j.Name == name);
+                        await DbExplorer.Application.Jobs.JobScriptBuilder.RunAsync(provider,
+                            DbExplorer.Application.Jobs.JobScriptBuilder.Update(catalog, job, DbExplorer.Application.Jobs.JobScriptBuilder.DraftOf(job) with { Schedule = spec }, now), 30);
+                    }
+                    break;
+                case DbExplorer.Application.Jobs.JobEngine.SqlServerAgent:
+                    await Create("Nightly index maintenance", "ALTER INDEX ALL ON dbo.orders REORGANIZE;", S(DbExplorer.Application.Jobs.ScheduleKind.Daily, hour: 2), database: "uirender_shop",
+                        description: "Reorganizes the order indexes every night");
+                    await Create("Purge old sessions", "SELECT 1/0;", S(DbExplorer.Application.Jobs.ScheduleKind.EveryMinutes, 15), database: "uirender_shop");
+                    await Create("Weekly summary", "SELECT 1;", S(DbExplorer.Application.Jobs.ScheduleKind.Weekly, hour: 6), enabled: false, database: "uirender_shop");
+                    await using (var run = await provider.BeginScriptSessionAsync(null, false))
+                        await run.ExecuteAsync("""
+                            DECLARE @id uniqueidentifier;
+                            EXEC msdb.dbo.sp_add_job @job_name = N'Load and copy', @job_id = @id OUTPUT;
+                            EXEC msdb.dbo.sp_add_jobstep @job_id = @id, @step_name = N'Load staging', @subsystem = N'TSQL', @database_name = N'uirender_shop', @command = N'SELECT COUNT(*) FROM dbo.orders;', @on_success_action = 3;
+                            EXEC msdb.dbo.sp_add_jobstep @job_id = @id, @step_name = N'Copy export', @subsystem = N'CmdExec', @command = N'cmd /c copy C:\exports\orders.csv \\fileserver\drop\';
+                            EXEC msdb.dbo.sp_add_jobserver @job_id = @id;
+                            """, 30);
+                    catalog = await DbExplorer.Application.Jobs.JobCatalogLoader.LoadAsync(provider, null);
+                    foreach (var job in catalog.Jobs.Where(j => j.Name is "Nightly index maintenance" or "Purge old sessions"))
+                        await DbExplorer.Application.Jobs.JobScriptBuilder.RunAsync(provider, DbExplorer.Application.Jobs.JobScriptBuilder.RunNow(job), 30);
+                    await Task.Delay(4000);
+                    break;
+                default:
+                    await Create("purge_sessions", "DELETE FROM orders WHERE id < 0", S(DbExplorer.Application.Jobs.ScheduleKind.EveryMinutes, 15), database: "uirender_shop");
+                    await Create("daily_rollup", "INSERT INTO orders_daily SELECT CURDATE(), COUNT(*) FROM orders;\nDELETE FROM orders_daily WHERE day < CURDATE() - INTERVAL 1 YEAR;",
+                        S(DbExplorer.Application.Jobs.ScheduleKind.Daily, hour: 1), database: "uirender_shop", description: "Totals per day, kept for a year");
+                    await Create("year_end_close", "UPDATE orders SET status = status WHERE id < 0",
+                        new DbExplorer.Application.Jobs.JobScheduleSpec { Kind = DbExplorer.Application.Jobs.ScheduleKind.Once, OnceAt = new DateTime(now.Year, 12, 31, 23, 0, 0) },
+                        enabled: false, database: "uirender_shop");
+                    break;
+            }
         }
 
         /// <summary>Disconnected while on Objects: the window moves to the Query tab, which still edits (with names from

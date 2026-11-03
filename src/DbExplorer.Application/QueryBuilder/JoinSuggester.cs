@@ -58,6 +58,35 @@ public static partial class JoinSuggester
         return result;
     }
 
+    /// <summary>
+    /// Tables of <paramref name="database"/> that a foreign key (either direction, accepted virtual ones included) links
+    /// to a placed table, each with the alias of the first placed table it links to. Placed tables are listed too when a
+    /// key links them to another placed table or to themselves, so a second copy can be added for a self join.
+    /// </summary>
+    public static IReadOnlyDictionary<(string Schema, string Name), string> Related(MetadataSnapshot snapshot, string database, IReadOnlyList<QueryTable> placed)
+    {
+        var result = new Dictionary<(string, string), string>(SchemaNameComparer.Instance);
+        foreach (var table in placed)
+        {
+            foreach (var fk in snapshot.ForeignKeysOf(database, table.Schema, table.Name))
+                result.TryAdd((fk.ReferencedSchema, fk.ReferencedTable), table.Alias);
+            foreach (var fk in snapshot.ReferencesTo(database, table.Schema, table.Name))
+                result.TryAdd((fk.Schema, fk.Table), table.Alias);
+        }
+        return result;
+    }
+
+    private sealed class SchemaNameComparer : IEqualityComparer<(string, string)>
+    {
+        public static readonly SchemaNameComparer Instance = new();
+
+        public bool Equals((string, string) x, (string, string) y) =>
+            string.Equals(x.Item1, y.Item1, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Item2, y.Item2, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string, string) obj) =>
+            HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item1), StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item2));
+    }
+
     /// <summary>child.{parent}Id / {parent}_id → parent's single key column, when the types are compatible.</summary>
     private static SuggestedJoin? Guess(MetadataSnapshot snapshot, string database, QueryTable parent, QueryTable child)
     {

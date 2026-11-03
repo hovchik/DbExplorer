@@ -2,174 +2,344 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:DbExplorer.Desktop.Controls"
              xmlns:conv="using:DbExplorer.Desktop.Converters"
-             xmlns:models="using:DbExplorer.Core.Models"
              xmlns:vm="using:DbExplorer.Desktop.ViewModels"
              xmlns:ae="using:AvaloniaEdit"
              x:Class="DbExplorer.Desktop.Views.QueryBuilderView">
   <UserControl.Styles>
+    <!-- Cards: the table list, the canvas, the design panel and the SQL each sit in one -->
+    <Style Selector="Border.card">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.divider">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Margin" Value="4,0,12,4" />
+      <Setter Property="Background" Value="{DynamicResource AppBorderBrush}" />
+    </Style>
+    <Style Selector="Button.labelled StackPanel">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="6" />
+    </Style>
+    <Style Selector="Button.labelled controls|StrokeIcon">
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.icon controls|StrokeIcon">
+      <Setter Property="Width" Value="15" />
+      <Setter Property="Height" Value="15" />
+    </Style>
+
+    <!-- The design rows: inputs fill their star columns, so the grid always fits the panel -->
     <Style Selector="ItemsControl.rows ComboBox, ItemsControl.rows TextBox">
       <Setter Property="Margin" Value="0,0,6,0" />
       <Setter Property="MinHeight" Value="28" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
     <Style Selector="ItemsControl.rows Button">
-      <Setter Property="Padding" Value="6,2" />
-      <Setter Property="Margin" Value="0,0,2,0" />
-      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="MinWidth" Value="26" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ItemsControl.rows Button controls|StrokeIcon">
+      <Setter Property="Width" Value="13" />
+      <Setter Property="Height" Value="13" />
+    </Style>
+    <Style Selector="ItemsControl.rows Button.sort">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="FontSize" Value="12.5" />
     </Style>
     <Style Selector="Grid.header TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TabControl.design TabItem">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
+    <Style Selector="Border.chip">
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="7,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+    </Style>
+    <Style Selector="Border.chip.related">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
+    <Style Selector="Border.chip.related TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <!-- The + on a table row shows on hover and on the selected row only -->
+    <Style Selector="ListBoxItem Button.add">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="24" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="CornerRadius" Value="12" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover Button.add, ListBoxItem:selected Button.add, ListBoxItem Button.add:focus">
+      <Setter Property="Opacity" Value="1" />
     </Style>
   </UserControl.Styles>
 
   <DockPanel Margin="4">
-    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
-      <TextBlock Text="Database" IsVisible="{Binding HasMultipleDatabases}" />
-      <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
-                               IsVisible="{Binding HasMultipleDatabases}"
-                               ToolTip.Tip="Database whose tables you build from. Type to filter the list. Changing it starts over." />
-      <CheckBox Content="Distinct" IsChecked="{Binding Distinct}" ToolTip.Tip="SELECT DISTINCT: drop duplicate rows" />
-      <TextBlock Text="Limit" />
-      <NumericUpDown Width="120" Minimum="0" Maximum="100000000" Increment="100" FormatString="0" Value="{Binding Limit}"
-                     ToolTip.Tip="TOP / LIMIT. 0 returns every row." />
-      <Button Content="Open in Query tab" Classes="accent" Command="{Binding OpenInQueryTabCommand}"
-              ToolTip.Tip="Open the SQL in a new query tab on this database. Nothing runs until you run it there." />
-      <Button Content="Copy SQL" Click="OnCopySql" IsEnabled="{Binding HasTables}" />
-      <Button Content="Clear" Command="{Binding ClearCommand}" IsEnabled="{Binding HasTables}" ToolTip.Tip="Remove every table and start over" />
-      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
-    </WrapPanel>
+    <!-- Actions on the left, query options on the right -->
+    <WrapPanel DockPanel.Dock="Top" Classes="toolbar" Margin="0,0,0,2">
+        <TextBlock Text="Database" IsVisible="{Binding HasMultipleDatabases}" />
+        <controls:DatabasePicker Width="180" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                                 IsVisible="{Binding HasMultipleDatabases}"
+                                 ToolTip.Tip="Database whose tables you build from. Type to filter the list. Changing it starts over." />
+        <Border Classes="divider" IsVisible="{Binding HasMultipleDatabases}" />
+        <Button x:Name="RunButton" Classes="accent labelled" Command="{Binding RunCommand}" AutomationProperties.Name="Run">
+          <StackPanel>
+            <controls:StrokeIcon Data="{x:Static controls:Icons.Play}" />
+            <TextBlock Text="Run" Foreground="{Binding $parent[Button].Foreground}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="OpenButton" Classes="labelled" Command="{Binding OpenInQueryTabCommand}" AutomationProperties.Name="Open in Query tab">
+          <StackPanel>
+            <controls:StrokeIcon Data="{x:Static controls:Icons.OpenExternal}" />
+            <TextBlock Text="Open" />
+          </StackPanel>
+        </Button>
+        <Button Classes="icon" Command="{Binding CopySqlCommand}" AutomationProperties.Name="Copy SQL" ToolTip.Tip="Copy the SQL">
+          <controls:StrokeIcon Data="{x:Static controls:Icons.Copy}" />
+        </Button>
+        <Border Classes="divider" />
+        <Button Classes="icon" Command="{Binding UndoCommand}" AutomationProperties.Name="Undo" ToolTip.Tip="Undo (Ctrl+Z)">
+          <controls:StrokeIcon Data="{x:Static controls:Icons.Undo}" />
+        </Button>
+        <Button Classes="icon" Command="{Binding RedoCommand}" AutomationProperties.Name="Redo" ToolTip.Tip="Redo (Ctrl+Y)">
+          <controls:StrokeIcon Data="{x:Static controls:Icons.Redo}" />
+        </Button>
+        <Button x:Name="ArrangeButton" Classes="labelled" Command="{Binding ArrangeCommand}" IsEnabled="{Binding HasTables}" AutomationProperties.Name="Arrange">
+          <StackPanel>
+            <controls:StrokeIcon Data="{x:Static controls:Icons.Arrange}" />
+            <TextBlock Text="Arrange" />
+          </StackPanel>
+        </Button>
+        <Button Classes="icon" Command="{Binding ClearCommand}" IsEnabled="{Binding HasTables}" AutomationProperties.Name="Clear"
+                ToolTip.Tip="Clear: remove every table and start over (Ctrl+Z brings it back)">
+          <controls:StrokeIcon Data="{x:Static controls:Icons.Trash}" />
+        </Button>
+        <Border Classes="divider" />
+        <CheckBox Content="Distinct" IsChecked="{Binding Distinct}" Margin="0,0,12,4" ToolTip.Tip="SELECT DISTINCT: drop duplicate rows" />
+        <NumericUpDown AutomationProperties.Name="Row limit" Width="172" Minimum="0" Maximum="100000000" Increment="100" FormatString="0" Value="{Binding Limit}"
+                       ToolTip.Tip="TOP / LIMIT: the most rows the query returns. 0 returns every row.">
+          <NumericUpDown.InnerLeftContent>
+            <TextBlock Classes="hint" Text="Limit" VerticalAlignment="Center" Margin="8,0,0,0" />
+          </NumericUpDown.InnerLeftContent>
+        </NumericUpDown>
+      </WrapPanel>
 
-    <Grid ColumnDefinitions="240,6,*">
-      <!-- Tables to drag in -->
-      <DockPanel Grid.Column="0">
-        <TextBox DockPanel.Dock="Top" Text="{Binding TableFilter}" Watermark="Filter tables and views…" Margin="0,0,0,4" />
-        <TextBlock DockPanel.Dock="Top" Classes="hint" TextWrapping="Wrap" Margin="2,0,0,4"
-                   Text="Drag onto the canvas, or double-click." />
-        <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-          <ListBox AutomationProperties.Name="Tables" x:Name="TableList" ItemsSource="{Binding AvailableTables}" SelectedItem="{Binding SelectedAvailableTable}"
-                   Background="Transparent" DoubleTapped="OnTableDoubleTapped">
+    <Grid ColumnDefinitions="230,6,*">
+      <!-- Tables to add: the ones a foreign key links to the query come first -->
+      <Border Grid.Column="0" Classes="card">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Margin="8,8,8,6" Spacing="6">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="section" Text="Tables" Margin="0" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="hint" Text="{Binding AvailableCount, StringFormat='{}{0:N0}'}" VerticalAlignment="Center" />
+            </Grid>
+            <TextBox AutomationProperties.Name="Filter tables" Text="{Binding TableFilter}" Watermark="Filter tables and views…" />
+            <TextBlock Classes="hint" TextWrapping="Wrap"
+                       Text="Double-click, press +, or drag onto the canvas. Tables marked “joins” link to your query by a foreign key." />
+          </StackPanel>
+          <ListBox AutomationProperties.Name="Tables" x:Name="TableList" ItemsSource="{Binding TableChoices}" SelectedItem="{Binding SelectedChoice}"
+                   Background="Transparent" DoubleTapped="OnTableDoubleTapped" KeyDown="OnTableListKeyDown">
             <ListBox.Styles>
               <Style Selector="ListBoxItem">
-                <Setter Property="Padding" Value="8,4" />
+                <Setter Property="Padding" Value="8,2,4,2" />
+                <Setter Property="MinHeight" Value="30" />
               </Style>
             </ListBox.Styles>
             <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="models:DbObject">
-                <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" ToolTip.Tip="{Binding Type}">
-                  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" />
-                  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+              <DataTemplate x:DataType="vm:TableChoice">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding FullName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0,6,0" />
+                  <Border Grid.Column="2" Classes="chip" Classes.related="{Binding IsRelated}" IsVisible="{Binding HasHint}" Margin="0,0,4,0">
+                    <TextBlock Text="{Binding Hint}" />
+                  </Border>
+                  <Button Grid.Column="3" Classes="add" Click="OnAddTableClick" AutomationProperties.Name="Add to the query"
+                          ToolTip.Tip="Add to the query">
+                    <controls:StrokeIcon Data="{x:Static controls:Icons.Plus}" Width="13" Height="13" />
+                  </Button>
+                </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
-        </Border>
-      </DockPanel>
+        </DockPanel>
+      </Border>
 
       <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
 
-      <Grid Grid.Column="2" RowDefinitions="*,6,300">
-        <!-- Canvas -->
-        <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
-          <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <controls:QueryCanvasControl x:Name="Canvas" Builder="{Binding}" />
-          </ScrollViewer>
+      <!-- Wide: canvas and SQL side by side, the design rows the full width under them. Narrow (see the code-behind):
+           the canvas the full width, the design rows and the SQL side by side under it. -->
+      <Grid x:Name="MainArea" Grid.Column="2" RowDefinitions="*,6,270" ColumnDefinitions="*,6,360">
+        <!-- Canvas, with what the query holds and the last action under it -->
+        <Border x:Name="CanvasCard" Grid.Row="0" Grid.Column="0" Classes="card">
+          <DockPanel>
+            <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}" Padding="10,4"
+                    Background="{DynamicResource AppSubtleBackgroundBrush}">
+              <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Classes="hint" FontWeight="SemiBold" Text="{Binding Summary}" Margin="0,0,12,0" IsVisible="{Binding HasTables}" />
+                <TextBlock Grid.Column="1" Classes="hint" Text="{Binding Status}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
+              </Grid>
+            </Border>
+            <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <controls:QueryCanvasControl x:Name="Canvas" Builder="{Binding}" />
+            </ScrollViewer>
+          </DockPanel>
         </Border>
 
-        <GridSplitter Grid.Row="1" Background="Transparent" ResizeDirection="Rows" />
+        <GridSplitter x:Name="SqlSplitter" Grid.Row="0" Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
 
-        <Grid Grid.Row="2" ColumnDefinitions="*,6,440">
-          <!-- Columns and joins -->
-          <Border Grid.Column="0" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-              <StackPanel Margin="8" Spacing="4">
-                <TextBlock Classes="section" Text="Columns" Margin="0" />
-                <TextBlock Classes="hint" IsVisible="{Binding !HasColumns}" TextWrapping="Wrap"
-                           Text="Click columns on the canvas to add them here. With none ticked the query selects every column (*)." />
-                <Grid Classes="header" ColumnDefinitions="52,170,150,150,130,220,Auto" IsVisible="{Binding HasColumns}">
-                  <TextBlock Grid.Column="0" Text="Output" ToolTip.Tip="In the SELECT list. Untick to only filter or sort by it." />
+        <!-- SQL -->
+        <Border x:Name="SqlCard" Grid.Row="0" Grid.Column="2" Classes="card">
+          <DockPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="10,6,6,4">
+              <TextBlock Classes="section" Text="SQL" Margin="0" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="hint" Text="read-only · edit it in a Query tab" VerticalAlignment="Center" />
+            </Grid>
+            <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasWarnings}" Margin="6" Padding="8,6" CornerRadius="6"
+                    BorderThickness="1" BorderBrush="#E87A00">
+              <TextBlock Text="{Binding Warnings}" Foreground="#E87A00" TextWrapping="Wrap" />
+            </Border>
+            <Panel>
+              <ae:TextEditor x:Name="SqlEditor" IsReadOnly="True" ShowLineNumbers="False" WordWrap="True"
+                             FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                             Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                             HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="10,6,0,0" />
+              <TextBlock Classes="hint" IsVisible="{Binding !HasTables}" Margin="12,8" TextWrapping="Wrap"
+                         Text="The SELECT appears here as you build it." />
+            </Panel>
+          </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Row="1" Grid.ColumnSpan="3" Background="Transparent" ResizeDirection="Rows" />
+
+        <!-- Columns and joins -->
+        <Border x:Name="DesignCard" Grid.Row="2" Grid.ColumnSpan="3" Classes="card">
+          <TabControl x:Name="DesignTabs" Classes="design" Padding="0" Margin="6,0,6,0">
+            <TabItem Header="{Binding ColumnsHeader}">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" Classes="header" ColumnDefinitions="28,1.2*,1*,108,66,1.4*,74" Margin="2,6,14,4" IsVisible="{Binding HasColumns}">
+                  <TextBlock Grid.Column="0" Text="Out" ToolTip.Tip="In the SELECT list. Untick to only filter or sort by it." />
                   <TextBlock Grid.Column="1" Text="Column" />
                   <TextBlock Grid.Column="2" Text="Alias" ToolTip.Tip="Name of the result column (AS …)" />
                   <TextBlock Grid.Column="3" Text="Aggregate" ToolTip.Tip="Any aggregate groups the query by every other output column" />
                   <TextBlock Grid.Column="4" Text="Sort" ToolTip.Tip="Sorted in the order the rows are listed: move rows to change it" />
                   <TextBlock Grid.Column="5" Text="Filter" ToolTip.Tip="&gt; 100, = 'AM', LIKE 'A%', IS NULL, IN (1, 2), BETWEEN 1 AND 5, or a bare value" />
                 </Grid>
-                <ItemsControl Classes="rows" ItemsSource="{Binding Columns}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ColumnItem">
-                      <Grid ColumnDefinitions="52,170,150,150,130,220,Auto" Margin="0,0,0,4">
-                        <CheckBox AutomationProperties.Name="Output" Grid.Column="0" IsChecked="{Binding Output}" MinWidth="0" Margin="10,0,0,0" />
-                        <TextBlock Grid.Column="1" Text="{Binding Source}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                   ToolTip.Tip="{Binding Source}" Margin="0,0,6,0" />
-                        <TextBox AutomationProperties.Name="Alias" Grid.Column="2" Text="{Binding OutputAlias}" Watermark="as…" />
-                        <ComboBox AutomationProperties.Name="Aggregate" Grid.Column="3" HorizontalAlignment="Stretch"
-                                  ItemsSource="{x:Static vm:QueryBuilderViewModel.Aggregates}" SelectedItem="{Binding Aggregate}">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <ComboBox AutomationProperties.Name="Sort" Grid.Column="4" HorizontalAlignment="Stretch"
-                                  ItemsSource="{x:Static vm:QueryBuilderViewModel.SortDirections}" SelectedItem="{Binding Sort}">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBox AutomationProperties.Name="Filter" Grid.Column="5" Text="{Binding Filter}" Watermark="&gt; 100, LIKE 'A%'…"
-                                 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
-                        <StackPanel Grid.Column="6" Orientation="Horizontal">
-                          <Button Content="↑" Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move up" />
-                          <Button Content="↓" Command="{Binding $parent[UserControl].DataContext.MoveColumnDownCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move down" />
-                          <Button Content="✕" Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove" />
-                        </StackPanel>
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <Panel>
+                  <StackPanel IsVisible="{Binding !HasColumns}" Margin="4,12" Spacing="4">
+                    <TextBlock Classes="hint" TextWrapping="Wrap" Text="No columns picked, so the query selects every column (*)." />
+                    <TextBlock Classes="hint" TextWrapping="Wrap" Text="Tick columns on the canvas to choose them. Right-click a table to select all of its columns." />
+                  </StackPanel>
+                  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasColumns}">
+                    <ItemsControl Classes="rows" ItemsSource="{Binding Columns}" Margin="2,0,14,6">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ColumnItem">
+                          <Grid ColumnDefinitions="28,1.2*,1*,108,66,1.4*,74" Margin="0,0,0,4">
+                            <CheckBox AutomationProperties.Name="Output" Grid.Column="0" IsChecked="{Binding Output}" MinWidth="0" Margin="0" />
+                            <TextBlock Grid.Column="1" Text="{Binding Source}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       ToolTip.Tip="{Binding Source}" Margin="0,0,6,0" FontWeight="SemiBold" />
+                            <TextBox AutomationProperties.Name="Alias" Grid.Column="2" Text="{Binding OutputAlias}" Watermark="as…" />
+                            <ComboBox AutomationProperties.Name="Aggregate" Grid.Column="3"
+                                      ItemsSource="{x:Static vm:QueryBuilderViewModel.Aggregates}" SelectedItem="{Binding Aggregate}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                  <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+                                </DataTemplate>
+                              </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button AutomationProperties.Name="Sort" Grid.Column="4" Classes="sort"
+                                    Content="{Binding SortText}" ToolTip.Tip="{Binding SortTip}" Command="{Binding CycleSortCommand}" />
+                            <TextBox AutomationProperties.Name="Filter" Grid.Column="5" Text="{Binding Filter}" Watermark="&gt; 100, LIKE 'A%'…"
+                                     FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+                            <StackPanel Grid.Column="6" Orientation="Horizontal" HorizontalAlignment="Right">
+                              <Button AutomationProperties.Name="Move up" Content="↑" Command="{Binding $parent[UserControl].DataContext.MoveColumnUpCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move up" />
+                              <Button AutomationProperties.Name="Move down" Content="↓" Command="{Binding $parent[UserControl].DataContext.MoveColumnDownCommand}" CommandParameter="{Binding}" ToolTip.Tip="Move down" />
+                              <Button AutomationProperties.Name="Remove column" Command="{Binding $parent[UserControl].DataContext.RemoveColumnCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove">
+                                <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" />
+                              </Button>
+                            </StackPanel>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </Panel>
+              </DockPanel>
+            </TabItem>
 
-                <TextBlock Classes="section" Text="Joins" Margin="0,10,0,0" />
-                <TextBlock Classes="hint" IsVisible="{Binding !HasJoins}" TextWrapping="Wrap"
-                           Text="Tables join on their foreign keys when you add them. To join by hand, drag a column onto another table's column." />
-                <ItemsControl Classes="rows" ItemsSource="{Binding Joins}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:JoinItem">
-                      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                        <ComboBox AutomationProperties.Name="Join kind" Width="100" ItemsSource="{x:Static vm:QueryBuilderViewModel.JoinKinds}" SelectedItem="{Binding Kind}"
-                                  ToolTip.Tip="Inner: matching rows only. Left: every row of the left table. Right: every row of the right one. Full: both." />
-                        <TextBlock Text="{Binding LeftAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
-                        <ComboBox AutomationProperties.Name="Left column" Width="160" ItemsSource="{Binding LeftColumns}" SelectedItem="{Binding LeftColumn}" />
-                        <TextBlock Text="=" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBlock Text="{Binding RightAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
-                        <ComboBox AutomationProperties.Name="Right column" Width="160" ItemsSource="{Binding RightColumns}" SelectedItem="{Binding RightColumn}" />
-                        <TextBlock Classes="hint" Text="{Binding Origin}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <Button Content="✕" Command="{Binding $parent[UserControl].DataContext.RemoveJoinCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove this condition" />
-                      </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </ScrollViewer>
-          </Border>
-
-          <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
-
-          <!-- SQL -->
-          <DockPanel Grid.Column="2">
-            <TextBlock DockPanel.Dock="Top" Classes="section" Text="SQL" Margin="0,0,0,4" />
-            <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasWarnings}" Margin="0,6,0,0" Padding="8,6" CornerRadius="6"
-                    BorderThickness="1" BorderBrush="#E87A00">
-              <TextBlock Text="{Binding Warnings}" Foreground="#E87A00" TextWrapping="Wrap" />
-            </Border>
-            <Border BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="6" ClipToBounds="True">
-              <ae:TextEditor x:Name="SqlEditor" IsReadOnly="True" ShowLineNumbers="False" WordWrap="False"
-                             FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
-                             Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
-                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4,0,0" />
-            </Border>
-          </DockPanel>
-        </Grid>
+            <TabItem Header="{Binding JoinsHeader}">
+              <Panel>
+                <StackPanel IsVisible="{Binding !HasJoins}" Margin="4,12" Spacing="4">
+                  <TextBlock Classes="hint" TextWrapping="Wrap" Text="Tables join on their foreign keys when you add them." />
+                  <TextBlock Classes="hint" TextWrapping="Wrap" Text="To join by hand, drag a column onto another table's column. Right-click a join's label to change its kind." />
+                </StackPanel>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasJoins}">
+                  <ItemsControl Classes="rows" ItemsSource="{Binding Joins}" Margin="2,8,14,6">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:JoinItem">
+                        <Grid ColumnDefinitions="90,Auto,*,Auto,Auto,*,30" RowDefinitions="Auto,Auto" Margin="0,0,0,8" MaxWidth="820" HorizontalAlignment="Left">
+                          <ComboBox AutomationProperties.Name="Join kind" ItemsSource="{x:Static vm:QueryBuilderViewModel.JoinKinds}" SelectedItem="{Binding Kind}"
+                                    ToolTip.Tip="Inner: matching rows only. Left: every row of the left table. Right: every row of the right one. Full: both." />
+                          <TextBlock Grid.Column="1" Text="{Binding LeftAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                          <ComboBox Grid.Column="2" AutomationProperties.Name="Left column" ItemsSource="{Binding LeftColumns}" SelectedItem="{Binding LeftColumn}" />
+                          <TextBlock Grid.Column="3" Text="=" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <TextBlock Grid.Column="4" Text="{Binding RightAlias, StringFormat='{}{0}.'}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                          <ComboBox Grid.Column="5" AutomationProperties.Name="Right column" ItemsSource="{Binding RightColumns}" SelectedItem="{Binding RightColumn}" />
+                          <Button Grid.Column="6" AutomationProperties.Name="Remove join" Command="{Binding $parent[UserControl].DataContext.RemoveJoinCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove this condition">
+                            <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" />
+                          </Button>
+                          <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="6" Classes="hint" Margin="0,3,0,0" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding Origin}" FontWeight="SemiBold" />
+                            <Run Text="·" />
+                            <Run Text="{Binding Description}" />
+                          </TextBlock>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Panel>
+            </TabItem>
+            <!-- The SQL moves here when the window is too narrow to show it beside the canvas -->
+            <TabItem x:Name="SqlTab" Header="SQL" IsVisible="False">
+              <Border Margin="0,6,0,6" CornerRadius="6" ClipToBounds="True">
+                <ae:TextEditor x:Name="SqlTabEditor" IsReadOnly="True" ShowLineNumbers="False" WordWrap="True"
+                               FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                               Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="10,6,0,0" />
+              </Border>
+            </TabItem>
+          </TabControl>
+        </Border>
       </Grid>
     </Grid>
   </DockPanel>

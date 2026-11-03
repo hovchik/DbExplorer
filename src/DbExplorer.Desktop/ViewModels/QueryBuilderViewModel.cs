@@ -13,7 +13,9 @@ namespace DbExplorer.Desktop.ViewModels;
 /// <summary>
 /// Builds a SELECT visually: tables dragged onto a canvas (joined on their foreign keys as they arrive), columns ticked
 /// into a grid of aliases, aggregates, sorts and filters, and the SQL rewritten on every change. One way only: the SQL
-/// is the output, and editing it happens in a Query tab. Nothing runs here.
+/// is the output, and editing it happens in a Query tab. Nothing runs here: Run opens the SQL in a new Query tab and
+/// runs it there. Every change can be undone (the whole design is kept per step, text typed into one cell counting
+/// as one step).
 /// </summary>
 public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelBase, ISessionAware
 {
@@ -28,6 +30,10 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     [ObservableProperty] private string _tableFilter = "";
     [ObservableProperty] private IReadOnlyList<DbObject> _availableTables = [];
     [ObservableProperty] private DbObject? _selectedAvailableTable;
+
+    /// <summary>The table list as shown: tables a foreign key links to the query first, then the rest.</summary>
+    [ObservableProperty] private IReadOnlyList<TableChoice> _tableChoices = [];
+    [ObservableProperty] private TableChoice? _selectedChoice;
     [ObservableProperty] private bool _distinct;
 
     /// <summary>TOP / LIMIT; 0 for every row.</summary>
@@ -53,12 +59,28 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     public bool HasColumns => Columns.Count > 0;
     public bool HasWarnings => Warnings.Length > 0;
     public bool HasMultipleDatabases => Databases.Count > 1;
+    public bool HasRelatedTables => TableChoices.Any(c => c.LinksTo is not null);
+    public int OutputColumnCount => Columns.Count(c => c.Output);
+
+    /// <summary>"2 tables · 1 join · 3 columns" under the canvas.</summary>
+    public string Summary => Tables.Count == 0 ? "" : string.Join(" · ",
+        Plural(Tables.Count, "table"),
+        Plural(Joins.Count, "join condition"),
+        OutputColumnCount == 0 ? "all columns" : Plural(OutputColumnCount, "column"));
+
+    public string ColumnsHeader => Columns.Count == 0 ? "Columns" : $"Columns ({Columns.Count})";
+    public string JoinsHeader => Joins.Count == 0 ? "Joins" : $"Joins ({Joins.Count})";
+
+    private static string Plural(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
 
     /// <summary>Raised whenever what the canvas draws changed (tables, joins, ticked columns, selection).</summary>
     public event Action? CanvasChanged;
 
     /// <summary>Raised to open SQL in a new query tab, against a database.</summary>
     public event Action<string, string?>? OpenSqlRequested;
+
+    /// <summary>Raised to open SQL in a new query tab, against a database, and run it there.</summary>
+    public event Action<string, string?>? RunSqlRequested;
 
     private SqlDialect Dialect => SqlDialect.For(_session?.Provider.ProviderKey ?? SqlDialect.SqlServerKey);
 
@@ -69,6 +91,7 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         if (_session is not null) _session.SnapshotChanged += OnSnapshotChanged;
         ClearDesign();
         ClearTables();
+        ResetHistory();
         if (session is null)
         {
             Databases = [];
@@ -85,6 +108,9 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     }
 
     partial void OnDatabasesChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(HasMultipleDatabases));
+    partial void OnAvailableTablesChanged(IReadOnlyList<DbObject> value) => OnPropertyChanged(nameof(AvailableCount));
+
+    public int AvailableCount => AvailableTables.Count;
 
     private void OnSnapshotChanged(object? sender, EventArgs e) => _ = LoadSnapshotAsync();
 
@@ -94,6 +120,7 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         // tables while the new one loads.
         ClearDesign();
         ClearTables();
+        ResetHistory();
         _ = LoadSnapshotAsync();
     }
 
@@ -101,6 +128,7 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     {
         _snapshot = null;
         AvailableTables = [];
+        TableChoices = [];
     }
 
     private async Task LoadSnapshotAsync()
@@ -134,7 +162,36 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
             .OrderBy(o => o.Type is DbObjectType.Table or DbObjectType.ForeignTable ? 0 : 1)
             .ThenBy(o => o.FullName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        UpdateChoices();
     }
+
+    /// <summary>Rebuilds the shown list: related tables (a foreign key links them to a placed table) first.</summary>
+    private void UpdateChoices()
+    {
+        if (_snapshot is not { } snapshot)
+        {
+            TableChoices = [];
+            return;
+        }
+        var selected = SelectedChoice?.Object;
+        var related = Tables.Count == 0 || AvailableTables.Count == 0
+            ? new Dictionary<(string, string), string>()
+            : JoinSuggester.Related(snapshot, SelectedDatabase ?? AvailableTables[0].Database, Tables.Select(t => t.ToModel()).ToList());
+        var placed = Tables.GroupBy(t => (t.Object.Schema.ToLowerInvariant(), t.Object.Name.ToLowerInvariant())).ToDictionary(g => g.Key, g => g.Count());
+        TableChoices = AvailableTables
+            .Select(o =>
+            {
+                var linksTo = related.TryGetValue((o.Schema, o.Name), out var alias) ? alias : null;
+                var count = placed.GetValueOrDefault((o.Schema.ToLowerInvariant(), o.Name.ToLowerInvariant()));
+                return new TableChoice(o, linksTo, count);
+            })
+            .OrderBy(c => c.LinksTo is null ? 1 : 0)
+            .ToList();
+        SelectedChoice = selected is null ? null : TableChoices.FirstOrDefault(c => c.Object == selected);
+        OnPropertyChanged(nameof(HasRelatedTables));
+    }
+
+    partial void OnSelectedChoiceChanged(TableChoice? value) => SelectedAvailableTable = value?.Object;
 
     // ----- Tables -----
 
@@ -144,8 +201,8 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         if (SelectedAvailableTable is { } table) AddTable(table, null);
     }
 
-    /// <summary>Places a table (at <paramref name="x"/>,<paramref name="y"/> when dropped there, else right of the
-    /// others) and joins it to the tables already placed on their foreign keys.</summary>
+    /// <summary>Places a table (at <paramref name="x"/>,<paramref name="y"/> when dropped there, else beside the table
+    /// it joins to, or right of the others) and joins it to the tables already placed on their foreign keys.</summary>
     public QueryTableItem? AddTable(DbObject table, double? x, double? y = null)
     {
         if (_snapshot is null) return null;
@@ -153,19 +210,17 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         var fkColumns = _snapshot.ForeignKeysOf(table.Database, table.Schema, table.Name)
             .SelectMany(f => ErDiagramBuilder.SplitColumns(f.Columns)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var alias = JoinSuggester.AliasFor(table.Name, Tables.Select(t => t.Alias));
+        var item = new QueryTableItem(table, alias, columns.Select(c => new CanvasColumn(c.Name, c.DataType, c.IsPrimaryKey, fkColumns.Contains(c.Name))).ToList());
+
+        var placed = Tables.Select(t => t.ToModel()).Append(item.ToModel()).ToList();
+        var suggestions = JoinSuggester.Suggest(_snapshot, table.Database, placed, item.ToModel());
         var position = x is { } px && y is { } py
             ? (X: Math.Max(0, px), Y: Math.Max(0, py))
-            : Tables.Count == 0 ? (X: 24.0, Y: 24.0) : (X: Tables.Max(t => t.X + QueryTableItem.Width) + 60, Y: 24.0);
-
-        var item = new QueryTableItem(table, alias, columns.Select(c => new CanvasColumn(c.Name, c.DataType, c.IsPrimaryKey, fkColumns.Contains(c.Name))).ToList())
-        {
-            X = position.X,
-            Y = position.Y
-        };
+            : FreeSpotBeside(suggestions.SelectMany(s => s.Conditions).Select(c => Same(c.LeftAlias, alias) ? c.RightAlias : c.LeftAlias).FirstOrDefault(), item.Height);
+        item.X = position.X;
+        item.Y = position.Y;
         Tables.Add(item);
 
-        var placed = Tables.Select(t => t.ToModel()).ToList();
-        var suggestions = JoinSuggester.Suggest(_snapshot, table.Database, placed, item.ToModel());
         foreach (var s in suggestions)
             foreach (var c in s.Conditions)
                 Joins.Add(new JoinItem(this, c.LeftAlias, c.LeftColumn, c.RightAlias, c.RightColumn, c.Kind, s.FromForeignKey));
@@ -179,6 +234,46 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         };
         Changed();
         return item;
+    }
+
+    /// <summary>Right of the table <paramref name="alias"/> (below whatever is already there), else right of every table.</summary>
+    private (double X, double Y) FreeSpotBeside(string? alias, double height)
+    {
+        if (Tables.Count == 0) return (QueryLayout.Margin, QueryLayout.Margin);
+        var x = Tables.FirstOrDefault(t => Same(t.Alias, alias)) is { } anchor
+            ? anchor.X + QueryTableItem.Width + QueryLayout.ColumnGap
+            : Tables.Max(t => t.X + QueryTableItem.Width) + QueryLayout.ColumnGap;
+        var y = QueryLayout.Margin;
+        // Take the first gap in that column tall enough for the box.
+        foreach (var t in Tables.Where(t => t.X < x + QueryTableItem.Width && t.X + QueryTableItem.Width > x).OrderBy(t => t.Y))
+        {
+            if (t.Y >= y + height + QueryLayout.RowGap) break;
+            y = Math.Max(y, t.Y + t.Height + QueryLayout.RowGap);
+        }
+        return (x, y);
+    }
+
+    /// <summary>Tables a foreign key links to <paramref name="table"/>, for its "Add related" menu.</summary>
+    public IReadOnlyList<DbObject> RelatedTo(QueryTableItem table)
+    {
+        if (_snapshot is not { } snapshot) return [];
+        var related = JoinSuggester.Related(snapshot, table.Object.Database, [table.ToModel()]);
+        return (snapshot.Objects)
+            .Where(o => o.IsTableLike && related.ContainsKey((o.Schema, o.Name)))
+            .OrderBy(o => o.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>Lays the tables out in columns that follow the joins (first table on the left).</summary>
+    [RelayCommand]
+    private void Arrange()
+    {
+        if (Tables.Count == 0) return;
+        var spots = QueryLayout.Arrange(Tables.Select(t => new LayoutBox(t.Alias, t.Height)).ToList(),
+            Joins.Select(j => (j.LeftAlias, j.RightAlias)), QueryTableItem.Width);
+        foreach (var t in Tables) (t.X, t.Y) = spots[t.Alias];
+        Status = "Tables arranged along their joins.";
+        Changed();
     }
 
     [RelayCommand]
@@ -200,6 +295,9 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         table.Y = Math.Max(0, y);
         CanvasChanged?.Invoke();
     }
+
+    /// <summary>A drag of a table ended: one undo step for the whole move.</summary>
+    public void EndMove() => Record(null);
 
     // ----- Columns -----
 
@@ -229,6 +327,42 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         {
             _suspend = false;
         }
+        Changed();
+    }
+
+    /// <summary>Ticks every column of <paramref name="table"/> into the grid (in table order), or unticks them all
+    /// (rows that also filter, sort or aggregate stay, as non-output rows).</summary>
+    public void SetAllColumns(QueryTableItem table, bool output)
+    {
+        _suspend = true;
+        try
+        {
+            foreach (var column in table.Columns)
+            {
+                var rows = Columns.Where(c => Same(c.TableAlias, table.Alias) && Same(c.Column, column.Name)).ToList();
+                if (output)
+                {
+                    if (rows.Any(r => r.Output)) continue;
+                    if (rows.FirstOrDefault() is { } hidden) hidden.Output = true;
+                    else Columns.Add(new ColumnItem(this, table.Alias, column.Name));
+                }
+                else
+                {
+                    foreach (var r in rows.Where(r => r.Output))
+                        if (r.IsPlain) Columns.Remove(r);
+                        else r.Output = false;
+                }
+            }
+            if (!output)
+                foreach (var star in Columns.Where(c => Same(c.TableAlias, table.Alias) && c.Column == AllColumns && c.Output).ToList())
+                    if (star.IsPlain) Columns.Remove(star);
+                    else star.Output = false;
+        }
+        finally
+        {
+            _suspend = false;
+        }
+        Status = output ? $"Selected every column of {table.Alias}." : $"Cleared the columns of {table.Alias}.";
         Changed();
     }
 
@@ -306,13 +440,28 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     partial void OnSelectedJoinChanged(JoinItem? value) => CanvasChanged?.Invoke();
     partial void OnSelectedTableChanged(QueryTableItem? value) => CanvasChanged?.Invoke();
     partial void OnDistinctChanged(bool value) => Changed();
-    partial void OnLimitChanged(decimal value) => Changed();
+    partial void OnLimitChanged(decimal value) => Changed("limit");
+
+    /// <summary>Sets a join's kind from the canvas menu (its siblings between the same two tables follow).</summary>
+    public void SetJoinKind(JoinItem join, JoinKind kind)
+    {
+        join.Kind = kind;
+        Status = $"{join.LeftAlias} {QuerySqlBuilder.JoinKeywordFor(kind)} {join.RightAlias}: {join.Description}.";
+    }
 
     // ----- SQL -----
 
-    internal void Changed()
+    /// <summary>Rebuilds the SQL after a change and records an undo step. Changes with the same
+    /// <paramref name="coalesce"/> key in a row (typing into one cell) make one step.</summary>
+    internal void Changed(string? coalesce = null)
     {
         if (_suspend) return;
+        Refresh();
+        Record(coalesce);
+    }
+
+    private void Refresh()
+    {
         var built = QuerySqlBuilder.Build(BuildDesign(), Dialect);
         Sql = built.Sql;
         Warnings = string.Join("\n", built.Warnings);
@@ -320,8 +469,130 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
         OnPropertyChanged(nameof(HasTables));
         OnPropertyChanged(nameof(HasJoins));
         OnPropertyChanged(nameof(HasColumns));
+        OnPropertyChanged(nameof(OutputColumnCount));
+        OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(ColumnsHeader));
+        OnPropertyChanged(nameof(JoinsHeader));
         OpenInQueryTabCommand.NotifyCanExecuteChanged();
+        RunCommand.NotifyCanExecuteChanged();
+        CopySqlCommand.NotifyCanExecuteChanged();
+        ArrangeCommand.NotifyCanExecuteChanged();
+        UpdateChoices();
         CanvasChanged?.Invoke();
+    }
+
+    // ----- Undo -----
+
+    private readonly Stack<BuilderState> _undo = new();
+    private readonly Stack<BuilderState> _redo = new();
+    private string? _lastCoalesce;
+    private bool _restoring;
+
+    public bool CanUndo => _undo.Count > 1;
+    public bool CanRedo => _redo.Count > 0;
+
+    private void Record(string? coalesce)
+    {
+        if (_restoring || _suspend) return;
+        var state = BuilderState.Capture(this);
+        if (_undo.TryPeek(out var top) && top.Key == state.Key) return;
+        if (coalesce is not null && coalesce == _lastCoalesce && _undo.Count > 1) _undo.Pop();
+        _undo.Push(state);
+        _lastCoalesce = coalesce;
+        _redo.Clear();
+        HistoryChanged();
+    }
+
+    private void ResetHistory()
+    {
+        _undo.Clear();
+        _redo.Clear();
+        _lastCoalesce = null;
+        _undo.Push(BuilderState.Capture(this));
+        HistoryChanged();
+    }
+
+    private void HistoryChanged()
+    {
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUndo))]
+    public void Undo()
+    {
+        if (_undo.Count < 2) return;
+        _redo.Push(_undo.Pop());
+        Restore(_undo.Peek());
+        Status = "Undone.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRedo))]
+    public void Redo()
+    {
+        if (!_redo.TryPop(out var state)) return;
+        _undo.Push(state);
+        Restore(state);
+        Status = "Redone.";
+    }
+
+    private void Restore(BuilderState state)
+    {
+        _restoring = true;
+        _suspend = true;
+        try
+        {
+            Tables.Clear();
+            foreach (var (table, x, y) in state.Tables)
+            {
+                table.X = x;
+                table.Y = y;
+                Tables.Add(table);
+            }
+            Joins.Clear();
+            foreach (var j in state.Joins) Joins.Add(new JoinItem(this, j.LeftAlias, j.LeftColumn, j.RightAlias, j.RightColumn, j.Kind, j.FromForeignKey));
+            Columns.Clear();
+            foreach (var c in state.Columns)
+            {
+                var item = new ColumnItem(this, c.TableAlias, c.Column) { Aggregate = c.Aggregate };
+                item.OutputAlias = c.OutputAlias;
+                item.Output = c.Output;
+                item.Sort = c.Sort;
+                item.Filter = c.Filter;
+                Columns.Add(item);
+            }
+            Distinct = state.Distinct;
+            Limit = state.Limit;
+            if (SelectedTable is not null && !Tables.Contains(SelectedTable)) SelectedTable = null;
+            SelectedJoin = null;
+        }
+        finally
+        {
+            _suspend = false;
+        }
+        Refresh();
+        _restoring = false;
+        _lastCoalesce = null;
+        HistoryChanged();
+    }
+
+    /// <summary>The whole design at one step of the undo history; <see cref="Key"/> tells two steps apart.</summary>
+    private sealed record BuilderState(
+        IReadOnlyList<(QueryTableItem Table, double X, double Y)> Tables,
+        IReadOnlyList<(string LeftAlias, string LeftColumn, string RightAlias, string RightColumn, JoinKind Kind, bool FromForeignKey)> Joins,
+        IReadOnlyList<QueryColumn> Columns, bool Distinct, decimal Limit, string Key)
+    {
+        public static BuilderState Capture(QueryBuilderViewModel vm)
+        {
+            var tables = vm.Tables.Select(t => (t, t.X, t.Y)).ToList();
+            var joins = vm.Joins.Select(j => (j.LeftAlias, j.LeftColumn, j.RightAlias, j.RightColumn, j.Kind, j.FromForeignKey)).ToList();
+            var columns = vm.Columns.Select(c => c.ToModel()).ToList();
+            var key = string.Join("|", tables.Select(t => $"{t.Item1.Alias}@{t.Item2:0},{t.Item3:0}")) + "#" +
+                      string.Join("|", joins) + "#" + string.Join("|", columns) + "#" + vm.Distinct + "#" + vm.Limit;
+            return new BuilderState(tables, joins, columns, vm.Distinct, vm.Limit, key);
+        }
     }
 
     public QueryDesign BuildDesign() => new()
@@ -338,11 +609,25 @@ public partial class QueryBuilderViewModel(SessionService sessions) : ViewModelB
     [RelayCommand(CanExecute = nameof(CanOpen))]
     private void OpenInQueryTab() => OpenSqlRequested?.Invoke(Sql, SelectedDatabase);
 
+    /// <summary>Opens the SQL in a new Query tab and runs it there (the builder itself never runs anything).</summary>
+    [RelayCommand(CanExecute = nameof(CanOpen))]
+    private void Run() => RunSqlRequested?.Invoke(Sql, SelectedDatabase);
+
+    /// <summary>Asks the view to put the SQL on the clipboard (the view owns the clipboard).</summary>
+    public event Action<string>? CopyRequested;
+
+    [RelayCommand(CanExecute = nameof(CanOpen))]
+    private void CopySql()
+    {
+        CopyRequested?.Invoke(Sql);
+        Status = "SQL copied to the clipboard.";
+    }
+
     [RelayCommand]
     private void Clear()
     {
         ClearDesign();
-        Status = "Cleared. Drag tables onto the canvas to start again.";
+        Status = "Cleared. Undo (Ctrl+Z) brings the design back.";
     }
 
     private void ClearDesign()
@@ -432,11 +717,24 @@ public partial class JoinItem : ObservableObject
     public IReadOnlyList<string> LeftColumns => _owner.ColumnsOf(LeftAlias);
     public IReadOnlyList<string> RightColumns => _owner.ColumnsOf(RightAlias);
     public string Text => $"{LeftAlias}.{LeftColumn} = {RightAlias}.{RightColumn}";
-    public string Origin => FromForeignKey ? "foreign key" : "";
+    public string Origin => FromForeignKey ? "foreign key" : "drawn";
+
+    /// <summary>Which rows the kind keeps, in words.</summary>
+    public string Description => Kind switch
+    {
+        JoinKind.Left => $"every {LeftAlias} row, with {RightAlias} where it matches",
+        JoinKind.Right => $"every {RightAlias} row, with {LeftAlias} where it matches",
+        JoinKind.Full => $"every row of {LeftAlias} and {RightAlias}, matched where they can be",
+        _ => $"only rows with a match in both {LeftAlias} and {RightAlias}"
+    };
 
     partial void OnLeftColumnChanged(string value) { OnPropertyChanged(nameof(Text)); _owner.Changed(); }
     partial void OnRightColumnChanged(string value) { OnPropertyChanged(nameof(Text)); _owner.Changed(); }
-    partial void OnKindChanged(JoinKind value) => _owner.JoinKindChanged(this);
+    partial void OnKindChanged(JoinKind value)
+    {
+        OnPropertyChanged(nameof(Description));
+        _owner.JoinKindChanged(this);
+    }
 
     public bool Involves(string alias) =>
         string.Equals(LeftAlias, alias, StringComparison.OrdinalIgnoreCase) || string.Equals(RightAlias, alias, StringComparison.OrdinalIgnoreCase);
@@ -467,10 +765,42 @@ public partial class ColumnItem(QueryBuilderViewModel owner, string tableAlias, 
     /// <summary>Only selected: nothing filters, sorts, aggregates or renames it.</summary>
     public bool IsPlain => OutputAlias.Length == 0 && Aggregate == ColumnAggregate.None && Sort == SortDirection.None && Filter.Trim().Length == 0;
 
+    // Typing into one cell is one undo step.
+    private readonly string _key = Guid.NewGuid().ToString("N");
+
     partial void OnOutputChanged(bool value) => owner.Changed();
-    partial void OnOutputAliasChanged(string value) => owner.Changed();
-    partial void OnSortChanged(SortDirection value) => owner.Changed();
-    partial void OnFilterChanged(string value) => owner.Changed();
+    partial void OnOutputAliasChanged(string value) => owner.Changed("alias:" + _key);
+    partial void OnSortChanged(SortDirection value)
+    {
+        OnPropertyChanged(nameof(SortText));
+        OnPropertyChanged(nameof(SortTip));
+        owner.Changed();
+    }
+
+    /// <summary>The sort button's face: none, ascending, descending.</summary>
+    public string SortText => Sort switch
+    {
+        SortDirection.Ascending => "↑ Asc",
+        SortDirection.Descending => "↓ Desc",
+        _ => "—"
+    };
+
+    public string SortTip => Sort switch
+    {
+        SortDirection.Ascending => "Sorted ascending. Click for descending.",
+        SortDirection.Descending => "Sorted descending. Click to stop sorting by it.",
+        _ => "Not sorted. Click to sort ascending."
+    };
+
+    /// <summary>None → ascending → descending → none.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void CycleSort() => Sort = Sort switch
+    {
+        SortDirection.None => SortDirection.Ascending,
+        SortDirection.Ascending => SortDirection.Descending,
+        _ => SortDirection.None
+    };
+    partial void OnFilterChanged(string value) => owner.Changed("filter:" + _key);
 
     /// <summary>An aggregate gets a readable result name (count_OrderId) unless one was typed.</summary>
     partial void OnAggregateChanged(ColumnAggregate oldValue, ColumnAggregate newValue)
@@ -497,4 +827,22 @@ public partial class ColumnItem(QueryBuilderViewModel owner, string tableAlias, 
         Sort = Sort,
         Filter = Filter
     };
+}
+
+/// <summary>A row of the table list: the table, the alias of the placed table a foreign key links it to, and how many
+/// copies are on the canvas.</summary>
+public sealed record TableChoice(DbObject Object, string? LinksTo, int OnCanvas)
+{
+    public string FullName => Object.FullName;
+    public DbObjectType Type => Object.Type;
+
+    /// <summary>"joins o", "on canvas", or nothing.</summary>
+    public string Hint => LinksTo is not null ? $"joins {LinksTo}" : OnCanvas > 0 ? "on canvas" : "";
+
+    public bool HasHint => Hint.Length > 0;
+    public bool IsRelated => LinksTo is not null;
+
+    public string Tip => LinksTo is not null
+        ? $"{Object.FullName}: a foreign key links it to {LinksTo}. Double-click or press + to add it, joined."
+        : $"{Object.FullName} ({Object.Type}). Double-click, press +, or drag it onto the canvas.";
 }

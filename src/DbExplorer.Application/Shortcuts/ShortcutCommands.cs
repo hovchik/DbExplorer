@@ -10,6 +10,7 @@ public static class ShortcutAreas
     public const string Navigator = "Database navigator";
     public const string Comparer = "Comparer";
     public const string ErModel = "ER model";
+    public const string QueryBuilder = "Query builder";
     public const string Debugger = "Routine debugger";
     public const string Palette = "Command palette";
     public const string Vim = "Vim mode (Query editor)";
@@ -91,6 +92,10 @@ public static class ShortcutCommands
     public const string PreviousDifference = "comparer.previous";
     public const string CancelComparison = "comparer.cancel";
 
+    public const string BuilderRun = "builder.run";
+    public const string BuilderOpen = "builder.open";
+    public const string BuilderArrange = "builder.arrange";
+
     public const string DebugContinue = "debugger.continue";
     public const string DebugStop = "debugger.stop";
     public const string DebugStepOver = "debugger.step-over";
@@ -131,6 +136,11 @@ public static class ShortcutCommands
         new(ShortcutAreas.ErModel, "Ctrl+Z", "Undo"),
         new(ShortcutAreas.ErModel, "Ctrl+Y / Ctrl+Shift+Z", "Redo"),
         new(ShortcutAreas.ErModel, "Delete", "Delete the selected table"),
+
+        new(ShortcutAreas.QueryBuilder, "Ctrl+Z", "Undo"),
+        new(ShortcutAreas.QueryBuilder, "Ctrl+Y / Ctrl+Shift+Z", "Redo"),
+        new(ShortcutAreas.QueryBuilder, "Delete", "Remove the selected table or join"),
+        new(ShortcutAreas.QueryBuilder, "Right-click", "Table and join actions on the canvas"),
     ];
 
     /// <summary>The Vim keys the Query editor understands in Vim mode (a reference card; they are not changeable).</summary>
@@ -224,6 +234,11 @@ public static class ShortcutCommands
         Add(NextDifference, c, "Next difference", "F8");
         Add(PreviousDifference, c, "Previous difference", "Shift+F8");
         Add(CancelComparison, c, "Cancel the comparison", "Esc");
+
+        var b = ShortcutAreas.QueryBuilder;
+        Add(BuilderRun, b, "Run the query in a new Query tab", "F5", "Ctrl+Enter");
+        Add(BuilderOpen, b, "Open the query in a new Query tab", "Ctrl+Shift+Enter");
+        Add(BuilderArrange, b, "Arrange the tables along their joins", "Ctrl+Shift+A");
 
         var d = ShortcutAreas.Debugger;
         Add(DebugContinue, d, "Start or continue", "F5");

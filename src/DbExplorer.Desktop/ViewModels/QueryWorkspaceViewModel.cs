@@ -407,6 +407,14 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         doc.PendingCaretOffset = caretOffset;
     }
 
+    /// <summary>Opens <paramref name="sql"/> in a new tab on <paramref name="database"/> and runs it (Query builder's Run).</summary>
+    public void OpenAndRun(string sql, string? title = null, string? database = null)
+    {
+        var doc = AddTab(title ?? $"Query {++_untitled}", sql, null, dirty: false, NullIfEmpty(database), title is null,
+            connection: _active?.Profile.Id);
+        if (doc.ExecuteCommand.CanExecute(null)) doc.ExecuteCommand.Execute(null);
+    }
+
     private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 
     /// <summary>"Query 3": the name a new tab gets before it is named after its queries.</summary>

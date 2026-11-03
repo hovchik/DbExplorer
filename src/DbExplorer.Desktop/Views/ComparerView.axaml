@@ -15,11 +15,6 @@
 	<conv:CompareStatusToBrushConverter x:Key="CompareStatusBrush" />
   </UserControl.Resources>
 
-  <UserControl.KeyBindings>
-	<KeyBinding Gesture="F8" Command="{Binding NextDifferenceCommand}" />
-	<KeyBinding Gesture="Shift+F8" Command="{Binding PreviousDifferenceCommand}" />
-	<KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
-  </UserControl.KeyBindings>
 
   <UserControl.Styles>
 	<Style Selector="Border.card">

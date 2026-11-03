@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
+			 xmlns:services="using:DbExplorer.Desktop.Services"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
   <UserControl.Resources>
 	<!-- Softer, IDE-style selection so the type colours of values stay readable on selected rows -->
@@ -169,7 +170,7 @@
 			<MenuItem Header="View row as JSON…" Click="OnViewRowJson" />
 			<MenuItem Header="Copy cell value" InputGesture="Ctrl+C" Click="OnCopyCell" />
 			<MenuItem Header="Copy selected rows" Click="OnCopySelected" />
-			<MenuItem Header="Copy selected rows with header" InputGesture="Ctrl+Shift+C" Click="OnCopySelectedWithHeader" />
+			<MenuItem Header="Copy selected rows with header" services:Keymap.Command="grid.copy-with-header" Click="OnCopySelectedWithHeader" />
 			<MenuItem Header="Copy selected rows as INSERT" Click="OnCopySelectedInsert" />
 			<MenuItem Header="Copy selected rows as JSON" Click="OnCopySelectedJson" />
 			<Separator />

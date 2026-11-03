@@ -7,6 +7,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Application.Workspace;
 using DbExplorer.Desktop.ViewModels;
 
@@ -20,6 +22,14 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Keymap.Bind(this, () => DataContext is not MainWindowViewModel vm ? [] :
+        [
+            (ShortcutCommands.Palette, vm.OpenCommandPaletteCommand),
+            (ShortcutCommands.CommandList, vm.OpenCommandListCommand),
+            (ShortcutCommands.ToggleNavigator, vm.ToggleNavigatorCommand),
+            (ShortcutCommands.ShortcutSheet, vm.ShowShortcutsCommand),
+            (ShortcutCommands.Preferences, vm.OpenPreferencesCommand)
+        ]);
         MainTabs.TemplateApplied += OnMainTabsTemplateApplied;
         MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };
         MainTabs.SelectionChanged += (_, e) =>

@@ -71,6 +71,7 @@ public partial class App : Avalonia.Application
     /// <summary>The main window with its view model, wired as the dialogs' owner.</summary>
     public static MainWindow CreateMainWindow(IServiceProvider provider)
     {
+        Keymap.Current = provider.GetRequiredService<Application.Shortcuts.KeymapService>();
         var vm = provider.GetRequiredService<MainWindowViewModel>();
         vm.AttachTeam(provider.GetRequiredService<TeamViewModel>());
         var window = new MainWindow { DataContext = vm };

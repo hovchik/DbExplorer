@@ -18,6 +18,8 @@ using AvaloniaEdit.Search;
 using DbExplorer.Application;
 using DbExplorer.Application.Assistant;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.Editor;
 using DbExplorer.Desktop.ViewModels;
 
@@ -117,6 +119,8 @@ public partial class QueryView : UserControl
         _costLensTimer.Tick += OnCostLensTick;
         _inspectionTimer.Tick += OnInspectionTick;
         ApplyHighlighting();
+        InstallVim();
+        UpdateEditorHint();
     }
 
     /// <summary>Each tab owns its document (text + undo history); the view is reused when tabs switch.</summary>
@@ -149,6 +153,7 @@ public partial class QueryView : UserControl
         _vm?.OnAssistantSettingsChanged();
 
         _carets.Clear();
+        ResetVim();
         _decorations.Error = null;
         _decorations.Executed = null;
         if (_folding is not null) FoldingManager.Uninstall(_folding);
@@ -407,40 +412,48 @@ public partial class QueryView : UserControl
             if (e.Key == Key.Escape) { e.Handled = true; return; }
         }
 
-        if (e.Key == Key.Escape && SignaturePopup.IsOpen) { SignaturePopup.IsOpen = false; e.Handled = true; }
-        else if (alt && !ctrl && e.Key == Key.Enter) { ShowFixes(); e.Handled = true; }
-        else if (e.Key == Key.F8) { GoToProblem(shift ? -1 : 1); e.Handled = true; }
-        else if (ctrl && alt && shift && e.Key == Key.J) { SelectAllOccurrences(); e.Handled = true; }
-        else if (alt && !ctrl && e.Key == Key.J) { AddNextOccurrence(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.Space) { ShowCompletion(explicitRequest: true); e.Handled = true; }
-        else if (e.Key == Key.F5 || (ctrl && e.Key == Key.E)) { Run(currentStatement: false); e.Handled = true; }
-        else if (ctrl && e.Key == Key.Enter) { Run(currentStatement: true); e.Handled = true; }
-        else if (ctrl && e.Key == Key.L) { Explain(analyze: shift); e.Handled = true; }
-        else if (ctrl && shift && e.Key == Key.F) { Format(); e.Handled = true; }
-        else if (ctrl && e.Key is Key.Oem2 or Key.Divide) { ToggleComment(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.H) { _search.IsReplaceMode = true; _search.Open(); e.Handled = true; }
-        else if (ctrl && e.Key is Key.OemPlus or Key.Add) { Zoom(+1); e.Handled = true; }
-        else if (ctrl && e.Key is Key.OemMinus or Key.Subtract) { Zoom(-1); e.Handled = true; }
-        else if (ctrl && e.Key is Key.D0 or Key.NumPad0) { ResetZoom(); e.Handled = true; }
-        else if (alt && e.Key == Key.Z) { ToggleWordWrap(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.D) { Duplicate(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.G) { OpenGoToLine(); e.Handled = true; }
-        else if (ctrl && shift && e.Key == Key.U) { ChangeCase(upper: true); e.Handled = true; }
-        else if (ctrl && alt && e.Key == Key.U) { ChangeCase(upper: false); e.Handled = true; }
-        else if (ctrl && shift && e.Key is Key.Up or Key.Down)
+        if (_vim is not null && Editor.TextArea.IsKeyboardFocusWithin && VimKeyDown(e)) { e.Handled = true; return; }
+
+        if (e.Key == Key.Escape && SignaturePopup.IsOpen) { SignaturePopup.IsOpen = false; e.Handled = true; return; }
+        if (e.Key == Key.Back && !ctrl && DeleteEmptyPair()) { e.Handled = true; return; }
+
+        var editorFocused = Editor.TextArea.IsKeyboardFocusWithin;
+        var command = Keymap.Find(ShortcutAreas.QueryEditor, e);
+        if (command is null) return;
+        e.Handled = true;
+        switch (command)
         {
-            if (e.Key == Key.Up) SetSplit(1, 12);
-            else SetSplit(12, 1);
-            e.Handled = true;
+            case ShortcutCommands.ShowFixes: ShowFixes(); break;
+            case ShortcutCommands.NextWarning: GoToProblem(1); break;
+            case ShortcutCommands.PreviousWarning: GoToProblem(-1); break;
+            case ShortcutCommands.SelectAllOccurrences: SelectAllOccurrences(); break;
+            case ShortcutCommands.AddNextOccurrence: AddNextOccurrence(); break;
+            case ShortcutCommands.Complete: ShowCompletion(explicitRequest: true); break;
+            case ShortcutCommands.RunScript: Run(currentStatement: false); break;
+            case ShortcutCommands.RunStatement: Run(currentStatement: true); break;
+            case ShortcutCommands.Explain: Explain(analyze: false); break;
+            case ShortcutCommands.ExplainAnalyze: Explain(analyze: true); break;
+            case ShortcutCommands.Format: Format(); break;
+            case ShortcutCommands.ToggleComment: ToggleComment(); break;
+            case ShortcutCommands.Replace: _search.IsReplaceMode = true; _search.Open(); break;
+            case ShortcutCommands.ZoomIn: Zoom(+1); break;
+            case ShortcutCommands.ZoomOut: Zoom(-1); break;
+            case ShortcutCommands.ResetZoom: ResetZoom(); break;
+            case ShortcutCommands.WordWrap: ToggleWordWrap(); break;
+            case ShortcutCommands.Duplicate: Duplicate(); break;
+            case ShortcutCommands.GoToLine: OpenGoToLine(); break;
+            case ShortcutCommands.UpperCase: ChangeCase(upper: true); break;
+            case ShortcutCommands.LowerCase: ChangeCase(upper: false); break;
+            case ShortcutCommands.MaximizeResults: SetSplit(1, 12); break;
+            case ShortcutCommands.MaximizeEditor: SetSplit(12, 1); break;
+            case ShortcutCommands.MoveLinesUp: MoveLines(-1); break;
+            case ShortcutCommands.MoveLinesDown: MoveLines(1); break;
+            case ShortcutCommands.GoToDefinition: await GoToDefinitionAsync(Editor.CaretOffset); break;
+            // F2 also edits a grid cell: rename and usages only act while the editor has focus.
+            case ShortcutCommands.Rename when editorFocused: StartRename(); break;
+            case ShortcutCommands.FindUsages when editorFocused: await FindUsagesAsync(); break;
+            default: e.Handled = false; break;
         }
-        // Alt+Shift+arrows stay with the editor's box selection.
-        else if (alt && !shift && e.Key is Key.Up or Key.Down) { MoveLines(e.Key == Key.Up ? -1 : 1); e.Handled = true; }
-        else if (e.Key == Key.F12) { e.Handled = true; await GoToDefinitionAsync(Editor.CaretOffset); }
-        // F2 also edits a grid cell: only the editor's own keys here.
-        else if (Editor.TextArea.IsKeyboardFocusWithin && ((shift && !ctrl && !alt && e.Key == Key.F6) || (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F2)))
-        { e.Handled = true; StartRename(); }
-        else if (Editor.TextArea.IsKeyboardFocusWithin && alt && !ctrl && !shift && e.Key == Key.F7) { e.Handled = true; await FindUsagesAsync(); }
-        else if (e.Key == Key.Back && !ctrl && DeleteEmptyPair()) e.Handled = true;
     }
 
     // ----- Several carets -----
@@ -880,12 +893,14 @@ public partial class QueryView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         HookSettings();
+        HookKeymap();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         HookSettings();
+        HookKeymap();
     }
 
     private void ApplyEditorSettings()

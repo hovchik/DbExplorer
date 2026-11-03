@@ -9,15 +9,9 @@
         xmlns:controls="using:DbExplorer.Desktop.Controls"
         xmlns:models="using:DbExplorer.Core.Models"
         xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:services="using:DbExplorer.Desktop.Services"
         WindowStartupLocation="CenterScreen">
-  <Window.KeyBindings>
-    <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
-    <KeyBinding Gesture="Ctrl+P" Command="{Binding OpenCommandPaletteCommand}" />
-    <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenCommandListCommand}" />
-    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleNavigatorCommand}" />
-    <KeyBinding Gesture="F1" Command="{Binding ShowShortcutsCommand}" />
-    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}" />
-  </Window.KeyBindings>
+  <!-- Ctrl+K, Ctrl+P, Ctrl+Shift+P, Ctrl+B, F1 and Ctrl+, are bound in code from the keymap (they can be changed in the F1 sheet). -->
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
   </Window.Resources>
@@ -427,7 +421,7 @@
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />
-                  <MenuItem Header="Preferences…" InputGesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}"
+                  <MenuItem Header="Preferences…" services:Keymap.Command="app.preferences" Command="{Binding OpenPreferencesCommand}"
                             ToolTip.Tip="Theme, editor, new Query tab defaults, notifications, start-up, rendering, experimental features and the AI key">
                     <MenuItem.Icon>
                       <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" Width="14" Height="14" />

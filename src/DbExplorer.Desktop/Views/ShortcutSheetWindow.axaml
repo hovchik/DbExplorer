@@ -4,7 +4,7 @@
         x:Class="DbExplorer.Desktop.Views.ShortcutSheetWindow"
         x:DataType="vm:ShortcutSheetViewModel"
         Title="Keyboard shortcuts"
-        Width="900" Height="660" MinWidth="520" MinHeight="360"
+        Width="920" Height="680" MinWidth="560" MinHeight="380"
         WindowStartupLocation="CenterOwner">
   <Window.Styles>
     <Style Selector="Border.keycap">
@@ -16,9 +16,33 @@
       <Setter Property="HorizontalAlignment" Value="Left" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Border.keycap TextBlock">
+    <Style Selector="Border.keycap TextBlock, Button.keycap TextBlock">
       <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
       <Setter Property="FontSize" Value="12" />
+    </Style>
+    <!-- A changeable shortcut: the keycap is a button that starts recording new keys. -->
+    <Style Selector="Button.keycap">
+      <Setter Property="Background" Value="{DynamicResource AppKeycapBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1,1,1,2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.keycap.changed">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="Border.area">
       <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
@@ -27,17 +51,60 @@
       <Setter Property="Padding" Value="12,8,12,10" />
       <Setter Property="Margin" Value="0,0,12,12" />
     </Style>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
   </Window.Styles>
 
   <DockPanel Margin="14">
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="Keyboard shortcuts" FontSize="16" FontWeight="SemiBold" />
-        <TextBlock Classes="hint" Text="Ctrl+K opens the command palette; type &gt; there to list every command with its keys." />
+        <TextBlock Classes="hint" TextWrapping="Wrap"
+                   Text="Click a key to change it. Ctrl+K opens the command palette; type &gt; there to list every command with its keys." />
       </StackPanel>
-      <TextBox x:Name="FilterBox" Grid.Column="1" Width="280" Text="{Binding Filter}"
+      <TextBox x:Name="FilterBox" Grid.Column="1" Width="260" Text="{Binding Filter}"
                Watermark="Filter by key or action" VerticalAlignment="Center" />
     </Grid>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
+      <CheckBox x:Name="VimBox" IsChecked="{Binding VimMode}" Content="Vim keys in the Query editor"
+                ToolTip.Tip="Normal, insert and visual modes, counts, operators, text objects, / search and :%s. Esc goes back to normal mode; Ctrl shortcuts keep working. The keys are listed under Vim mode below." />
+      <Button Classes="compact" Content="Reset all shortcuts" Command="{Binding ResetAllCommand}" IsEnabled="{Binding HasCustomizations}"
+              ToolTip.Tip="Every shortcut back to its default keys" />
+    </StackPanel>
+
+    <!-- Changing a shortcut: shown while a row is picked -->
+    <Border DockPanel.Dock="Bottom" IsVisible="{Binding IsEditing}" Margin="0,8,0,0" Padding="12,10"
+            CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemAccentColor}"
+            Background="{DynamicResource AppSubtleBackgroundBrush}">
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+        <StackPanel Spacing="4">
+          <TextBlock TextTrimming="CharacterEllipsis">
+            <Run Text="Change: " /><Run Text="{Binding Editing.Action, Mode=OneWay, FallbackValue=''}" FontWeight="SemiBold" />
+            <Run Text="{Binding Editing.Area, Mode=OneWay, StringFormat=' ({0})', FallbackValue=''}" Foreground="{DynamicResource AppHintForegroundBrush}" />
+          </TextBlock>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Border Classes="keycap" MinWidth="120" Padding="10,3">
+              <TextBlock x:Name="RecordedKeys" Text="{Binding RecordedText}" FontSize="14" />
+            </Border>
+            <TextBlock Text="{Binding EditMessage}" Classes.error="{Binding EditMessageIsError}" Classes.hint="{Binding !EditMessageIsError}"
+                       VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="460" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="compact accent" Content="Replace" Command="{Binding AssignCommand}"
+                  ToolTip.Tip="The new key becomes the only key of this command" />
+          <Button Classes="compact" Content="Add" Command="{Binding AddKeyCommand}"
+                  ToolTip.Tip="Keep the current keys and add this one" />
+          <Button Classes="compact" Content="No keys" Command="{Binding RemoveKeysCommand}"
+                  ToolTip.Tip="Take every key away from this command (it stays in menus and the command palette)" />
+          <Button Classes="compact" Content="Cancel" Command="{Binding CancelEditCommand}" />
+        </StackPanel>
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="hint" FontSize="11" Margin="0,6,0,0"
+                   Text="Press the keys you want (with Ctrl or Alt for letters and digits). Esc cancels." />
+      </Grid>
+    </Border>
+
     <TextBlock DockPanel.Dock="Top" Classes="hint" IsVisible="{Binding IsEmpty}" Margin="2,8"
                Text="No shortcut matches the filter." />
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
@@ -49,17 +116,28 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:ShortcutGroup">
-            <Border Classes="area" Width="420">
+            <Border Classes="area" Width="430">
               <StackPanel>
                 <TextBlock Text="{Binding Area}" FontWeight="SemiBold" Margin="0,0,0,6" />
                 <ItemsControl ItemsSource="{Binding Items}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ShortcutInfo">
-                      <Grid ColumnDefinitions="160,*" Margin="0,2">
-                        <Border Classes="keycap">
+                      <Grid ColumnDefinitions="160,*,Auto" Margin="0,2">
+                        <Border Classes="keycap" IsVisible="{Binding !IsEditable}">
                           <TextBlock Text="{Binding Keys}" TextTrimming="CharacterEllipsis" />
                         </Border>
+                        <Button Classes="keycap" Classes.changed="{Binding IsCustomized}" IsVisible="{Binding IsEditable}"
+                                Click="OnKeyClick"
+                                ToolTip.Tip="Click to change the keys">
+                          <Panel>
+                            <TextBlock Text="{Binding Keys}" TextTrimming="CharacterEllipsis" IsVisible="{Binding !HasNoKeys}" />
+                            <TextBlock Text="no keys" FontStyle="Italic" Foreground="{DynamicResource AppHintForegroundBrush}" IsVisible="{Binding HasNoKeys}" />
+                          </Panel>
+                        </Button>
                         <TextBlock Grid.Column="1" Text="{Binding Action}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="10,0,0,0" />
+                        <Button Grid.Column="2" Classes="link" Content="Reset" IsVisible="{Binding IsCustomized}"
+                                Click="OnResetClick"
+                                ToolTip.Tip="{Binding DefaultKeys, StringFormat='Back to {0}'}" />
                       </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>

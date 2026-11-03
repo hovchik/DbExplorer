@@ -4,6 +4,8 @@ using Avalonia.Input;
 using Avalonia.Styling;
 using DbExplorer.Core.Debugging;
 using DbExplorer.Desktop.Editor;
+using DbExplorer.Application.Shortcuts;
+using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 
 namespace DbExplorer.Desktop.Views;
@@ -17,6 +19,14 @@ public partial class RoutineDebuggerWindow : Window
     public RoutineDebuggerWindow()
     {
         InitializeComponent();
+        Keymap.Bind(this, () => DataContext is not RoutineDebuggerViewModel vm ? [] :
+        [
+            (ShortcutCommands.DebugContinue, vm.StartOrContinueCommand),
+            (ShortcutCommands.DebugStop, vm.StopCommand),
+            (ShortcutCommands.DebugStepOver, vm.StepOverCommand),
+            (ShortcutCommands.DebugStepInto, vm.StepIntoCommand),
+            (ShortcutCommands.DebugStepOut, vm.StepOutCommand)
+        ]);
         SourceEditor.TextArea.LeftMargins.Insert(0, _margin);
         SourceEditor.TextArea.TextView.BackgroundRenderers.Add(_highlight);
         _margin.LineClicked += line => _ = _vm?.ToggleBreakpointAsync(line);

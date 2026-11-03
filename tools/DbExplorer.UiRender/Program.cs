@@ -1054,6 +1054,10 @@ namespace DbExplorer.UiRender
             if (_vm.DataSearch.Matches.Count > 0)
             {
                 _vm.DataSearch.ShowRelationsCommand.Execute(null);
+                await WaitFor(() => _window.OwnedWindows.OfType<DataRelationsWindow>().Any(), "open relations", 10_000);
+                var relations = (DataRelationsViewModel)_window.OwnedWindows.OfType<DataRelationsWindow>().First().DataContext!;
+                // Loading runs in the background with progress; shoot once it is done.
+                await WaitFor(() => !relations.IsRunning && relations.Results.Count > 0, "relations loaded", 60_000);
                 await ShootOwned<DataRelationsWindow>("data-relations", 20);
             }
             _vm.SelectedTab = AppTab.Query;

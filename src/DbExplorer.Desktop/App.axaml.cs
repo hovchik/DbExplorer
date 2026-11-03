@@ -10,6 +10,7 @@ using DbExplorer.Desktop.Services;
 using DbExplorer.Desktop.ViewModels;
 using DbExplorer.Desktop.Views;
 using DbExplorer.Providers.MySql;
+using DbExplorer.Providers.Sqlite;
 using DbExplorer.Providers.Postgres;
 using DbExplorer.Providers.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,7 +39,8 @@ public partial class App : Avalonia.Application
             .AddDbExplorerApplication()
             .AddSqlServerProvider()
             .AddPostgresProvider()
-            .AddMySqlProvider();      // <- new engines are registered here
+            .AddMySqlProvider()
+            .AddSqliteProvider();     // <- new engines are registered here
 
         services.AddSingleton<ISshHostKeyPrompt, SshHostKeyPrompt>();
         services.AddSingleton<DialogService>();

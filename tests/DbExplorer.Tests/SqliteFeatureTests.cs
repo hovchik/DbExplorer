@@ -310,4 +310,13 @@ public sealed class SqliteFeatureTests : IAsyncLifetime
         Assert.False(catalog.Available);
         Assert.Contains("no job scheduler", catalog.Setup);
     }
+
+    [Fact]
+    public void A_new_file_connection_starts_with_an_empty_path()
+    {
+        var registry = new ProviderRegistry([new SqliteProviderFactory()]);
+        var vm = new DbExplorer.Desktop.ViewModels.ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = SqliteProviderFactory.ProviderKey }, isNew: true);
+        Assert.Equal("", vm.Host);
+        Assert.True(vm.IsFileEngine);
+    }
 }

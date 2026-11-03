@@ -32,7 +32,8 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         _id = draft.Id;
         _selectedProvider = Providers.FirstOrDefault(p => p.Key == draft.ProviderKey) ?? Providers[0];
         _name = draft.Name;
-        _host = draft.Host;
+        // A new profile defaults to "localhost", which is no file path.
+        _host = _selectedProvider.IsFileBased && draft.Host.Trim() == "localhost" ? "" : draft.Host;
         _port = draft.Port?.ToString() ?? "";
         _database = draft.Database;
         _tenantId = draft.EntraTenantId ?? "";

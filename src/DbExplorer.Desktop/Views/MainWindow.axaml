@@ -9,8 +9,9 @@
         xmlns:controls="using:DbExplorer.Desktop.Controls"
         xmlns:models="using:DbExplorer.Core.Models"
         xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+        xmlns:services="using:DbExplorer.Desktop.Services"
         WindowStartupLocation="CenterScreen">
-  <!-- Ctrl+K, Ctrl+P, Ctrl+Shift+P, Ctrl+B and F1 are bound in code from the keymap (they can be changed in the F1 sheet). -->
+  <!-- Ctrl+K, Ctrl+P, Ctrl+Shift+P, Ctrl+B, F1 and Ctrl+, are bound in code from the keymap (they can be changed in the F1 sheet). -->
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
   </Window.Resources>
@@ -397,7 +398,7 @@
                     ToolTip.Tip="Refresh metadata: re-read the catalog from the server and update the local cache">
               <controls:StrokeIcon Data="{x:Static controls:Icons.Refresh}" />
             </Button>
-            <Button Classes="tool" ToolTip.Tip="Theme">
+            <Button Classes="tool" ToolTip.Tip="Theme and preferences">
               <controls:StrokeIcon Data="{Binding SelectedTheme, Converter={x:Static conv:ThemeModeToIconConverter.Instance}}" />
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -420,12 +421,12 @@
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />
-                  <MenuItem Header="Reopen last connection at start" ToggleType="CheckBox"
-                            IsChecked="{Binding ReconnectOnStart}"
-                            ToolTip.Tip="Open the connection that was open when DB Explorer closed. Production connections and ones without a saved password are only selected." />
-                  <MenuItem Header="Software rendering (after restart)" ToggleType="CheckBox"
-                            IsChecked="{Binding SoftwareRendering}"
-                            ToolTip.Tip="Draw the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up." />
+                  <MenuItem Header="Preferences…" services:Keymap.Command="app.preferences" Command="{Binding OpenPreferencesCommand}"
+                            ToolTip.Tip="Theme, editor, new Query tab defaults, notifications, start-up, rendering, experimental features and the AI key">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" Width="14" Height="14" />
+                    </MenuItem.Icon>
+                  </MenuItem>
                 </MenuFlyout>
               </Button.Flyout>
             </Button>

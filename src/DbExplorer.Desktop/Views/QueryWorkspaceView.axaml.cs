@@ -301,12 +301,19 @@ public partial class QueryWorkspaceView : UserControl
         try
         {
             await vm.SaveAsync(doc, path, name);
-            doc.Status = $"Saved to {path}";
         }
         catch (Exception ex)
         {
             doc.Status = "Could not save: " + ex.Message;
         }
+    }
+
+    private async void OnRecentPicked(object? sender, SelectionChangedEventArgs e)
+    {
+        if (Vm is not { } vm || RecentList.SelectedItem is not RecentFileItem item) return;
+        RecentList.SelectedItem = null;
+        if (OpenButton.Flyout is { IsOpen: true } flyout) flyout.Hide();
+        await vm.OpenRecentCommand.ExecuteAsync(item);
     }
 
     private void OnHistoryOpened(object? sender, EventArgs e) => Vm?.LoadHistoryCommand.Execute(null);

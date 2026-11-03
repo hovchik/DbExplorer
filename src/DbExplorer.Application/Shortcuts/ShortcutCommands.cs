@@ -38,6 +38,7 @@ public static class ShortcutCommands
     public const string CommandList = "app.commands";
     public const string ToggleNavigator = "app.navigator";
     public const string ShortcutSheet = "app.shortcuts";
+    public const string Preferences = "app.preferences";
 
     public const string RunScript = "editor.run-script";
     public const string RunStatement = "editor.run-statement";
@@ -166,6 +167,7 @@ public static class ShortcutCommands
         Add(CommandList, a, "Command palette, commands only", "Ctrl+Shift+P");
         Add(ToggleNavigator, a, "Show or hide the database navigator", "Ctrl+B");
         Add(ShortcutSheet, a, "Keyboard shortcuts (this sheet)", "F1");
+        Add(Preferences, a, "Preferences", "Ctrl+,");
 
         var e = ShortcutAreas.QueryEditor;
         Add(RunScript, e, "Run the selection, or the whole script", "F5", "Ctrl+E");

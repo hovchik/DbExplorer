@@ -37,6 +37,14 @@ public sealed class QueryTabState
 
     /// <summary>The tab's identity, which keys its local history until it is saved to a file; null in older files.</summary>
     public Guid? Id { get; set; }
+
+    /// <summary>The file's encoding (<see cref="SqlFileEncodings"/>); null for UTF-8 and in older files.</summary>
+    public string? FileEncoding { get; set; }
+
+    /// <summary>The file's stamp when the tab last read or wrote it, to notice a change made while the app was closed.</summary>
+    public DateTime? FileWriteUtc { get; set; }
+
+    public long? FileLength { get; set; }
 }
 
 /// <summary>

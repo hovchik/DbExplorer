@@ -51,6 +51,10 @@ public interface IDialogService
     /// <summary>The keyboard shortcut sheet (F1); one at a time, brought to the front if already open.</summary>
     void ShowShortcutSheet();
 
+    /// <summary>The Preferences window (Ctrl+,); one at a time, brought to the front if already open. The view model is
+    /// created only when a new window opens.</summary>
+    void ShowPreferences(Func<PreferencesViewModel> create);
+
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
     Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
 
@@ -62,6 +66,9 @@ public interface IDialogService
 
     /// <summary>Find usages results, in one window that stays open beside the editor (a new search replaces the last one).</summary>
     void ShowUsages(UsagesViewModel viewModel);
+
+    /// <summary>Opens the Generate test data window for a table (non-modal) and starts reading the table.</summary>
+    void ShowTestData(TestDataViewModel viewModel);
 
     /// <summary>Asks for one line of text; null when cancelled.</summary>
     Task<string?> PromptTextAsync(string title, string message, string label, string initial = "", string? watermark = null);
@@ -90,6 +97,18 @@ public interface IDialogService
 
     /// <summary>Lets the user pick a text file and reads it; null when cancelled.</summary>
     Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName);
+
+    /// <summary>Lets the user pick a file on this computer; its full path, or null when cancelled (or not a local file).</summary>
+    Task<string?> PickFilePathAsync(string title, IReadOnlyList<(string Name, string[] Patterns)> types);
+
+    /// <summary>The Import data window (CSV, TSV, Excel into a table); does not wait for it to close.</summary>
+    void ShowImportData(ImportDataViewModel viewModel);
+
+    /// <summary>Asks what documentation to export; null when cancelled.</summary>
+    Task<DocumentationRequest?> PromptDocumentationAsync(DocumentationPrompt prompt);
+
+    /// <summary>Lets the user pick where to save a file; its local path, or null when cancelled or not a local file.</summary>
+    Task<string?> PickSaveFilePathAsync(string title, string suggestedName, string extension, string typeName);
 }
 
 public sealed class DialogService(ProviderRegistry registry, SshTunnelService tunnels) : IDialogService
@@ -252,6 +271,26 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         return file.Name;
     }
 
+    public async Task<DocumentationRequest?> PromptDocumentationAsync(DocumentationPrompt prompt)
+    {
+        if (Owner is null) return null;
+        return await new ExportDocumentationWindow(prompt).ShowDialog<DocumentationRequest?>(Owner);
+    }
+
+    public async Task<string?> PickSaveFilePathAsync(string title, string suggestedName, string extension, string typeName)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggestedName + "." + extension,
+            DefaultExtension = extension,
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = ["*." + extension] }]
+        });
+        return file?.TryGetLocalPath();
+    }
+
     public async Task<(string Name, string Content)?> OpenTextFileAsync(string title, string extension, string typeName)
     {
         if (Owner?.StorageProvider is not { } storage) return null;
@@ -269,6 +308,24 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         await using var stream = await files[0].OpenReadAsync();
         using var reader = new StreamReader(stream);
         return (files[0].Name, await reader.ReadToEndAsync());
+    }
+
+    public async Task<string?> PickFilePathAsync(string title, IReadOnlyList<(string Name, string[] Patterns)> types)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            FileTypeFilter = types.Select(t => new FilePickerFileType(t.Name) { Patterns = t.Patterns }).ToList()
+        });
+        return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public void ShowImportData(ImportDataViewModel viewModel)
+    {
+        var window = new ImportDataWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
     }
 
     public async Task CopyTextAsync(string text)
@@ -293,6 +350,14 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         _usagesWindow = window;
         if (Owner is not null) window.Show(Owner);
         else window.Show();
+    }
+
+    public void ShowTestData(TestDataViewModel viewModel)
+    {
+        var window = new TestDataWindow { DataContext = viewModel };
+        if (Owner is not null) window.Show(Owner);
+        else window.Show();
+        _ = viewModel.LoadAsync();
     }
 
     public void ShowValue(string title, string value)
@@ -327,6 +392,21 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         _shortcutSheet = new ShortcutSheetWindow { DataContext = new ShortcutSheetViewModel() };
         _shortcutSheet.Closed += (_, _) => _shortcutSheet = null;
         _shortcutSheet.Show(Owner);
+    }
+
+    private PreferencesWindow? _preferences;
+
+    public void ShowPreferences(Func<PreferencesViewModel> create)
+    {
+        if (Owner is null) return;
+        if (_preferences is not null)
+        {
+            _preferences.Activate();
+            return;
+        }
+        _preferences = new PreferencesWindow { DataContext = create() };
+        _preferences.Closed += (_, _) => _preferences = null;
+        _preferences.Show(Owner);
     }
 
     public Task ShowGetDataAsync(

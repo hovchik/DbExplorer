@@ -23,7 +23,9 @@ public enum NavigatorObjectAction
     ShowInDiagram,
     Modify,
     DropTable,
-    FindUsages
+    FindUsages,
+    ImportData,
+    GenerateTestData
 }
 
 public enum NavigatorConnectionAction
@@ -66,7 +68,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedIsConnection), nameof(SelectedIsOtherConnection), nameof(SelectedIsActiveConnection),
         nameof(SelectedIsObject), nameof(SelectedIsTableLike), nameof(SelectedIsTable), nameof(SelectedIsRoutine),
-        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName))]
+        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument))]
     private NavigatorNode? _selectedNode;
 
     /// <summary>Raised for an object the Objects tab can show (it is in the session's catalog).</summary>
@@ -80,6 +82,9 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     /// <summary>Text for the clipboard (the view owns the clipboard).</summary>
     public event Action<string>? CopyRequested;
+
+    /// <summary>Export documentation of a database (null: the connection's own) and, from a schema row, one schema.</summary>
+    public event Action<string?, string?>? DocumentationRequested;
 
     public bool IsConnected => _session is not null;
 
@@ -494,6 +499,10 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     public bool SelectedHasDatabase => _session is not null && SelectedNode is { Kind: not (NavigatorNodeKind.ConnectionFolder or NavigatorNodeKind.Message) }
                                        && (SelectedNode.Kind != NavigatorNodeKind.Connection || SelectedIsActiveConnection);
 
+    /// <summary>Export documentation: the connected connection, a database or a schema row.</summary>
+    public bool SelectedCanDocument => SelectedHasDatabase &&
+                                       SelectedNode!.Kind is NavigatorNodeKind.Connection or NavigatorNodeKind.Database or NavigatorNodeKind.Schema;
+
     public bool SelectedHasName => SelectedNode is { Kind: not NavigatorNodeKind.Message };
 
     /// <summary>The object of an object row, or of the table a column / index / key row belongs to.</summary>
@@ -548,6 +557,8 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [RelayCommand] private void Modify() => RunObjectAction(NavigatorObjectAction.Modify);
     [RelayCommand] private void DropTable() => RunObjectAction(NavigatorObjectAction.DropTable);
     [RelayCommand] private void FindUsages() => RunObjectAction(NavigatorObjectAction.FindUsages);
+    [RelayCommand] private void ImportData() => RunObjectAction(NavigatorObjectAction.ImportData);
+    [RelayCommand] private void GenerateTestData() => RunObjectAction(NavigatorObjectAction.GenerateTestData);
 
     private void RunObjectAction(NavigatorObjectAction action)
     {
@@ -582,6 +593,14 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     {
         if (_session is null || SelectedNode is not { } node) return;
         OpenSqlRequested?.Invoke("", DatabaseOf(node), null);
+    }
+
+    [RelayCommand]
+    private void ExportDocumentation()
+    {
+        if (!SelectedCanDocument) return;
+        var node = SelectedNode!;
+        DocumentationRequested?.Invoke(DatabaseOf(node), node.Kind == NavigatorNodeKind.Schema ? node.Title : null);
     }
 
     [RelayCommand]

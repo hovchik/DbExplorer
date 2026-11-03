@@ -3,6 +3,9 @@ using Avalonia;
 using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using DbExplorer.Application.Query;
 using DbExplorer.Application.Shortcuts;
 using DbExplorer.Desktop.Services;
@@ -24,7 +27,8 @@ public partial class MainWindow : Window
             (ShortcutCommands.Palette, vm.OpenCommandPaletteCommand),
             (ShortcutCommands.CommandList, vm.OpenCommandListCommand),
             (ShortcutCommands.ToggleNavigator, vm.ToggleNavigatorCommand),
-            (ShortcutCommands.ShortcutSheet, vm.ShowShortcutsCommand)
+            (ShortcutCommands.ShortcutSheet, vm.ShowShortcutsCommand),
+            (ShortcutCommands.Preferences, vm.OpenPreferencesCommand)
         ]);
         MainTabs.TemplateApplied += OnMainTabsTemplateApplied;
         MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };
@@ -65,6 +69,41 @@ public partial class MainWindow : Window
         PositionChanged += (_, _) => ScheduleTrackPlacement();
         Resized += (_, _) => ScheduleTrackPlacement();
         Closing += (_, _) => TrackPlacement();
+
+        // .sql files dropped anywhere on the window open in Query tabs. Tunnelling, so the editor (which takes text
+        // drops) and the canvases (which take tables) never see a file drop.
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnFileDragOver, RoutingStrategies.Tunnel);
+        AddHandler(DragDrop.DropEvent, OnFileDrop, RoutingStrategies.Tunnel);
+        // Back in the window: a script another program changed meanwhile is reloaded, or the tab says so.
+        Activated += (_, _) => { if (_vm is not null) _ = _vm.Query.CheckFilesOnDiskAsync(); };
+    }
+
+    /// <summary>Shows the window in front for files sent from a later start (restored when it was minimized).</summary>
+    public void BringToFront()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = _maximizedBeforeMinimize ? WindowState.Maximized : WindowState.Normal;
+        Activate();
+    }
+
+    private static void OnFileDragOver(object? sender, DragEventArgs e)
+    {
+        if (!e.Data.Contains(DataFormats.Files)) return;
+        e.DragEffects = DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private async void OnFileDrop(object? sender, DragEventArgs e)
+    {
+        if (_vm is null || !e.Data.Contains(DataFormats.Files)) return;
+        e.Handled = true;
+        var paths = (e.Data.GetFiles() ?? []).OfType<IStorageFile>().Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths.Count == 0)
+        {
+            _vm.StatusText = "Only files can be dropped here; folders are not opened.";
+            return;
+        }
+        await _vm.OpenFilesAsync(paths);
     }
 
     // ---- Window placement: saved on close, restored (fitted to today's monitors) at the next start ----
@@ -290,7 +329,7 @@ public partial class MainWindow : Window
     {
         if (_vm is null) return;
         var tabVisible = _vm.SelectedTab == AppTab.Query && ReferenceEquals(_vm.Query.SelectedDocument, tab);
-        if (!RunNotification.ShouldNotify(elapsed, IsActive, tabVisible)) return;
+        if (!RunNotification.ShouldNotify(elapsed, IsActive, tabVisible, _vm.LongRunNotifyThreshold)) return;
 
         _notifications ??= new WindowNotificationManager(this) { Position = NotificationPosition.BottomRight, MaxItems = 3 };
         var type = outcome switch

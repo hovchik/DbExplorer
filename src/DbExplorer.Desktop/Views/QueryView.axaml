@@ -228,6 +228,20 @@
 				   Text="Not connected. You can write, open and save scripts here; connect to run them." />
 	  </DockPanel>
 	</Border>
+	<!-- The tab's file was changed by another program while the tab has edits, or was deleted -->
+	<Border x:Name="DiskBar" DockPanel.Dock="Top" IsVisible="{Binding HasDiskNotice}" Margin="0,0,0,4" Padding="10,4,4,4"
+			CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource AppPlanWarningBrush}"
+			Background="{DynamicResource AppSubtleBackgroundBrush}">
+	  <DockPanel>
+		<StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+		  <Button MinHeight="26" Padding="10,2" Content="Reload" Command="{Binding ReloadFromDiskCommand}" IsVisible="{Binding CanReloadFromDisk}"
+				  ToolTip.Tip="Take the file as it is on disk now (Ctrl+Z brings your edits back)" />
+		  <Button MinHeight="26" Padding="10,2" Content="Keep mine" Command="{Binding KeepMineCommand}"
+				  ToolTip.Tip="Keep your edits; Save then writes them over the file" />
+		</StackPanel>
+		<TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0" Text="{Binding DiskNotice}" />
+	  </DockPanel>
+	</Border>
 	<Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto" Margin="2,2,2,0">
 	  <!-- The run's state right under the editor: timer while it runs, then "Completed in …" or the error -->
 	  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" Margin="0,0,12,0" MaxWidth="640"

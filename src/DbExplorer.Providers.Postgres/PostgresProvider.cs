@@ -705,9 +705,56 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider
     }
 
     private sealed class ScriptSession(NpgsqlConnection connection, NpgsqlTransaction? transaction, NpgsqlDataSource? scoped)
-        : IScriptSession
+        : IScriptSession, IBulkCopySession
     {
         private bool _committed;
+
+        /// <summary>COPY … FROM STDIN in CSV form: NULL is an empty unquoted field, every value is quoted (so empty text
+        /// stays empty text). A refused row ends the COPY; the server names the line, which is the row's position.</summary>
+        public async Task<long> CopyRowsAsync(
+            string table, IReadOnlyList<string> columns, IEnumerable<IReadOnlyList<string?>> rows, CancellationToken ct = default)
+        {
+            var sql = $"COPY {table} ({string.Join(", ", columns)}) FROM STDIN (FORMAT csv)";
+            long written = 0;
+            var line = new StringBuilder();
+            try
+            {
+                var writer = await connection.BeginTextImportAsync(sql, ct);
+                try
+                {
+                    foreach (var row in rows)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        line.Clear();
+                        for (var i = 0; i < row.Count; i++)
+                        {
+                            if (i > 0) line.Append(',');
+                            if (row[i] is { } value) line.Append('"').Append(value.Replace("\"", "\"\"")).Append('"');
+                        }
+                        line.Append('\n');
+                        await writer.WriteAsync(line.ToString().AsMemory(), ct);
+                        written++;
+                    }
+                }
+                catch
+                {
+                    // Ends the COPY without loading what was sent; the transaction is rolled back by the caller.
+                    try { await ((NpgsqlCopyTextWriter)writer).CancelAsync(); } catch (Exception) { /* the server already ended it */ }
+                    try { await writer.DisposeAsync(); } catch (Exception) { /* already ended by the cancel */ }
+                    throw;
+                }
+                await writer.DisposeAsync(); // completes the COPY; the server checks the rows here
+                return written;
+            }
+            catch (PostgresException ex)
+            {
+                var message = ex.MessageText + (string.IsNullOrEmpty(ex.Detail) ? "" : $" ({ex.Detail})");
+                var where = ex.Where is { } w ? System.Text.RegularExpressions.Regex.Match(w, @"line (\d+)") : null;
+                long? row = where is { Success: true } && long.TryParse(where.Groups[1].Value, out var n) ? n : null;
+                if (ex.Where is { } context && context.Length > 0) message += $" [{context}]";
+                throw new BulkCopyException($"{ex.SqlState}: {message}", row, ex);
+            }
+        }
 
         public async Task<int> ExecuteAsync(string sql, int timeoutSeconds, CancellationToken ct = default)
         {

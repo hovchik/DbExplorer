@@ -51,6 +51,12 @@ public static class Icons
     public const string Alert = "M12 3.5L21.5 20h-19z M12 10v4.5 M12 17.5h.01";
     public const string Sidebar = "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16";
     public const string Collapse = "M7 9l5-5 5 5 M7 15l5 5 5-5";
+    // Query builder
+    public const string Play = "M7 4.5l12 7.5-12 7.5z";
+    public const string Undo = "M9 14L4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 0 11H11";
+    public const string Redo = "M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 0 0 0 11H13";
+    public const string Arrange = "M3 4h7v6H3z M14 4h7v6h-7z M14 14h7v6h-7z M10 7h4 M17.5 10v4";
+    public const string OpenExternal = "M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5";
     public const string Settings = "M4 6h9 M17 6h3 M15 4v4 M4 12h3 M11 12h9 M9 10v4 M4 18h11 M19 18h1 M17 16v4";
 }
 

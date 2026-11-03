@@ -178,6 +178,8 @@ public partial class MainWindowViewModel
                     Jobs.NewJobCommand.Execute(null);
                 }, keywords: "agent cron schedule event create", id: "new-job");
         }
+        Command("Query builder", "Run the built query", QueryBuilder.RunCommand, K(ShortcutCommands.BuilderRun), keywords: "visual designer select execute");
+        Command("Query builder", "Arrange query builder tables", QueryBuilder.ArrangeCommand, K(ShortcutCommands.BuilderArrange), keywords: "layout tidy canvas");
         Command("ER model", "New ER model", ErModel.NewModelCommand, keywords: "diagram design");
         Command("ER model", "Open ER model…", ErModel.OpenModelCommand, keywords: "dbxmodel file");
         Command("ER model", "Save ER model", ErModel.SaveModelCommand, keywords: "dbxmodel file");

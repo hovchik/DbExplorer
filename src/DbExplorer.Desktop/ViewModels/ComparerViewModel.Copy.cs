@@ -167,7 +167,11 @@ public partial class ComparerViewModel
         OnPropertyChanged(nameof(CopyNotesText));
     }
     partial void OnCopyColumnInfoChanged(string value) => OnPropertyChanged(nameof(HasCopyColumnInfo));
-    partial void OnCopyActionsChanged(IReadOnlyList<CopyActionOption> value) => OnPropertyChanged(nameof(HasCopyActions));
+    partial void OnCopyActionsChanged(IReadOnlyList<CopyActionOption> value)
+    {
+        OnPropertyChanged(nameof(HasCopyActions));
+        OnPropertyChanged(nameof(ShowPreviewCopyAction));
+    }
 
     partial void OnSelectedCopyActionChanged(CopyActionOption? value)
     {

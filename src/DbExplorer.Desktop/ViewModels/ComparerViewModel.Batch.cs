@@ -48,6 +48,8 @@ public partial class ComparerViewModel
             _selectedOverviewEntries = value;
             OnPropertyChanged(nameof(CopyOverviewLabel));
             OnPropertyChanged(nameof(MigrationOnlySelectedLabel));
+            OnPropertyChanged(nameof(OverviewSelectionText));
+            OnPropertyChanged(nameof(HasOverviewSelection));
             CopyOverviewEntryCommand.NotifyCanExecuteChanged();
         }
     }
@@ -67,7 +69,11 @@ public partial class ComparerViewModel
           (string.IsNullOrEmpty(SelectedRightDatabase) ? "" : $" · {SelectedRightDatabase}") +
           " — in dependency order, each object in its own transaction";
 
-    partial void OnIsCopyBatchModeChanged(bool value) => RefreshCopyCommands();
+    partial void OnIsCopyBatchModeChanged(bool value)
+    {
+        RefreshCopyCommands();
+        OnPropertyChanged(nameof(ShowPreviewCopyAction));
+    }
 
     private string TargetSchemaFor(DbObject obj) => LeftSession is { } l && RightSession is { } r
         ? ObjectCopyService.MapSchema(obj.Schema, l.Provider.ProviderKey, r.Provider.ProviderKey, SelectedRightDatabase)

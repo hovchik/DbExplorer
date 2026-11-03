@@ -12,6 +12,7 @@ using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Search;
 using DbExplorer.Application.Updates;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
@@ -189,19 +190,23 @@ namespace DbExplorer.UiRender
             await Step("offline", RenderOfflineAsync);
             await Step("palette", RenderPaletteAsync);
             await Step("usages", RenderUsagesAsync);
+            await Step("search", RenderSearchNamesAsync);
             await Step("import", RenderImportAsync);
             await Step("preferences", RenderPreferencesAsync);
             await Step("docs", RenderDocumentationAsync);
             await Step("testdata", RenderTestDataAsync);
             await Step("migration", RenderMigrationAsync);
+            await Step("comparer", RenderComparerAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
             await Step("inline", RenderInlineResultsAsync);
+            await Step("datasearch", RenderDataSearchAsync);
             await Step("updates", RenderUpdatesAsync);
             await Step("charts", RenderChartsAsync);
             await Step("backup", RenderBackupAsync);
             await Step("jobs", () => RenderJobsAsync("postgres"));
             await Step("multi", RenderMultipleConnectionsAsync);
+            await Step("builder", RenderQueryBuilderAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -397,6 +402,7 @@ namespace DbExplorer.UiRender
             await _vm.Comparer.UseCurrentAsLeftCommand.ExecuteAsync(null);
             await _vm.Comparer.UseCurrentAsRightCommand.ExecuteAsync(null);
             await WaitFor(() => _vm.Comparer.LeftObjects.Count > 0 && _vm.Comparer.RightObjects.Count > 0, "comparer objects");
+            _vm.Comparer.SelectedTabIndex = ComparerViewModel.SchemaTab;
             _vm.Comparer.SelectedLeftObject = _vm.Comparer.LeftObjects.First(o => o.Name == "v_order_totals");
             await Settle(4);
             await _vm.Comparer.CompareSchemaCommand.ExecuteAsync(null);
@@ -414,8 +420,10 @@ namespace DbExplorer.UiRender
             await Shot(_window, "search-names-empty");
             _vm.Search.Query = "order";
             await _vm.Search.SearchCommand.ExecuteAsync(null);
-            await WaitFor(() => _vm.Search.Results.Count > 0, "search results");
-            _vm.Search.SelectedResult = _vm.Search.Results.First(r => r.ObjectName == "order_total");
+            await WaitFor(() => _vm.Search.Rows.Count > 0, "search results");
+            _vm.Search.SelectedRow = _vm.Search.Rows.First(r => r.IsCode && r.Group.ObjectName == "order_total");
+            await WaitFor(() => _vm.Search.PreviewText.Length > 0, "search preview");
+            await Settle(4);
             await Shot(_window, "search-names");
 
             // Search data
@@ -579,6 +587,49 @@ namespace DbExplorer.UiRender
 
         private void CloseFlyouts() => _window.GetVisualDescendants().OfType<TableDesignerView>().First().LastMenu?.Hide();
 
+        /// <summary>The Query builder: empty, a three-table design (related tables listed first, columns with a total,
+        /// a sort and a filter), its Joins panel, and the design at 1024×700. Writes builder-*.png.</summary>
+        private async Task RenderQueryBuilderAsync()
+        {
+            var b = _vm.QueryBuilder;
+            _vm.SelectedTab = AppTab.QueryBuilder;
+            if (b.ClearCommand.CanExecute(null)) b.ClearCommand.Execute(null);
+            await Settle(4);
+            await Shot(_window, "builder-empty");
+
+            var orders = b.AddTable(Table("orders"), null);
+            await Settle(2);
+            await Shot(_window, "builder-related");
+            var customers = b.AddTable(Table("customers"), null);
+            var items = b.AddTable(Table("order_items"), null);
+            if (orders is null || customers is null || items is null) throw new InvalidOperationException("query builder tables");
+            b.ToggleColumn(customers, "name");
+            b.ToggleColumn(orders, "status");
+            b.ToggleColumn(items, "quantity");
+            var quantity = b.Columns.Last();
+            quantity.Aggregate = DbExplorer.Application.QueryBuilder.ColumnAggregate.Sum;
+            quantity.Sort = DbExplorer.Application.QueryBuilder.SortDirection.Descending;
+            b.Columns.First(c => c.Column == "status").Filter = "<> 'cancelled'";
+            b.SelectedTable = items;
+            await Settle(6);
+            await Shot(_window, "builder");
+
+            var tabs = _window.GetVisualDescendants().OfType<TabControl>().First(t => t.Classes.Contains("design"));
+            tabs.SelectedIndex = 1;
+            await Settle(4);
+            await Shot(_window, "builder-joins");
+            tabs.SelectedIndex = 0;
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-builder");
+            _window.Width = 1400;
+            _window.Height = 900;
+            if (b.ClearCommand.CanExecute(null)) b.ClearCommand.Execute(null);
+            await Settle(2);
+        }
+
         private async Task RenderSmallAsync()
         {
             _window.Width = 1024;
@@ -699,6 +750,54 @@ namespace DbExplorer.UiRender
 
         /// <summary>Results under their statements in the editor: a script of quick checks run once, then one statement
         /// run again, at both window sizes.</summary>
+        private async Task RenderDataSearchAsync()
+        {
+            var ds = _vm.DataSearch;
+            _vm.SelectedTab = AppTab.SearchData;
+            await Settle();
+            await Shot(_window, "datasearch-empty");
+
+            // "12" is in names, emails, SKUs and notes; the size limit skips order_items so the skipped badge shows.
+            ds.Term = "12";
+            ds.MaxTableRows = 100;
+            await ds.StartCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning && ds.Matches.Count > 0, "data search", 60_000);
+            ds.SelectedMatch = ds.Matches.First(m => m.Match.Table == "customers" && m.Column == "email");
+            await WaitFor(() => !ds.IsRecordLoading && ds.RecordFields.Count > 0, "found row");
+            await Settle(8);
+            await Shot(_window, "datasearch-results");
+
+            ds.SelectedTable = ds.Tables.First(t => t.Table == "products");
+            await WaitFor(() => !ds.IsRecordLoading && ds.RecordFields.Count > 0, "found row (products)");
+            await Settle(8);
+            await Shot(_window, "datasearch-table");
+
+            ds.DetailTabIndex = 1;
+            await Settle(4);
+            await Shot(_window, "datasearch-skipped");
+            await ds.RetrySkippedCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning, "retry skipped", 60_000);
+            ds.DetailTabIndex = 0;
+            ds.SelectedTable = ds.Tables[0];
+            await WaitFor(() => !ds.IsRecordLoading, "found row (all)");
+            await Settle(8);
+            await Shot(_window, "datasearch-retried");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(8);
+            await Shot(_window, "small-datasearch");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            ds.MaxTableRows = null;
+            ds.Term = "no such value anywhere";
+            await ds.StartCommand.ExecuteAsync(null);
+            await WaitFor(() => !ds.IsRunning, "data search (nothing)", 60_000);
+            await Settle(8);
+            await Shot(_window, "datasearch-nomatch");
+        }
+
         private async Task RenderInlineResultsAsync()
         {
             _vm.SelectedTab = AppTab.Query;
@@ -950,14 +1049,6 @@ namespace DbExplorer.UiRender
             await ShowAndShoot(new LoginPromptWindow("New login", "The login is created on the server with the password below.", null, "Also create a user for it in uirender_shop"), "login-prompt");
             await ShowAndShoot(new TextPromptWindow("Rename tab", "A name for this query tab.", "Name", "Orders by customer", "e.g. Monthly totals"), "text-prompt");
             await ShowAndShoot(new ParametersWindow(["@from", "@to", "@status"], new Dictionary<string, string> { ["@from"] = "2026-01-01", ["@to"] = "", ["@status"] = "shipped" }), "parameters");
-
-            _vm.SelectedTab = AppTab.SearchNamesAndCode;
-            if (_vm.Search.Results.Count > 0)
-            {
-                _vm.Search.SelectedResult = _vm.Search.Results.First(r => r.ObjectName == "v_order_totals");
-                _ = _vm.Search.OpenResultCommand.ExecuteAsync(null);
-                await ShootOwned<SearchResultDetailWindow>("search-result-detail", 10);
-            }
 
             _vm.SelectedTab = AppTab.SearchData;
             if (_vm.DataSearch.Matches.Count > 0)
@@ -1830,7 +1921,134 @@ namespace DbExplorer.UiRender
             await Settle();
         }
 
+        /// <summary>The Comparer's sections: setup steps, the Overview of the shop against its older copy, and one object's diffs.</summary>
+        private async Task RenderComparerAsync()
+        {
+            var c = _vm.Comparer;
+            _vm.SelectedTab = AppTab.Comparer;
+            if (c.LeftSession is not null) await c.DisconnectLeftCommand.ExecuteAsync(null);
+            if (c.RightSession is not null) await c.DisconnectRightCommand.ExecuteAsync(null);
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            await Settle(4);
+            await Shot(_window, "comparer-setup");
+            await c.UseCurrentAsLeftCommand.ExecuteAsync(null);
+            await Settle(4);
+            await Shot(_window, "comparer-setup-left");
+
+            await c.UseCurrentAsRightCommand.ExecuteAsync(null);
+            await WaitFor(() => c.RightDatabases.Contains("uirender_shop_old"), "right databases");
+            c.SelectedRightDatabase = "uirender_shop_old";
+            await WaitFor(() => !c.IsBusy && c.RightObjects.Any(o => o.Name == "legacy_import") && c.OverviewEntries.Count > 0,
+                "overview against the old shop", 30_000);
+            await Settle(4);
+            await Shot(_window, "comparer-overview-diff");
+
+            c.ShowOverviewIdentical = true;
+            c.SelectedOverviewType = DbExplorer.Application.Compare.OverviewTypeGroup.Tables;
+            c.SelectedOverviewEntry = c.OverviewEntries.First(e => e.Name == "customers");
+            c.SelectedOverviewEntries = [c.SelectedOverviewEntry];
+            await Settle(4);
+            await Shot(_window, "comparer-overview-tables");
+
+            await c.OpenOverviewEntryCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "structure of customers");
+            await Settle(4);
+            await Shot(_window, "comparer-structure");
+
+            c.SelectedTabIndex = ComparerViewModel.SchemaTab;
+            c.SelectedLeftObject = c.LeftObjects.First(o => o.Name == "v_order_totals");
+            await Settle(2);
+            await c.CompareSchemaCommand.ExecuteAsync(null);
+            await WaitFor(() => !c.IsBusy, "definition of v_order_totals");
+            c.ShowOnlySchemaChanges = false;
+            await Settle(4);
+            await Shot(_window, "comparer-definition");
+
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            c.ShowOverviewIdentical = false;
+            c.SelectedOverviewType = DbExplorer.Application.Compare.OverviewTypeGroup.AllTypes;
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-comparer-overview");
+            c.SelectedTabIndex = ComparerViewModel.SchemaTab;
+            await Settle(4);
+            await Shot(_window, "small-comparer-definition");
+            _window.Width = 1400;
+            _window.Height = 900;
+            c.SelectedTabIndex = ComparerViewModel.OverviewTab;
+            c.SelectedRightDatabase = "uirender_shop";
+            await Settle();
+        }
+
         /// <summary>The Comparer's Migration tab: the shop against its older copy (uirender_shop_old from the seed script).</summary>
+        /// <summary>Search names &amp; code: the empty help, a search with a column hit in the preview, filters (only
+        /// code, only functions), a collapsed object, a regular expression, nothing found, and the 1024 px window.</summary>
+        private async Task RenderSearchNamesAsync()
+        {
+            var s = _vm.Search;
+            _vm.SelectedTab = AppTab.SearchNamesAndCode;
+            s.Query = "";
+            await Settle(4);
+            await Shot(_window, "search-names-empty");
+
+            async Task Search(string text)
+            {
+                s.Query = text;
+                await s.SearchCommand.ExecuteAsync(null);
+                await WaitFor(() => !s.IsSearching, "search " + text);
+                await Settle(4);
+            }
+
+            async Task Select(Func<MetadataSearchRow, bool> which, string what)
+            {
+                s.SelectedRow = s.Rows.First(which);
+                await WaitFor(() => s.PreviewText.Length > 0 || s.PreviewNote.Length > 0, "preview of " + what);
+                await Settle(4);
+            }
+
+            await Search("order");
+            await Select(r => r.IsCode && r.Group.ObjectName == "v_order_totals", "view line");
+            await Shot(_window, "search-names");
+            await Select(r => r.Kind == MetadataSearchRowKind.Column && r.Group.ObjectName == "order_items", "column");
+            await Shot(_window, "search-names-column");
+
+            await Search("customer_id");
+            await Select(r => r.IsObject, "first object");
+            await Shot(_window, "search-names-columns");
+
+            await Search("order");
+            s.ShowNames = false;
+            s.ShowColumns = false;
+            s.SelectedTypeOption = s.TypeOptions.First(o => o.Type == MetadataTypeFilter.Routines);
+            await Settle(4);
+            await Shot(_window, "search-names-code-only");
+            s.ShowNames = s.ShowColumns = true;
+            s.SelectedTypeOption = s.TypeOptions[0];
+            s.CollapseAllCommand.Execute(null);
+            await Settle(4);
+            await Shot(_window, "search-names-collapsed");
+            s.ExpandAllCommand.Execute(null);
+
+            s.UseRegex = true;
+            await Search(@"^v_|_seq$");
+            await Shot(_window, "search-names-regex");
+            s.UseRegex = false;
+
+            await Search("no_such_thing_anywhere");
+            await Shot(_window, "search-names-nothing");
+
+            await Search("total");
+            await Select(r => r.IsCode && r.Group.ObjectName == "order_total", "function line");
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-search-names");
+            _window.Width = 1400;
+            _window.Height = 900;
+            await Settle();
+        }
+
         private async Task RenderMigrationAsync()
         {
             var c = _vm.Comparer;

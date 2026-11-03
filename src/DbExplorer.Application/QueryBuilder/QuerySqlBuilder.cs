@@ -125,6 +125,9 @@ public static partial class QuerySqlBuilder
         _ => kind
     };
 
+    /// <summary>INNER JOIN, LEFT JOIN, …</summary>
+    public static string JoinKeywordFor(JoinKind kind) => JoinKeyword(kind);
+
     private static string JoinKeyword(JoinKind kind) => kind switch
     {
         JoinKind.Left => "LEFT JOIN",

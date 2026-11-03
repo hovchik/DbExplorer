@@ -11,6 +11,7 @@ public static class ShortcutAreas
     public const string Comparer = "Comparer";
     public const string ErModel = "ER model";
     public const string TableDesigner = "Table designer";
+    public const string QueryBuilder = "Query builder";
     public const string Debugger = "Routine debugger";
     public const string Palette = "Command palette";
     public const string Vim = "Vim mode (Query editor)";
@@ -40,6 +41,7 @@ public static class ShortcutCommands
     public const string ToggleNavigator = "app.navigator";
     public const string ShortcutSheet = "app.shortcuts";
     public const string Preferences = "app.preferences";
+    public const string SearchNames = "app.search-names";
 
     public const string RunScript = "editor.run-script";
     public const string RunStatement = "editor.run-statement";
@@ -91,6 +93,7 @@ public static class ShortcutCommands
     public const string NextDifference = "comparer.next";
     public const string PreviousDifference = "comparer.previous";
     public const string CancelComparison = "comparer.cancel";
+    public const string RunComparison = "comparer.run";
 
     public const string DesignerExecute = "designer.execute";
     public const string DesignerAddColumn = "designer.add-column";
@@ -98,6 +101,9 @@ public static class ShortcutCommands
     public const string DesignerColumnUp = "designer.column-up";
     public const string DesignerColumnDown = "designer.column-down";
     public const string DesignerCopyScript = "designer.copy-script";
+    public const string BuilderRun = "builder.run";
+    public const string BuilderOpen = "builder.open";
+    public const string BuilderArrange = "builder.arrange";
 
     public const string DebugContinue = "debugger.continue";
     public const string DebugStop = "debugger.stop";
@@ -139,6 +145,11 @@ public static class ShortcutCommands
         new(ShortcutAreas.ErModel, "Ctrl+Z", "Undo"),
         new(ShortcutAreas.ErModel, "Ctrl+Y / Ctrl+Shift+Z", "Redo"),
         new(ShortcutAreas.ErModel, "Delete", "Delete the selected table"),
+
+        new(ShortcutAreas.QueryBuilder, "Ctrl+Z", "Undo"),
+        new(ShortcutAreas.QueryBuilder, "Ctrl+Y / Ctrl+Shift+Z", "Redo"),
+        new(ShortcutAreas.QueryBuilder, "Delete", "Remove the selected table or join"),
+        new(ShortcutAreas.QueryBuilder, "Right-click", "Table and join actions on the canvas"),
     ];
 
     /// <summary>The Vim keys the Query editor understands in Vim mode (a reference card; they are not changeable).</summary>
@@ -177,6 +188,7 @@ public static class ShortcutCommands
         Add(ToggleNavigator, a, "Show or hide the database navigator", "Ctrl+B");
         Add(ShortcutSheet, a, "Keyboard shortcuts (this sheet)", "F1");
         Add(Preferences, a, "Preferences", "Ctrl+,");
+        Add(SearchNames, a, "Search names & code: find a table, column or text in any routine", "Ctrl+Shift+N");
 
         var e = ShortcutAreas.QueryEditor;
         Add(RunScript, e, "Run the selection, or the whole script", "F5", "Ctrl+E");
@@ -229,6 +241,7 @@ public static class ShortcutCommands
         Add(GridDeleteRows, g, "Delete the selected rows", "Ctrl+Delete");
 
         var c = ShortcutAreas.Comparer;
+        Add(RunComparison, c, "Run the section's main action (compare, generate, preview)", "F5");
         Add(NextDifference, c, "Next difference", "F8");
         Add(PreviousDifference, c, "Previous difference", "Shift+F8");
         Add(CancelComparison, c, "Cancel the comparison", "Esc");
@@ -240,6 +253,10 @@ public static class ShortcutCommands
         Add(DesignerColumnUp, td, "Move the column being edited up", "Alt+↑");
         Add(DesignerColumnDown, td, "Move the column being edited down", "Alt+↓");
         Add(DesignerCopyScript, td, "Copy the script", "Ctrl+Shift+C");
+        var b = ShortcutAreas.QueryBuilder;
+        Add(BuilderRun, b, "Run the query in a new Query tab", "F5", "Ctrl+Enter");
+        Add(BuilderOpen, b, "Open the query in a new Query tab", "Ctrl+Shift+Enter");
+        Add(BuilderArrange, b, "Arrange the tables along their joins", "Ctrl+Shift+A");
 
         var d = ShortcutAreas.Debugger;
         Add(DebugContinue, d, "Start or continue", "F5");

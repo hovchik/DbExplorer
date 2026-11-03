@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using DbExplorer.Desktop.Controls;
 using DbExplorer.Desktop.ViewModels;
 
 namespace DbExplorer.Desktop.Views;
@@ -13,7 +14,7 @@ public partial class DiagramView : UserControl
     {
         InitializeComponent();
         Canvas.TableActivated += table => (DataContext as DiagramViewModel)?.Refocus(table);
-        TablePicker.GotFocus += (_, _) => TablePicker.IsDropDownOpen = true;
+        TablePicker.GotFocus += (sender, _) => PickerDropDown.OpenOnFocus(sender);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is DiagramViewModel vm)

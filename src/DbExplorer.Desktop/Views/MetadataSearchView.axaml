@@ -1,41 +1,274 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="DbExplorer.Desktop.Views.MetadataSearchView">
-  <DockPanel Margin="4">
-    <WrapPanel DockPanel.Dock="Top" Classes="toolbar">
-      <TextBox x:Name="QueryBox" Width="380" Text="{Binding Query}"
-               Watermark="Table, column, procedure name, or text inside code…" />
-      <Button Content="Search" Classes="accent" Command="{Binding SearchCommand}" />
-      <Button Content="Search in ▾" ToolTip.Tip="Choose what to search: object names, column names, code">
-        <Button.Flyout>
-          <Flyout Placement="BottomEdgeAlignedLeft">
-            <StackPanel Spacing="4">
-              <CheckBox Content="Object names" IsChecked="{Binding SearchObjects}" />
-              <CheckBox Content="Column names" IsChecked="{Binding SearchColumns}" />
-              <CheckBox Content="Procedure / function / view / trigger code" IsChecked="{Binding SearchDefinitions}" />
+             xmlns:vm="using:DbExplorer.Desktop.ViewModels"
+             xmlns:controls="using:DbExplorer.Desktop.Controls"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="DbExplorer.Desktop.Views.MetadataSearchView"
+             x:DataType="vm:MetadataSearchViewModel">
+  <UserControl.Styles>
+    <!-- The search box: icon, text and the three match options in one rounded field -->
+    <Style Selector="Border.searchField">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource AppBarGroupBrush}" />
+      <Setter Property="Height" Value="36" />
+    </Style>
+    <Style Selector="Border.searchField:focus-within">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
+    <Style Selector="Border.searchField TextBox">
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="4,0" />
+    </Style>
+    <Style Selector="Border.searchField TextBox:focus /template/ Border#PART_BorderElement, Border.searchField TextBox:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.option">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="MinWidth" Value="30" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="Margin" Value="2,0" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- Names / Columns / Code: pill toggles with their counts -->
+    <Style Selector="ToggleButton.chip">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.chip TextBlock.count">
+      <Setter Property="Margin" Value="6,0,0,0" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.75" />
+    </Style>
+
+    <Style Selector="ListBox.results ListBoxItem">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="TextBlock.mono, controls|HighlightedText.mono">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.chevron">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Focusable" Value="False" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Margin="8,6,8,6" RowDefinitions="Auto,Auto,*">
+    <!-- Row 0: search field + status -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+      <Border Classes="searchField" MaxWidth="760" HorizontalAlignment="Stretch">
+        <DockPanel Margin="10,0,4,0">
+          <controls:StrokeIcon DockPanel.Dock="Left" Data="{x:Static controls:Icons.Search}" Width="16" Height="16"
+                               VerticalAlignment="Center" Opacity="0.7" />
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button Classes="chevron" Content="✕" Width="24" Height="24" Command="{Binding ClearCommand}"
+                    IsVisible="{Binding Query, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                    ToolTip.Tip="Clear (Esc)" AutomationProperties.Name="Clear search" />
+            <Border Width="1" Margin="4,6" Background="{DynamicResource AppBorderBrush}" />
+            <ToggleButton Classes="option" Content="Aa" IsChecked="{Binding MatchCase}"
+                          ToolTip.Tip="Match case" AutomationProperties.Name="Match case" />
+            <ToggleButton Classes="option" IsChecked="{Binding WholeWord}"
+                          ToolTip.Tip="Whole word: “order” does not find “orders”" AutomationProperties.Name="Whole word">
+              <TextBlock Text="ab" TextDecorations="Underline" />
+            </ToggleButton>
+            <ToggleButton Classes="option" Content=".*" IsChecked="{Binding UseRegex}"
+                          ToolTip.Tip="Regular expression (.NET syntax)" AutomationProperties.Name="Regular expression" />
+          </StackPanel>
+          <TextBox x:Name="QueryBox" Text="{Binding Query}" VerticalAlignment="Center"
+                   Watermark="Search table, column and routine names, and text inside views, procedures, functions and triggers"
+                   AutomationProperties.Name="Search names and code" />
+        </DockPanel>
+      </Border>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0" Spacing="6">
+        <ProgressBar IsIndeterminate="True" Width="40" MinWidth="40" IsVisible="{Binding IsSearching}" />
+        <TextBlock Classes="hint" Text="{Binding Status}" TextTrimming="CharacterEllipsis" MaxWidth="420" VerticalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Row 1: what to show (chips with counts), type and schema filters, expand / collapse -->
+    <DockPanel Grid.Row="1" Margin="0,0,0,8" IsVisible="{Binding HasSearched}">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+        <Button Classes="compact" Content="Expand all" Command="{Binding ExpandAllCommand}" />
+        <Button Classes="compact" Content="Collapse all" Command="{Binding CollapseAllCommand}" />
+      </StackPanel>
+      <WrapPanel Orientation="Horizontal">
+        <ToggleButton Classes="chip" IsChecked="{Binding ShowNames}" AutomationProperties.Name="Show name matches"
+                      ToolTip.Tip="Objects whose name matches">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Names" />
+            <TextBlock Classes="count" Text="{Binding NameCount}" />
+          </StackPanel>
+        </ToggleButton>
+        <ToggleButton Classes="chip" IsChecked="{Binding ShowColumns}" AutomationProperties.Name="Show column matches"
+                      ToolTip.Tip="Columns of tables and views whose name matches">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Columns" />
+            <TextBlock Classes="count" Text="{Binding ColumnCount}" />
+          </StackPanel>
+        </ToggleButton>
+        <ToggleButton Classes="chip" IsChecked="{Binding ShowCode}" AutomationProperties.Name="Show code matches"
+                      ToolTip.Tip="Lines of view, procedure, function and trigger source that match">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Code" />
+            <TextBlock Classes="count" Text="{Binding CodeCount}" />
+          </StackPanel>
+        </ToggleButton>
+        <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding SelectedTypeOption}" MinWidth="150"
+                  Height="28" MinHeight="0" Margin="6,0,6,0" AutomationProperties.Name="Object type filter" />
+        <ComboBox ItemsSource="{Binding SchemaOptions}" SelectedItem="{Binding SelectedSchemaOption}" MinWidth="130"
+                  Height="28" MinHeight="0" AutomationProperties.Name="Schema filter" />
+      </WrapPanel>
+    </DockPanel>
+
+    <!-- Row 2: results | preview -->
+    <Grid Grid.Row="2" x:Name="Body" ColumnDefinitions="5*,6,6*" IsVisible="{Binding HasResults}">
+      <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+          <ListBox x:Name="ResultsList" Classes="results" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                   Background="Transparent" AutomationProperties.Name="Search results"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:MetadataSearchRow">
+                <Panel AutomationProperties.Name="{Binding AccessibleText}">
+                  <!-- Object -->
+                  <Grid ColumnDefinitions="Auto,Auto,*,Auto" IsVisible="{Binding IsObject}" Margin="0,3,0,1">
+                    <Button Grid.Column="0" Classes="chevron" Content="{Binding Chevron}"
+                            Click="OnChevronClick" IsVisible="{Binding HasChildren}"
+                            AutomationProperties.Name="Expand or collapse" />
+                    <controls:ObjectTypeBadge Grid.Column="1" Type="{Binding Type}" Margin="2,0,8,0" />
+                    <controls:HighlightedText Grid.Column="2" Segments="{Binding Segments}" FontWeight="SemiBold"
+                                              VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="3" Classes="hint" Text="{Binding Hint}" Margin="10,0,2,0" VerticalAlignment="Center" />
+                  </Grid>
+                  <!-- Column or code line under it -->
+                  <Grid ColumnDefinitions="64,*,Auto" IsVisible="{Binding IsHit}" Margin="20,0,0,0">
+                    <TextBlock Grid.Column="0" Classes="label" Text="{Binding Label}" Margin="0,0,10,0" />
+                    <controls:HighlightedText Grid.Column="1" Classes="mono" Segments="{Binding Segments}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Hint}" Margin="10,0,2,0" VerticalAlignment="Center" />
+                  </Grid>
+                </Panel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+      </Border>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+      <Border Grid.Column="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Background="{DynamicResource AppSubtleBackgroundBrush}" Padding="10,6"
+                  BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel Spacing="6">
+              <DockPanel>
+                <controls:ObjectTypeBadge DockPanel.Dock="Left" Type="{Binding PreviewType}" Margin="0,0,8,0" IsVisible="{Binding HasPreview}" />
+                <TextBlock DockPanel.Dock="Right" Classes="hint" Text="{Binding PreviewSummary}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBlock Text="{Binding PreviewTitle}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+              <WrapPanel Orientation="Horizontal" IsVisible="{Binding HasPreview}">
+                <Button Classes="compact accent" Content="Open in Query tab" Command="{Binding OpenInQueryCommand}" Margin="0,0,6,0"
+                        ToolTip.Tip="This source in a new Query tab, caret on the selected line · double-click a code line" />
+                <Button Classes="compact" Content="Show in Objects" Command="{Binding ShowInObjectsCommand}" Margin="0,0,6,0"
+                        ToolTip.Tip="Columns, keys, indexes and definition in the Objects tab · double-click a name" />
+                <Button Classes="compact" Content="Select rows" Command="{Binding SelectRowsCommand}" Margin="0,0,6,0"
+                        IsVisible="{Binding IsTableLikePreview}" ToolTip.Tip="A SELECT of the first rows in a new Query tab" />
+                <Button Classes="compact" Command="{Binding CopyNameCommand}"
+                        ToolTip.Tip="Copy the name (Ctrl+C in the list)" AutomationProperties.Name="Copy name">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <controls:StrokeIcon Data="{x:Static controls:Icons.Copy}" Width="13" Height="13" />
+                    <TextBlock Text="Copy name" />
+                  </StackPanel>
+                </Button>
+              </WrapPanel>
             </StackPanel>
-          </Flyout>
-        </Button.Flyout>
-      </Button>
-      <CheckBox Content="Match case" IsChecked="{Binding MatchCase}" Margin="0,0,10,4" />
-      <CheckBox Content="Whole word" IsChecked="{Binding WholeWord}" Margin="0,0,10,4" />
-      <CheckBox Content="Regex" IsChecked="{Binding UseRegex}" Margin="0,0,10,4" />
-      <TextBlock Classes="hint" Text="{Binding Status}" TextWrapping="Wrap" />
-    </WrapPanel>
-    <DataGrid ItemsSource="{Binding Results}"
-              SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
-              IsReadOnly="True" AutoGenerateColumns="False"
-              CanUserResizeColumns="True" CanUserSortColumns="True"
-              GridLinesVisibility="Horizontal"
-              DoubleTapped="OnResultDoubleTapped">
-      <DataGrid.Columns>
-        <DataGridTextColumn Header="Found in" Binding="{Binding Kind}" Width="Auto" />
-        <DataGridTextColumn Header="Schema" Binding="{Binding Schema}" Width="Auto" />
-        <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="220" />
-        <DataGridTextColumn Header="Type" Binding="{Binding ObjectType}" Width="Auto" />
-        <DataGridTextColumn Header="Line" Binding="{Binding Line}" Width="Auto" />
-        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" />
-      </DataGrid.Columns>
-    </DataGrid>
-  </DockPanel>
+          </Border>
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" Text="{Binding PreviewNote}" Margin="10,6" TextWrapping="Wrap"
+                     IsVisible="{Binding PreviewNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <ae:TextEditor x:Name="PreviewEditor" IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
+                         FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="13"
+                         Background="{DynamicResource AppCodeBackgroundBrush}" Foreground="{DynamicResource AppForegroundBrush}"
+                         LineNumbersForeground="{DynamicResource AppHintForegroundBrush}"
+                         HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="4,4,0,0"
+                         AutomationProperties.Name="Source preview" />
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <!-- A search that found nothing (or filters that hide everything) -->
+    <StackPanel Grid.Row="2" IsVisible="{Binding ShowNoResults}" HorizontalAlignment="Center" VerticalAlignment="Top"
+                MaxWidth="420" Spacing="6" Margin="16,60,16,16">
+      <TextBlock Text="No matches" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center" />
+      <TextBlock Classes="hint" Text="{Binding EmptyMessage}" TextWrapping="Wrap" TextAlignment="Center" />
+      <TextBlock Classes="hint" TextWrapping="Wrap" TextAlignment="Center"
+                 Text="Try fewer letters, turn off Aa / whole word, or refresh metadata if the object was created after connecting." />
+    </StackPanel>
+
+    <!-- Before the first search: what this tab does and how to use it -->
+    <Border Grid.Row="2" IsVisible="{Binding ShowEmptyHelp}" HorizontalAlignment="Center" VerticalAlignment="Top"
+            Margin="0,40,0,0" MaxWidth="560" Padding="22,18" CornerRadius="10"
+            Background="{DynamicResource AppSubtleBackgroundBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+      <StackPanel Spacing="10">
+        <TextBlock Text="Find any name or piece of code" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock Classes="hint" TextWrapping="Wrap" FontSize="13"
+                   Text="Start typing: results appear as you type, grouped by object with the best matches first. Searches the metadata loaded when you connected, so it is instant and puts no load on the server." />
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+          <Grid.Styles>
+            <Style Selector="TextBlock">
+              <Setter Property="Margin" Value="0,3" />
+              <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style Selector="TextBlock.key">
+              <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" />
+              <Setter Property="FontSize" Value="12" />
+              <Setter Property="Margin" Value="0,3,14,3" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+          </Grid.Styles>
+          <TextBlock Grid.Row="0" Classes="key" Text="Names" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Text="tables, views, procedures, functions, triggers, sequences" />
+          <TextBlock Grid.Row="1" Classes="key" Text="Columns" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="every column of every table and view, with its type" />
+          <TextBlock Grid.Row="2" Classes="key" Text="Code" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="each line of view and routine source that mentions it" />
+          <TextBlock Grid.Row="3" Classes="key" Text="Aa  ab  .*" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="match case, whole word, regular expression" />
+          <TextBlock Grid.Row="4" Classes="key" Text="↓  Enter  Esc" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="to the results, open the selected one, clear the search" />
+        </Grid>
+        <TextBlock Classes="hint" x:Name="ShortcutHint" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </UserControl>

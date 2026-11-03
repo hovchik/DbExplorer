@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddSingleton<SessionService>();
         services.AddSingleton<ScriptStore>();
         services.AddSingleton<LocalHistoryStore>();
+        services.AddSingleton<RecentFiles>();
         services.AddSingleton<SnippetLibrary>();
         services.AddSingleton<TeamSyncStore>();
         services.AddSingleton<TeamSync>();

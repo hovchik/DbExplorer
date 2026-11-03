@@ -131,6 +131,9 @@
           <Separator IsVisible="{Binding SelectedHasCatalogActions}" />
           <MenuItem Header="Modify…" Command="{Binding ModifyCommand}" IsVisible="{Binding SelectedHasCatalogActions}"
                     ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />
+          <MenuItem Header="Generate test data…" Command="{Binding GenerateTestDataCommand}" IsVisible="{Binding SelectedIsTable}"
+                    IsEnabled="{Binding SelectedHasCatalogActions}"
+                    ToolTip.Tip="Fill the table with realistic rows that respect its types, keys and foreign keys. Asks before inserting." />
           <MenuItem Header="Drop table…" Command="{Binding DropTableCommand}" IsVisible="{Binding SelectedIsTable}"
                     IsEnabled="{Binding SelectedHasCatalogActions}" ToolTip.Tip="Asks first, then drops the table and all its rows." />
 
@@ -138,6 +141,8 @@
           <Separator IsVisible="{Binding SelectedHasDatabase}" />
           <MenuItem Header="New query here" Command="{Binding NewQueryCommand}" IsVisible="{Binding SelectedHasDatabase}"
                     ToolTip.Tip="A new Query tab on this row's database" />
+          <MenuItem Header="Export documentation…" Command="{Binding ExportDocumentationCommand}" IsVisible="{Binding SelectedCanDocument}"
+                    ToolTip.Tip="Tables, columns, keys, comments and the diagram as one HTML or Markdown file" />
           <MenuItem Header="Copy name" Command="{Binding CopyNameCommand}" IsVisible="{Binding SelectedHasName}" />
           <MenuItem Header="Refresh" Command="{Binding RefreshCommand}" IsVisible="{Binding SelectedHasDatabase}" />
         </ContextMenu>

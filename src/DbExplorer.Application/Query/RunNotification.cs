@@ -10,7 +10,11 @@ public static class RunNotification
     public static readonly TimeSpan Threshold = TimeSpan.FromSeconds(10);
 
     public static bool ShouldNotify(TimeSpan elapsed, bool windowActive, bool tabVisible) =>
-        elapsed >= Threshold && !(windowActive && tabVisible);
+        ShouldNotify(elapsed, windowActive, tabVisible, Threshold);
+
+    /// <param name="threshold">From Preferences; zero or less turns the notification off.</param>
+    public static bool ShouldNotify(TimeSpan elapsed, bool windowActive, bool tabVisible, TimeSpan threshold) =>
+        threshold > TimeSpan.Zero && elapsed >= threshold && !(windowActive && tabVisible);
 
     /// <summary>"Orders by day finished in 1:42" / "… failed after 0:12" / "… was cancelled after 2:05".</summary>
     public static string Message(string tabTitle, TimeSpan elapsed, RunOutcome outcome)

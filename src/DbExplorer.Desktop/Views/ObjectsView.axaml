@@ -38,6 +38,8 @@
                       ToolTip.Tip="Tables open in the Table designer; other objects open in a Query tab as an editable script that replaces them." />
             <MenuItem Header="Delete rows…" Command="{Binding DeleteRowsCommand}"
                       ToolTip.Tip="Opens a DELETE with its WHERE to fill in, in a Query tab. Nothing is deleted until you run it." />
+            <MenuItem Header="Generate test data…" Command="{Binding GenerateTestDataCommand}"
+                      ToolTip.Tip="Fill the table with realistic rows that respect its types, keys and foreign keys. Asks before inserting." />
             <Separator />
             <MenuItem Header="Drop table…" Command="{Binding DropTableCommand}"
                       ToolTip.Tip="Asks first, then drops the table and all its rows." />

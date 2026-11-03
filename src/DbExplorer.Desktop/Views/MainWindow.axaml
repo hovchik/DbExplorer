@@ -16,6 +16,7 @@
     <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenCommandListCommand}" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleNavigatorCommand}" />
     <KeyBinding Gesture="F1" Command="{Binding ShowShortcutsCommand}" />
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}" />
   </Window.KeyBindings>
   <Window.Resources>
     <conv:EnumToIndexConverter x:Key="EnumToIndex" />
@@ -403,7 +404,7 @@
                     ToolTip.Tip="Refresh metadata: re-read the catalog from the server and update the local cache">
               <controls:StrokeIcon Data="{x:Static controls:Icons.Refresh}" />
             </Button>
-            <Button Classes="tool" ToolTip.Tip="Theme">
+            <Button Classes="tool" ToolTip.Tip="Theme and preferences">
               <controls:StrokeIcon Data="{Binding SelectedTheme, Converter={x:Static conv:ThemeModeToIconConverter.Instance}}" />
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -426,12 +427,12 @@
                     </MenuItem.Icon>
                   </MenuItem>
                   <Separator />
-                  <MenuItem Header="Reopen last connection at start" ToggleType="CheckBox"
-                            IsChecked="{Binding ReconnectOnStart}"
-                            ToolTip.Tip="Open the connection that was open when DB Explorer closed. Production connections and ones without a saved password are only selected." />
-                  <MenuItem Header="Software rendering (after restart)" ToggleType="CheckBox"
-                            IsChecked="{Binding SoftwareRendering}"
-                            ToolTip.Tip="Draw the window with the CPU instead of the graphics card. Try it if the window stays blank after being minimized or after the PC wakes up." />
+                  <MenuItem Header="Preferences…" InputGesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}"
+                            ToolTip.Tip="Theme, editor, new Query tab defaults, notifications, start-up, rendering, experimental features and the AI key">
+                    <MenuItem.Icon>
+                      <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" Width="14" Height="14" />
+                    </MenuItem.Icon>
+                  </MenuItem>
                 </MenuFlyout>
               </Button.Flyout>
             </Button>

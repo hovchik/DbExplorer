@@ -24,6 +24,12 @@ public partial class App : Avalonia.Application
     /// <summary>Watches the UI thread while the desktop app runs (null in tests and the render harness).</summary>
     internal static ResponsivenessWatchdog? Watchdog { get; private set; }
 
+    /// <summary>The files named on the command line, opened in Query tabs once the saved tabs are back.</summary>
+    internal static IReadOnlyList<string> StartupFiles { get; set; } = [];
+
+    /// <summary>Receives the files a later start was asked to open (null in tests and the render harness).</summary>
+    internal static FileOpenChannel? OpenChannel { get; set; }
+
     /// <summary>The app's services: application layer, the engines and the view models. The render harness
     /// (tools/DbExplorer.UiRender) reuses this and swaps in a temporary <see cref="AppPaths"/> root.</summary>
     public static IServiceCollection ConfigureServices()
@@ -143,7 +149,13 @@ public partial class App : Avalonia.Application
             }
         };
 
+        vm.StartupFiles = StartupFiles;
         _ = vm.InitializeAsync();
+        OpenChannel?.Listen(paths => Dispatcher.UIThread.Post(async () =>
+        {
+            window.BringToFront();
+            await vm.OpenFilesAsync(paths);
+        }));
 
         base.OnFrameworkInitializationCompleted();
     }

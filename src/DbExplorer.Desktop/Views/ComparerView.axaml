@@ -46,6 +46,174 @@
 	  <Setter Property="CornerRadius" Value="13" />
 	  <Setter Property="FontSize" Value="12" />
 	</Style>
+	<!-- Section bar: underlined toggles grouped under DATABASE and OBJECT -->
+	<Style Selector="TabControl.sections /template/ ItemsPresenter#PART_ItemsPresenter">
+	  <Setter Property="IsVisible" Value="False" />
+	</Style>
+	<Style Selector="TextBlock.group">
+	  <Setter Property="FontSize" Value="10" />
+	  <Setter Property="FontWeight" Value="Bold" />
+	  <Setter Property="LetterSpacing" Value="0.6" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	  <Setter Property="Margin" Value="10,0,4,6" />
+	</Style>
+	<Style Selector="ToggleButton.section">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderThickness" Value="0,0,0,2" />
+	  <Setter Property="BorderBrush" Value="Transparent" />
+	  <Setter Property="CornerRadius" Value="0" />
+	  <Setter Property="Padding" Value="9,4" />
+	  <Setter Property="MinHeight" Value="32" />
+	  <Setter Property="FontSize" Value="14" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	</Style>
+	<Style Selector="ToggleButton.section /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderBrush" Value="Transparent" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	</Style>
+	<Style Selector="ToggleButton.section:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	</Style>
+	<Style Selector="ToggleButton.section:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	  <Setter Property="FontWeight" Value="SemiBold" />
+	</Style>
+
+	<!-- Side cards -->
+	<Style Selector="TextBlock.side">
+	  <Setter Property="FontSize" Value="11" />
+	  <Setter Property="FontWeight" Value="Bold" />
+	  <Setter Property="LetterSpacing" Value="0.6" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	</Style>
+	<Style Selector="TextBlock.sideRole">
+	  <Setter Property="FontSize" Value="11" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	</Style>
+	<Style Selector="Ellipse.state">
+	  <Setter Property="Width" Value="8" />
+	  <Setter Property="Height" Value="8" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	  <Setter Property="Fill" Value="{DynamicResource AppStatusIdleBrush}" />
+	</Style>
+	<Style Selector="Ellipse.state.on">
+	  <Setter Property="Fill" Value="{DynamicResource AppStatusConnectedBrush}" />
+	</Style>
+
+	<!-- Setup steps -->
+	<Style Selector="Border.step">
+	  <Setter Property="Width" Value="22" />
+	  <Setter Property="Height" Value="22" />
+	  <Setter Property="CornerRadius" Value="11" />
+	  <Setter Property="Margin" Value="0,0,10,10" />
+	  <Setter Property="VerticalAlignment" Value="Top" />
+	  <Setter Property="BorderThickness" Value="1.5" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource AppHintForegroundBrush}" />
+	</Style>
+	<Style Selector="Border.step TextBlock">
+	  <Setter Property="FontSize" Value="12" />
+	  <Setter Property="FontWeight" Value="Bold" />
+	  <Setter Property="HorizontalAlignment" Value="Center" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	</Style>
+	<Style Selector="Border.step.done">
+	  <Setter Property="Background" Value="{DynamicResource AppStatusConnectedBrush}" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource AppStatusConnectedBrush}" />
+	</Style>
+	<Style Selector="Border.step.done TextBlock">
+	  <Setter Property="Foreground" Value="White" />
+	</Style>
+	<Style Selector="TextBlock.step">
+	  <Setter Property="TextWrapping" Value="Wrap" />
+	  <Setter Property="Margin" Value="0,2,0,10" />
+	  <Setter Property="FontSize" Value="13" />
+	</Style>
+
+	<!-- Overview status tiles: a count per status that also shows or hides that status -->
+	<Style Selector="ToggleButton.tile">
+	  <Setter Property="MinWidth" Value="118" />
+	  <Setter Property="Margin" Value="0,0,8,6" />
+	  <Setter Property="Padding" Value="12,6,14,6" />
+	  <Setter Property="CornerRadius" Value="8" />
+	  <Setter Property="BorderThickness" Value="1,1,1,1" />
+	  <Setter Property="HorizontalContentAlignment" Value="Left" />
+	</Style>
+	<Style Selector="ToggleButton.tile /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="Transparent" />
+	  <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
+	  <Setter Property="Opacity" Value="0.75" />
+	</Style>
+	<Style Selector="ToggleButton.tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="{DynamicResource AppSubtleBackgroundBrush}" />
+	  <Setter Property="Opacity" Value="1" />
+	</Style>
+	<Style Selector="ToggleButton.tile:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Foreground" Value="{DynamicResource AppForegroundBrush}" />
+	  <Setter Property="BorderThickness" Value="1,1,1,3" />
+	  <Setter Property="Opacity" Value="1" />
+	</Style>
+	<Style Selector="ToggleButton.tile.different:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="#3CDBAA3D" />
+	  <Setter Property="BorderBrush" Value="#FFDBAA3D" />
+	</Style>
+	<Style Selector="ToggleButton.tile.onlyLeft:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="#3CDB6E3D" />
+	  <Setter Property="BorderBrush" Value="#FFDB6E3D" />
+	</Style>
+	<Style Selector="ToggleButton.tile.onlyRight:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="#3C3D82DB" />
+	  <Setter Property="BorderBrush" Value="#FF3D82DB" />
+	</Style>
+	<Style Selector="ToggleButton.tile.identical:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="#262E9E4F" />
+	  <Setter Property="BorderBrush" Value="#FF2E9E4F" />
+	</Style>
+	<Style Selector="ToggleButton.tile.notCompared:checked /template/ ContentPresenter#PART_ContentPresenter">
+	  <Setter Property="Background" Value="#26909090" />
+	  <Setter Property="BorderBrush" Value="#FF909090" />
+	</Style>
+	<Style Selector="ToggleButton.tile TextBlock.count">
+	  <Setter Property="FontSize" Value="20" />
+	  <Setter Property="FontWeight" Value="SemiBold" />
+	</Style>
+	<Style Selector="ToggleButton.tile TextBlock.label">
+	  <Setter Property="FontSize" Value="12" />
+	</Style>
+
+	<!-- Overview status pill -->
+	<Style Selector="Border.status">
+	  <Setter Property="CornerRadius" Value="9" />
+	  <Setter Property="Padding" Value="8,1" />
+	  <Setter Property="Margin" Value="8,0" />
+	  <Setter Property="HorizontalAlignment" Value="Left" />
+	  <Setter Property="VerticalAlignment" Value="Center" />
+	</Style>
+	<Style Selector="Border.status TextBlock">
+	  <Setter Property="FontSize" Value="12" />
+	  <Setter Property="FontWeight" Value="SemiBold" />
+	</Style>
+
+	<!-- Narrow window (set from code): the group captions give their room to the sections -->
+	<Style Selector=".narrow TextBlock.group">
+	  <Setter Property="IsVisible" Value="False" />
+	</Style>
+	<Style Selector=".narrow ToggleButton.section">
+	  <Setter Property="Padding" Value="7,4" />
+	</Style>
+
+	<Style Selector="TextBlock.next">
+	  <Setter Property="FontSize" Value="12" />
+	  <Setter Property="FontWeight" Value="SemiBold" />
+	  <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+	</Style>
 	<Style Selector="TextBlock.empty">
 	  <Setter Property="Foreground" Value="{DynamicResource AppHintForegroundBrush}" />
 	  <Setter Property="TextWrapping" Value="Wrap" />
@@ -56,110 +224,135 @@
 	</Style>
   </UserControl.Styles>
 
-  <Grid Margin="4,4,4,2" RowDefinitions="Auto,Auto,*">
-	<!-- Connection pickers: two compact rows per side; collapsible to a one-line summary -->
+  <Grid Margin="4,4,4,0" RowDefinitions="Auto,Auto,Auto,*,Auto">
+	<!-- Who is compared with whom: the left side is the source, the right side the target that scripts and copies change -->
 	<Grid Grid.Row="0" ColumnDefinitions="*,Auto,*" Margin="0,0,0,4" IsVisible="{Binding IsConnectionsExpanded}">
-		<Border Grid.Column="0" Classes="card" IsVisible="{Binding IsLeftPanelVisible}">
-		  <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
-			<TextBlock Grid.Column="0" Text="Left" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
-					   ToolTip.Tip="Baseline side" />
-			<Border Grid.Column="1" Classes="env" Margin="0,0,6,0" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
-					Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
-			  <TextBlock Text="{Binding LeftEnvironmentTag}" />
-			</Border>
-			<ComboBox Grid.Column="2" HorizontalAlignment="Stretch" MinWidth="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
-					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsLeftConnected}" />
-			<StackPanel Grid.Column="3" Orientation="Horizontal" Margin="4,0,0,0">
-			  <Button Content="Connect" Command="{Binding ConnectLeftCommand}" IsVisible="{Binding !IsLeftConnected}" />
-			  <Button Content="Disconnect" Command="{Binding DisconnectLeftCommand}" IsVisible="{Binding IsLeftConnected}" />
-			</StackPanel>
-			<Button Grid.Column="4" Content="Use current" Margin="4,0,0,0" Command="{Binding UseCurrentAsLeftCommand}"
-					ToolTip.Tip="Use the connection already open in the main window" />
+		<Border Grid.Column="0" Classes="card side" IsVisible="{Binding IsLeftPanelVisible}">
+		  <Grid RowDefinitions="Auto,Auto,Auto">
+			<DockPanel Grid.Row="0">
+			  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+				<Button Classes="compact" Content="Connect" Command="{Binding ConnectLeftCommand}" IsVisible="{Binding !IsLeftConnected}" />
+				<Button Classes="compact" Content="Disconnect" Command="{Binding DisconnectLeftCommand}" IsVisible="{Binding IsLeftConnected}" />
+				<Button Classes="compact" Content="Use current" Command="{Binding UseCurrentAsLeftCommand}"
+						ToolTip.Tip="Use the connection already open in the main window" />
+			  </StackPanel>
+			  <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" ToolTip.Tip="The source side: what the right side is compared with, and what scripts and copies take as the model">
+				<Ellipse Classes="state" Classes.on="{Binding IsLeftConnected}" />
+				<TextBlock Classes="side" Text="LEFT" />
+				<TextBlock Classes="sideRole" Text="source" />
+				<Border Classes="env" Margin="2,0,0,0" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+						Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+				  <TextBlock Text="{Binding LeftEnvironmentTag}" />
+				</Border>
+			  </StackPanel>
+			</DockPanel>
 
-			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
+			<Grid Grid.Row="1" ColumnDefinitions="3*,2*" Margin="0,4,0,0">
+			  <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding LeftProfile}"
+						AutomationProperties.Name="Left connection" Margin="0,0,4,0"
+						PlaceholderText="Select a connection..." IsEnabled="{Binding !IsLeftConnected}" />
+			  <controls:DatabasePicker Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding LeftDatabases}" SelectedItem="{Binding SelectedLeftDatabase}"
 						PlaceholderText="(database)" IsEnabled="{Binding IsLeftConnected}" ToolTip.Tip="Database of the left server" />
-			  <AutoCompleteBox AutomationProperties.Name="Left object" Grid.Column="1" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
+			</Grid>
+
+			<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,4,0,0" IsVisible="{Binding IsObjectTab}">
+			  <AutoCompleteBox AutomationProperties.Name="Left object" Grid.Column="0" x:Name="LeftObjectPicker" ItemsSource="{Binding LeftObjects}" SelectedItem="{Binding SelectedLeftObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsLeftConnected}"
 							   Watermark="Click to browse or type to filter objects...">
 				<AutoCompleteBox.ItemTemplate>
 				  <DataTemplate x:DataType="models:DbObject">
-					<Grid ColumnDefinitions="*,Auto">
-					  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
-					  <TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
+					<Grid ColumnDefinitions="Auto,*,Auto">
+					  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" Margin="0,0,8,0" />
+					  <TextBlock Grid.Column="1" Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
+					  <TextBlock Grid.Column="2" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
 								 Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
 					</Grid>
 				  </DataTemplate>
 				</AutoCompleteBox.ItemTemplate>
 			  </AutoCompleteBox>
-			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
+			  <TextBlock Grid.Column="1" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
 						 TextTrimming="CharacterEllipsis" Text="{Binding LeftObjectInfo}" ToolTip.Tip="{Binding LeftObjectInfo}" />
 			</Grid>
 		  </Grid>
 		</Border>
 
-		<Button Grid.Column="1" Content="⇄" Classes="icon" FontSize="16" Margin="6,0" VerticalAlignment="Center"
-				Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides: the right becomes the baseline" />
+		<!-- Direction, swap and what is shown -->
+		<StackPanel Grid.Column="1" Margin="6,0" VerticalAlignment="Center" Spacing="4">
+		  <TextBlock Classes="hint" Text="→" FontSize="16" HorizontalAlignment="Center"
+					 ToolTip.Tip="Scripts and copies make the right side match the left" />
+		  <Button Content="⇄" Classes="icon" FontSize="14" HorizontalAlignment="Center"
+				  Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides: the right becomes the source" />
+		</StackPanel>
 
-		<Border Grid.Column="2" Classes="card" IsVisible="{Binding IsRightPanelVisible}">
-		  <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
-			<TextBlock Grid.Column="0" Text="Right" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
-					   ToolTip.Tip="Comparand side" />
-			<Border Grid.Column="1" Classes="env" Margin="0,0,6,0" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
-					Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
-			  <TextBlock Text="{Binding RightEnvironmentTag}" />
-			</Border>
-			<ComboBox Grid.Column="2" HorizontalAlignment="Stretch" MinWidth="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
-					  PlaceholderText="Select a connection..." IsEnabled="{Binding !IsRightConnected}" />
-			<StackPanel Grid.Column="3" Orientation="Horizontal" Margin="4,0,0,0">
-			  <Button Content="Connect" Command="{Binding ConnectRightCommand}" IsVisible="{Binding !IsRightConnected}" />
-			  <Button Content="Disconnect" Command="{Binding DisconnectRightCommand}" IsVisible="{Binding IsRightConnected}" />
-			</StackPanel>
-			<Button Grid.Column="4" Content="Use current" Margin="4,0,0,0" Command="{Binding UseCurrentAsRightCommand}"
-					ToolTip.Tip="Use the connection already open in the main window" />
+		<Border Grid.Column="2" Classes="card side" IsVisible="{Binding IsRightPanelVisible}">
+		  <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+			<DockPanel Grid.Row="0">
+			  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+				<Button Classes="compact" Content="Connect" Command="{Binding ConnectRightCommand}" IsVisible="{Binding !IsRightConnected}" />
+				<Button Classes="compact" Content="Disconnect" Command="{Binding DisconnectRightCommand}" IsVisible="{Binding IsRightConnected}" />
+				<Button Classes="compact" Content="Use current" Command="{Binding UseCurrentAsRightCommand}"
+						ToolTip.Tip="Use the connection already open in the main window" />
+			  </StackPanel>
+			  <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" ToolTip.Tip="The target side: what migration scripts and copies change">
+				<Ellipse Classes="state" Classes.on="{Binding IsRightConnected}" />
+				<TextBlock Classes="side" Text="RIGHT" />
+				<TextBlock Classes="sideRole" Text="target" />
+				<Border Classes="env" Margin="2,0,0,0" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
+						Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
+				  <TextBlock Text="{Binding RightEnvironmentTag}" />
+				</Border>
+			  </StackPanel>
+			</DockPanel>
 
-			<Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
-			  <controls:DatabasePicker Grid.Column="0" Width="170" Margin="0,0,4,0" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
-						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}"
-						ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
-			  <AutoCompleteBox AutomationProperties.Name="Right object" Grid.Column="1" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
+			<Grid Grid.Row="1" ColumnDefinitions="3*,2*" Margin="0,4,0,0">
+			  <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding RightProfile}"
+						AutomationProperties.Name="Right connection" Margin="0,0,4,0"
+						PlaceholderText="Select a connection..." IsEnabled="{Binding !IsRightConnected}" />
+			  <controls:DatabasePicker Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding RightDatabases}" SelectedItem="{Binding SelectedRightDatabase}"
+						PlaceholderText="(database)" IsEnabled="{Binding IsRightConnected}" ToolTip.Tip="Database of the right server: any database on it can be the target, or create the left one when it is missing" />
+			</Grid>
+
+			<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,4,0,0" IsVisible="{Binding IsObjectTab}">
+			  <AutoCompleteBox AutomationProperties.Name="Right object" Grid.Column="0" x:Name="RightObjectPicker" ItemsSource="{Binding RightObjects}" SelectedItem="{Binding SelectedRightObject}"
 							   ValueMemberBinding="{Binding FullName}" FilterMode="Contains" MinimumPrefixLength="0"
 							   IsTextCompletionEnabled="False" GotFocus="OnObjectPickerGotFocus" IsEnabled="{Binding IsRightConnected}"
 							   Watermark="Picked automatically when the same name exists; or browse...">
 				<AutoCompleteBox.ItemTemplate>
 				  <DataTemplate x:DataType="models:DbObject">
-					<Grid ColumnDefinitions="*,Auto">
-					  <TextBlock Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
-					  <TextBlock Grid.Column="1" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
+					<Grid ColumnDefinitions="Auto,*,Auto">
+					  <controls:ObjectTypeBadge Type="{Binding Type}" ShowText="False" Margin="0,0,8,0" />
+					  <TextBlock Grid.Column="1" Text="{Binding FullName}" TextTrimming="CharacterEllipsis" />
+					  <TextBlock Grid.Column="2" Classes="hint" Margin="12,0,0,0" VerticalAlignment="Center"
 								 Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
 					</Grid>
 				  </DataTemplate>
 				</AutoCompleteBox.ItemTemplate>
 			  </AutoCompleteBox>
-			  <TextBlock Grid.Column="2" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
+			  <TextBlock Grid.Column="1" Classes="hint" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200"
 						 TextTrimming="CharacterEllipsis" Text="{Binding RightObjectInfo}" ToolTip.Tip="{Binding RightObjectInfo}" />
 			</Grid>
 
 			<!-- The left database is missing on the right server: offer to create it before copying into it -->
-			<StackPanel Grid.Row="2" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0"
-						IsVisible="{Binding HasMissingRightDatabase}">
-			  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MissingRightDatabaseHint}" />
-			  <Button Classes="accent" Content="{Binding CreateRightDatabaseLabel}" Command="{Binding CreateRightDatabaseCommand}"
+			<WrapPanel Grid.Row="3" Margin="0,4,0,0" IsVisible="{Binding HasMissingRightDatabase}">
+			  <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,8,0" Text="{Binding MissingRightDatabaseHint}" />
+			  <Button Classes="accent compact" Content="{Binding CreateRightDatabaseLabel}" Command="{Binding CreateRightDatabaseCommand}"
 					  ToolTip.Tip="Create an empty database with this name on the right server (server defaults), then switch the right side to it so objects can be copied into it" />
-			</StackPanel>
+			</WrapPanel>
 		  </Grid>
 		</Border>
 	</Grid>
 
 	<!-- Collapsed connections: one summary line -->
-	<StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,2" IsVisible="{Binding !IsConnectionsExpanded}">
+	<StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,4" IsVisible="{Binding !IsConnectionsExpanded}">
+	  <TextBlock Classes="side" Text="LEFT" />
 	  <Border Classes="env" IsVisible="{Binding LeftEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
 			  Background="{Binding LeftEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
 		<TextBlock Text="{Binding LeftEnvironmentTag}" />
 	  </Border>
 	  <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding LeftSummary}" />
 	  <Button Classes="compact" Content="⇄" Command="{Binding SwapSidesCommand}" ToolTip.Tip="Swap sides" />
+	  <TextBlock Classes="side" Text="RIGHT" />
 	  <Border Classes="env" IsVisible="{Binding RightEnvironmentTag, Converter={x:Static ObjectConverters.IsNotNull}}"
 			  Background="{Binding RightEnvironment, Converter={x:Static conv:EnvironmentToBrushConverter.Instance}}">
 		<TextBlock Text="{Binding RightEnvironmentTag}" />
@@ -167,49 +360,155 @@
 	  <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding RightSummary}" />
 	</StackPanel>
 
-	<TabControl Grid.Row="2" Classes="compact" Padding="0,4,0,0" SelectedIndex="{Binding SelectedTabIndex}">
+	<!-- Sections: the whole database, or one pair of objects. The section's main action sits on the right (F5). -->
+	<Border Grid.Row="2" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}" Margin="0,0,0,6">
+	  <DockPanel LastChildFill="True">
+		<StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="8,0,0,4">
+		  <Button Classes="accent" Content="Compare all objects" Command="{Binding CompareOverviewCommand}" IsVisible="{Binding IsOverviewTab}"
+				  ToolTip.Tip="Compare every table, view, routine and trigger of the two databases (F5). Runs by itself when a side changes; it reads cached metadata, so it is instant and puts no load on the servers" />
+		  <Button Classes="accent" Content="Generate script" Command="{Binding GenerateMigrationCommand}" IsVisible="{Binding IsMigrationTab}"
+				  ToolTip.Tip="Build the script that makes the right database match the left (F5): creates missing tables, views and routines, alters tables that differ, replaces changed views and routines. Nothing is changed" />
+		  <Button Classes="accent" Content="Compare definitions" Command="{Binding CompareSchemaCommand}" IsVisible="{Binding IsSchemaTab}"
+				  ToolTip.Tip="Compare the definition text of the two objects (F5)" />
+		  <Button Classes="accent" Content="Compare structure" Command="{Binding CompareSchemaCommand}" IsVisible="{Binding IsStructureTab}"
+				  ToolTip.Tip="Compare columns (type, nullability, key, position), indexes and foreign keys from cached metadata (F5)" />
+		  <Button Classes="accent" Content="Compare data" Command="{Binding CompareDataCommand}" IsVisible="{Binding ShowCompareDataAction}"
+				  ToolTip.Tip="Read the rows of both tables in key order and match them (F5)" />
+		  <Button Classes="accent" Content="Load both" Command="{Binding LoadBothDataCommand}" IsVisible="{Binding ShowLoadBothAction}"
+				  ToolTip.Tip="Load the rows of both tables, up to the row limit (F5)" />
+		  <Button Classes="accent" Content="Preview copy" Command="{Binding PreviewCopyCommand}" IsVisible="{Binding ShowPreviewCopyAction}"
+				  ToolTip.Tip="Read what is needed and build the exact script and row counts; nothing is changed (F5)" />
+		  <Button Classes="icon" Content="⋯" ToolTip.Tip="Layout: which sides and panels are shown">
+			<Button.Flyout>
+			  <Flyout Placement="BottomEdgeAlignedRight">
+				<StackPanel Spacing="6" Width="240">
+				  <TextBlock Classes="section" Text="Show" Margin="0" />
+				  <CheckBox Content="Connection panels" IsChecked="{Binding IsConnectionsExpanded}"
+							ToolTip.Tip="Hide them to give the results more room; a one-line summary stays" />
+				  <CheckBox Content="Left side" IsChecked="{Binding IsLeftPanelVisible}"
+							ToolTip.Tip="Show the left side (panel and result columns)" />
+				  <CheckBox Content="Right side" IsChecked="{Binding IsRightPanelVisible}"
+							ToolTip.Tip="Show the right side (panel and result columns)" />
+				</StackPanel>
+			  </Flyout>
+			</Button.Flyout>
+		  </Button>
+		</StackPanel>
+
+		<StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+		  <TextBlock Classes="group" Text="DATABASE" />
+		  <ToggleButton Classes="section" Content="Overview" IsChecked="{Binding IsOverviewTab}"
+						ToolTip.Tip="Every object of both databases: what differs and what exists on one side only" />
+		  <ToggleButton Classes="section" Content="Migration" IsChecked="{Binding IsMigrationTab}"
+						ToolTip.Tip="One reviewed script that makes the right database's schema match the left's" />
+		  <Border Width="1" Height="18" Margin="10,0,0,8" Background="{DynamicResource AppBorderBrush}" VerticalAlignment="Center" />
+		  <TextBlock Classes="group" Text="OBJECT" />
+		  <ToggleButton Classes="section" Content="Definition" IsChecked="{Binding IsSchemaTab}"
+						ToolTip.Tip="The definition text of two objects, side by side" />
+		  <ToggleButton Classes="section" Content="Structure" IsChecked="{Binding IsStructureTab}"
+						ToolTip.Tip="Columns, indexes and foreign keys of two tables" />
+		  <ToggleButton Classes="section" Content="Data" IsChecked="{Binding IsDataTab}"
+						ToolTip.Tip="The rows of two tables or views" />
+		  <ToggleButton Classes="section" Content="Copy &amp; sync" IsChecked="{Binding IsCopyTab}"
+						ToolTip.Tip="Create the left object on the right, or merge / replace its data" />
+		</StackPanel>
+	  </DockPanel>
+	</Border>
+
+	<TabControl Grid.Row="3" Classes="sections" Padding="0" SelectedIndex="{Binding SelectedTabIndex}">
 	  <!-- Every object of both databases -->
 	  <TabItem Header="Overview">
-		<Grid RowDefinitions="Auto,Auto,*">
-		  <WrapPanel Grid.Row="0" Classes="toolbar">
-			<Button Content="Compare all objects" Classes="accent" Command="{Binding CompareOverviewCommand}"
-					ToolTip.Tip="Compares every table, view, routine and trigger of the two databases using cached metadata: instant, and no load on either server" />
-			<TextBox Width="220" Text="{Binding OverviewFilterText}" Watermark="Filter by name..." />
-			<CheckBox Content="{Binding OverviewDifferentLabel}" IsChecked="{Binding ShowOverviewDifferent}" />
-			<CheckBox Content="{Binding OverviewOnlyLeftLabel}" IsChecked="{Binding ShowOverviewOnlyLeft}" />
-			<CheckBox Content="{Binding OverviewOnlyRightLabel}" IsChecked="{Binding ShowOverviewOnlyRight}" />
-			<CheckBox Content="{Binding OverviewIdenticalLabel}" IsChecked="{Binding ShowOverviewIdentical}" />
-			<CheckBox Content="{Binding OverviewNotComparedLabel}" IsChecked="{Binding ShowOverviewNotCompared}"
-					  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)" />
-			<Button Content="Open selected" Command="{Binding OpenOverviewEntryCommand}"
-					ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row)" />
-			<Button Content="Migration script…" Command="{Binding MigrationFromOverviewCommand}"
-					ToolTip.Tip="Build one script that makes the right database match the left (for the selected objects when several are selected) on the Migration tab" />
-			<Button Content="{Binding CopyOverviewLabel}" Command="{Binding CopyOverviewEntryCommand}"
-					ToolTip.Tip="Open the selected left object(s) on the Copy &amp; sync tab: create them on the right, or merge / replace their data. Ctrl/Shift-click to select several for a batch copy" />
+		<Panel>
+		<!-- Until both sides are connected: what to do, in order -->
+		<Border Classes="card" IsVisible="{Binding !IsSetupComplete}" HorizontalAlignment="Center" VerticalAlignment="Center"
+				Padding="24,20" MaxWidth="560">
+		  <StackPanel Spacing="12">
+			<TextBlock Text="Compare two databases" FontSize="18" FontWeight="SemiBold" />
+			<TextBlock Classes="hint" TextWrapping="Wrap" FontSize="13"
+					   Text="See what differs between two databases (for example development and production), then open an object's diff, generate a migration script, or copy objects and rows to the right." />
+			<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+			  <Border Grid.Row="0" Classes="step" Classes.done="{Binding IsLeftConnected}"><TextBlock Text="1" /></Border>
+			  <TextBlock Grid.Row="0" Grid.Column="1" Classes="step" Text="{Binding LeftStepText}" />
+			  <Border Grid.Row="1" Classes="step" Classes.done="{Binding IsRightConnected}"><TextBlock Text="2" /></Border>
+			  <TextBlock Grid.Row="1" Grid.Column="1" Classes="step" Text="{Binding RightStepText}" />
+			  <Border Grid.Row="2" Classes="step"><TextBlock Text="3" /></Border>
+			  <TextBlock Grid.Row="2" Grid.Column="1" Classes="step"
+						 Text="Every object is compared as soon as both sides are connected. Double-click one to see its diff." />
+			</Grid>
+		  </StackPanel>
+		</Border>
+
+		<Grid RowDefinitions="Auto,Auto,*,Auto" IsVisible="{Binding IsSetupComplete}">
+		  <!-- Status tiles: counts that double as filters -->
+		  <WrapPanel Grid.Row="0" Margin="0,0,0,2">
+			<ToggleButton Classes="tile different" IsChecked="{Binding ShowOverviewDifferent}" AutomationProperties.Name="{Binding OverviewDifferentLabel}"
+						  ToolTip.Tip="Objects on both sides whose structure or definition differs. Click to show or hide them">
+			  <StackPanel>
+				<TextBlock Classes="count" Text="{Binding OverviewDifferentCount, StringFormat='{}{0:N0}'}" />
+				<TextBlock Classes="label" Text="Different" />
+			  </StackPanel>
+			</ToggleButton>
+			<ToggleButton Classes="tile onlyLeft" IsChecked="{Binding ShowOverviewOnlyLeft}" AutomationProperties.Name="{Binding OverviewOnlyLeftLabel}"
+						  ToolTip.Tip="Objects missing on the right: a migration script or a copy creates them. Click to show or hide them">
+			  <StackPanel>
+				<TextBlock Classes="count" Text="{Binding OverviewOnlyLeftCount, StringFormat='{}{0:N0}'}" />
+				<TextBlock Classes="label" Text="Only in left" />
+			  </StackPanel>
+			</ToggleButton>
+			<ToggleButton Classes="tile onlyRight" IsChecked="{Binding ShowOverviewOnlyRight}" AutomationProperties.Name="{Binding OverviewOnlyRightLabel}"
+						  ToolTip.Tip="Objects only the right has. Click to show or hide them">
+			  <StackPanel>
+				<TextBlock Classes="count" Text="{Binding OverviewOnlyRightCount, StringFormat='{}{0:N0}'}" />
+				<TextBlock Classes="label" Text="Only in right" />
+			  </StackPanel>
+			</ToggleButton>
+			<ToggleButton Classes="tile identical" IsChecked="{Binding ShowOverviewIdentical}" AutomationProperties.Name="{Binding OverviewIdenticalLabel}"
+						  ToolTip.Tip="Objects that are the same on both sides. Click to show or hide them">
+			  <StackPanel>
+				<TextBlock Classes="count" Text="{Binding OverviewIdenticalCount, StringFormat='{}{0:N0}'}" />
+				<TextBlock Classes="label" Text="Identical" />
+			  </StackPanel>
+			</ToggleButton>
+			<ToggleButton Classes="tile notCompared" IsChecked="{Binding ShowOverviewNotCompared}" AutomationProperties.Name="{Binding OverviewNotComparedLabel}"
+						  ToolTip.Tip="Objects present on both sides whose content is not in the metadata cache (e.g. sequences, synonyms, encrypted modules)">
+			  <StackPanel>
+				<TextBlock Classes="count" Text="{Binding OverviewNotComparedCount, StringFormat='{}{0:N0}'}" />
+				<TextBlock Classes="label" Text="Not compared" />
+			  </StackPanel>
+			</ToggleButton>
+		  </WrapPanel>
+
+		  <WrapPanel Grid.Row="1" Classes="toolbar">
+			<TextBox Width="220" Text="{Binding OverviewFilterText}" Watermark="Filter by name..." AutomationProperties.Name="Filter objects by name" />
+			<ComboBox Width="140" ItemsSource="{Binding OverviewTypes}" SelectedItem="{Binding SelectedOverviewType}"
+					  AutomationProperties.Name="Object type" ToolTip.Tip="Show one kind of object only">
+			  <ComboBox.ItemTemplate>
+				<DataTemplate>
+				  <TextBlock Text="{Binding Converter={x:Static conv:HumanizeConverter.Instance}}" />
+				</DataTemplate>
+			  </ComboBox.ItemTemplate>
+			</ComboBox>
 			<TextBlock Classes="hint" Text="{Binding OverviewStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
+
 		  <DataGrid Grid.Row="2" x:Name="OverviewGrid" ItemsSource="{Binding OverviewEntries}" SelectedItem="{Binding SelectedOverviewEntry}"
 					IsReadOnly="True" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserSortColumns="True"
-					GridLinesVisibility="Horizontal" DoubleTapped="OnOverviewDoubleTapped" IsVisible="{Binding HasOverview}"
+					GridLinesVisibility="Horizontal" DoubleTapped="OnOverviewDoubleTapped"
 					SelectionMode="Extended" SelectionChanged="OnOverviewSelectionChanged">
-			<DataGrid.Styles>
-			  <Style Selector="DataGridRow">
-				<Setter Property="Background" Value="{Binding Status, Converter={StaticResource CompareStatusBrush}}" />
-			  </Style>
-			</DataGrid.Styles>
 			<DataGrid.Columns>
-			  <DataGridTemplateColumn Header="Status" SortMemberPath="Status" Width="120">
+			  <DataGridTemplateColumn Header="Status" SortMemberPath="Status" Width="130">
 				<DataGridTemplateColumn.CellTemplate>
 				  <DataTemplate x:DataType="compare:ObjectComparisonEntry">
-					<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Status, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					<Border Classes="status" Background="{Binding Status, Converter={StaticResource CompareStatusBrush}}">
+					  <TextBlock Text="{Binding Status, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					</Border>
 				  </DataTemplate>
 				</DataGridTemplateColumn.CellTemplate>
 			  </DataGridTemplateColumn>
-			  <DataGridTemplateColumn Header="Type" SortMemberPath="Type" Width="130">
+			  <DataGridTemplateColumn Header="Type" SortMemberPath="Type" Width="140">
 				<DataGridTemplateColumn.CellTemplate>
 				  <DataTemplate x:DataType="compare:ObjectComparisonEntry">
-					<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+					<controls:ObjectTypeBadge Type="{Binding Type}" Margin="10,0" />
 				  </DataTemplate>
 				</DataGridTemplateColumn.CellTemplate>
 			  </DataGridTemplateColumn>
@@ -217,16 +516,33 @@
 			  <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*" />
 			</DataGrid.Columns>
 		  </DataGrid>
+		  <TextBlock Grid.Row="2" Classes="empty" IsVisible="{Binding IsOverviewFilteredEmpty}" Text="{Binding OverviewFilteredEmptyText}" />
 		  <TextBlock Grid.Row="2" Classes="empty" IsVisible="{Binding !HasOverview}"
-					 Text="Connect both sides, then Compare all objects to list every table, view, routine and trigger that differs or exists on one side only. It uses the cached metadata, so it is instant and puts no load on the servers. Double-click a result to see its detailed diff." />
+					 Text="Nothing to compare yet: pick a database on each side. The comparison uses the cached metadata, so it is instant and puts no load on the servers." />
+
+		  <!-- What can be done with the selection -->
+		  <Border Grid.Row="3" Classes="card" Margin="0,6,0,0" Padding="8,4">
+			<DockPanel>
+			  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+				<Button Content="Open diff" Command="{Binding OpenOverviewEntryCommand}"
+						ToolTip.Tip="Show the detailed diff of the selected object (or double-click a row, or press Enter)" />
+				<Button Content="Migration script…" Command="{Binding MigrationFromOverviewCommand}"
+						ToolTip.Tip="Build one script that makes the right database match the left (for the selected objects when several are selected) on the Migration section" />
+				<Button Content="{Binding CopyOverviewLabel}" Command="{Binding CopyOverviewEntryCommand}"
+						ToolTip.Tip="Open the selected left object(s) on the Copy &amp; sync section: create them on the right, or merge / replace their data. Ctrl/Shift-click to select several for a batch copy" />
+			  </StackPanel>
+			  <TextBlock VerticalAlignment="Center" Text="{Binding OverviewSelectionText}" TextTrimming="CharacterEllipsis"
+						 Classes.hint="{Binding !HasOverviewSelection}" FontWeight="SemiBold" />
+			</DockPanel>
+		  </Border>
 		</Grid>
+		</Panel>
 	  </TabItem>
 
 	  <!-- Definition text of one object -->
-	  <TabItem Header="Schema">
+	  <TabItem Header="Definition">
 		<Grid RowDefinitions="Auto,Auto,*">
 		  <WrapPanel Grid.Row="0" Classes="toolbar">
-			<Button Content="Compare definitions" Classes="accent" Command="{Binding CompareSchemaCommand}" />
 			<TextBlock Text="Comparison type:" />
 			<ComboBox Width="140" ItemsSource="{Binding SchemaCompareModes}" SelectedItem="{Binding SelectedSchemaCompareMode}"
 					  ToolTip.Tip="Line by line: aligns whole lines. Content: aligns words and symbols, ignoring all formatting.">
@@ -333,8 +649,6 @@
 	  <TabItem Header="Structure">
 		<Grid RowDefinitions="Auto,Auto,*">
 		  <WrapPanel Grid.Row="0" Classes="toolbar">
-			<Button Content="Compare structure" Classes="accent" Command="{Binding CompareSchemaCommand}"
-					ToolTip.Tip="Compares columns (type, nullability, key, position), indexes and foreign keys from cached metadata" />
 			<CheckBox Content="Only differences" IsChecked="{Binding ShowOnlyStructureChanges}" />
 			<TextBlock Classes="hint" Text="{Binding StructureStatus}" TextWrapping="Wrap" />
 		  </WrapPanel>
@@ -370,9 +684,6 @@
 		<Grid RowDefinitions="Auto,*">
 		  <StackPanel Grid.Row="0">
 			<WrapPanel Classes="toolbar">
-			  <Button Content="Compare data" Classes="accent" Command="{Binding CompareDataCommand}" IsVisible="{Binding !IsFullDataSetsView}" />
-			  <Button Content="Load both" Classes="accent" Command="{Binding LoadBothDataCommand}" IsVisible="{Binding IsFullDataSetsView}"
-					  ToolTip.Tip="Load the rows of both tables (up to the row limit)" />
 			  <TextBlock Text="Max rows:" />
 			  <NumericUpDown Value="{Binding RowLimit}" Minimum="1" Maximum="20000" Increment="1000" FormatString="N0" Width="140"
 							 ToolTip.Tip="Rows read per side, in key order; capped at 20,000 to protect the servers" />
@@ -575,8 +886,6 @@
 
 		  <!-- Preview / run -->
 		  <WrapPanel Grid.Row="3" Classes="toolbar" IsVisible="{Binding HasCopyActions}">
-			<Button Content="Preview" Command="{Binding PreviewCopyCommand}"
-					ToolTip.Tip="Read what is needed and build the exact script and row counts; nothing is changed" />
 			<Button Content="Run on the right" Classes="accent" Command="{Binding RunCopyCommand}"
 					ToolTip.Tip="Run the script on the right side after a confirmation (builds it first if needed)" />
 			<Button Content="Copy script" Click="OnCopyScriptToClipboard" IsEnabled="{Binding HasCopySteps}"
@@ -709,8 +1018,6 @@
 	  <TabItem Header="Migration">
 		<Grid RowDefinitions="Auto,Auto,Auto,*">
 		  <WrapPanel Grid.Row="0" Classes="toolbar">
-			<Button Content="Generate script" Classes="accent" Command="{Binding GenerateMigrationCommand}"
-					ToolTip.Tip="Build the script that makes the right database match the left: creates missing tables, views and routines, alters tables that differ, replaces changed views and routines. Reads column defaults from both servers; nothing is changed" />
 			<CheckBox Content="Drop what only the right has" IsChecked="{Binding MigrationDropExtras}"
 					  ToolTip.Tip="Also drop tables, columns, keys, indexes, views and routines that exist only on the right. Off: they are left alone and listed at the end of the script as comments" />
 			<CheckBox Content="{Binding MigrationOnlySelectedLabel}" IsChecked="{Binding MigrationOnlySelected}"
@@ -760,10 +1067,10 @@
 					  </DataTemplate>
 					</DataGridTemplateColumn.CellTemplate>
 				  </DataGridTemplateColumn>
-				  <DataGridTemplateColumn Header="Type" SortMemberPath="Type" Width="100">
+				  <DataGridTemplateColumn Header="Type" SortMemberPath="Type" Width="120">
 					<DataGridTemplateColumn.CellTemplate>
 					  <DataTemplate x:DataType="compare:MigrationItem">
-						<TextBlock Margin="12,0" VerticalAlignment="Center" Text="{Binding Type, Converter={x:Static conv:HumanizeConverter.Instance}}" />
+						<controls:ObjectTypeBadge Type="{Binding Type}" Margin="10,0" />
 					  </DataTemplate>
 					</DataGridTemplateColumn.CellTemplate>
 				  </DataGridTemplateColumn>
@@ -799,23 +1106,18 @@
 	  </TabItem>
 	</TabControl>
 
-	<!-- Progress, status and layout toggles share the tab strip's empty right-hand side. The toggles are docked
-	     right and the texts take what is left (trimmed), so nothing leaves the window when it is narrow. -->
-	<DockPanel Grid.Row="2" VerticalAlignment="Top" Height="30" Margin="530,0,0,0">
-	  <Button DockPanel.Dock="Right" Classes="compact" Content="{Binding ConnectionsToggleText}" Command="{Binding ToggleConnectionsCommand}"
-			  VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Collapse the connection panels to give the results more room" />
-	  <CheckBox DockPanel.Dock="Right" Content="Right" IsChecked="{Binding IsRightPanelVisible}" Margin="8,0,0,0"
-				ToolTip.Tip="Show the right side (panel and result columns)" />
-	  <CheckBox DockPanel.Dock="Right" Content="Left" IsChecked="{Binding IsLeftPanelVisible}" Margin="8,0,0,0"
-				ToolTip.Tip="Show the left side (panel and result columns)" />
-	  <TextBlock DockPanel.Dock="Right" Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
-				 MaxWidth="420" Margin="8,0,0,0" ToolTip.Tip="{Binding Status}" />
-	  <ProgressBar DockPanel.Dock="Left" IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
-	  <Button DockPanel.Dock="Left" Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"
-			  VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Stop the running comparison or copy (Esc)" />
-	  <TextBlock VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12" FontWeight="SemiBold" IsVisible="{Binding HasNextStepHint}"
-				 TextTrimming="CharacterEllipsis" MaxWidth="520" Margin="8,0,0,0" ToolTip.Tip="{Binding NextStepHint}"
-				 Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
-	</DockPanel>
+	<!-- Status bar: progress, the last message, and what to do next -->
+	<Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}" Margin="0,4,0,0" Padding="0,3">
+	  <DockPanel Height="26">
+		<ProgressBar DockPanel.Dock="Left" IsIndeterminate="True" Width="80" MinWidth="80" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
+		<Button DockPanel.Dock="Left" Classes="compact" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"
+				VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="Stop the running comparison or copy (Esc)" />
+		<TextBlock DockPanel.Dock="Right" Classes="next" VerticalAlignment="Center" IsVisible="{Binding HasNextStepHint}"
+				   TextTrimming="CharacterEllipsis" MaxWidth="560" Margin="12,0,0,0" ToolTip.Tip="{Binding NextStepHint}"
+				   Text="{Binding NextStepHint, StringFormat='→ {0}'}" />
+		<TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+				   Margin="8,0,0,0" ToolTip.Tip="{Binding Status}" />
+	  </DockPanel>
+	</Border>
   </Grid>
 </UserControl>

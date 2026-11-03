@@ -14,12 +14,24 @@ public partial class ComparerView : UserControl
     public ComparerView()
     {
         InitializeComponent();
+        // Tunnel: the grid itself handles Enter (moves to the next row) before a bubbling handler would see it.
+        OverviewGrid.AddHandler(KeyDownEvent, OnOverviewKeyDown, RoutingStrategies.Tunnel);
         Keymap.Bind(this, () => DataContext is not ComparerViewModel vm ? [] :
         [
+            (ShortcutCommands.RunComparison, vm.RunSectionCommand),
             (ShortcutCommands.NextDifference, vm.NextDifferenceCommand),
             (ShortcutCommands.PreviousDifference, vm.PreviousDifferenceCommand),
             (ShortcutCommands.CancelComparison, vm.CancelCommand)
         ]);
+    }
+
+    /// <summary>Below this width the section bar drops its DATABASE / OBJECT captions so it fits beside the main action.</summary>
+    private const double NarrowWidth = 900;
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        Classes.Set("narrow", e.NewSize.Width < NarrowWidth);
     }
 
     /// <summary>Opens the drop-down as soon as the box is focused, so the full object list can be
@@ -33,6 +45,17 @@ public partial class ComparerView : UserControl
     {
         if (DataContext is ComparerViewModel vm && vm.OpenOverviewEntryCommand.CanExecute(null))
             vm.OpenOverviewEntryCommand.Execute(null);
+    }
+
+    /// <summary>Enter opens the selected object's diff, like a double-click.</summary>
+    private void OnOverviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None) return;
+        if (DataContext is ComparerViewModel vm && vm.OpenOverviewEntryCommand.CanExecute(null))
+        {
+            vm.OpenOverviewEntryCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void OnOverviewSelectionChanged(object? sender, SelectionChangedEventArgs e)

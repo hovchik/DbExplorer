@@ -31,7 +31,8 @@ public class MetadataSearchRedesignTests
             new DbObject { Schema = "dbo", Name = "Order", Type = DbObjectType.Table },
             new DbObject { Schema = "dbo", Name = "customers", Type = DbObjectType.Table },
             new DbObject { Schema = "dbo", Name = "usp_total", Type = DbObjectType.Procedure },
-            new DbObject { Schema = "dbo", Name = "f", Type = DbObjectType.Function }
+            new DbObject { Schema = "dbo", Name = "f", Type = DbObjectType.Function },
+            new DbObject { Schema = "dbo", Name = "count_seq", Type = DbObjectType.Sequence }
         ],
         Columns =
         [
@@ -285,6 +286,36 @@ public class MetadataSearchRedesignTests
         Assert.StartsWith("Not a valid regular expression", vm.Status);
     }
 
+    [AvaloniaFact]
+    public async Task Switching_to_an_object_that_loads_from_the_server_never_opens_the_previous_source()
+    {
+        var (vm, _) = NewViewModel();
+        await SearchAsync(vm, "count");
+        vm.SelectedRow = vm.Rows.First(r => r.IsCode && r.Group.ObjectName == "f");
+        await WaitAsync(() => vm.PreviewLine == 7);
+        Assert.True(vm.OpenInQueryCommand.CanExecute(null));
+
+        // The sequence's source comes from the server, which has not answered yet.
+        var pending = new TaskCompletionSource<string?>();
+        QuotingProvider.Definition = pending.Task;
+        vm.SelectedRow = vm.Rows.First(r => r.IsObject && r.Group.ObjectName == "count_seq");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("dbo.count_seq", vm.PreviewTitle);
+        Assert.Equal("", vm.PreviewText);
+        Assert.False(vm.OpenInQueryCommand.CanExecute(null));
+        var opened = false;
+        vm.OpenSqlRequested += (_, _, _, _) => opened = true;
+        vm.OpenInQueryCommand.Execute(null);
+        Assert.False(opened);
+
+        pending.SetResult("CREATE SEQUENCE dbo.count_seq");
+        await WaitAsync(() => vm.PreviewText.Length > 0);
+        Assert.Equal("CREATE SEQUENCE dbo.count_seq", vm.PreviewText);
+        Assert.True(vm.OpenInQueryCommand.CanExecute(null));
+        QuotingProvider.Definition = QuotingProvider.ServerText;
+    }
+
     // ----- View -----
 
     [AvaloniaFact]
@@ -315,10 +346,16 @@ public class MetadataSearchRedesignTests
     {
         internal static IDatabaseProvider Create() => Create<IDatabaseProvider, QuotingProvider>();
 
+        internal static readonly Task<string?> ServerText = Task.FromResult<string?>("-- from the server");
+
+        /// <summary>What GetDefinitionAsync returns (the source of objects the snapshot has none for).</summary>
+        internal static Task<string?> Definition { get; set; } = ServerText;
+
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method?.Name switch
         {
             "get_ProviderKey" => SqlDialect.SqlServerKey,
             nameof(IDatabaseProvider.QuoteIdentifier) => $"[{args![0]}]",
+            nameof(IDatabaseProvider.GetDefinitionAsync) => Definition,
             nameof(IAsyncDisposable.DisposeAsync) => ValueTask.CompletedTask,
             _ => throw new NotSupportedException(method?.Name)
         };

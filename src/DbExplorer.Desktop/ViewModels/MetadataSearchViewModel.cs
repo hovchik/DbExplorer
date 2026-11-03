@@ -102,6 +102,9 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
     private IReadOnlyList<MetadataSearchGroup> _groups = [];
     private readonly HashSet<(string, string, string, DbObjectType)> _collapsed = [];
     private (string, string, string, DbObjectType)? _previewKey;
+
+    /// <summary>The object whose source <see cref="PreviewText"/> holds; null while another one is loading.</summary>
+    private (string, string, string, DbObjectType)? _loadedKey;
     private bool _rebuilding;
 
     [ObservableProperty] private string _query = "";
@@ -471,6 +474,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
     {
         _previewCts?.Cancel();
         _previewKey = null;
+        _loadedKey = null;
         PreviewType = null;
         PreviewTitle = "";
         PreviewText = "";
@@ -491,6 +495,14 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
             _previewCts?.Cancel();
             var cts = _previewCts = new CancellationTokenSource();
             _previewKey = key;
+            // Drop the previous object's source at once: while this one loads (a server round-trip for some
+            // objects), nothing may show or open the old text under the new name.
+            _loadedKey = null;
+            OpenInQueryCommand.NotifyCanExecuteChanged();
+            PreviewText = "";
+            PreviewMatches = [];
+            PreviewSummary = "";
+            PreviewLine = 0;
             PreviewTitle = g.FullName;
             PreviewType = g.ObjectType;
             PreviewNote = "";
@@ -516,6 +528,8 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
             if (string.IsNullOrEmpty(text) && PreviewNote.Length == 0)
                 PreviewNote = "The server does not show this object's source (encrypted, or no permission).";
             PreviewText = text ?? "";
+            _loadedKey = key;
+            OpenInQueryCommand.NotifyCanExecuteChanged();
             PreviewMatches = _lastRegex is { } regex && PreviewText.Length > 0 ? SearchTextMatcher.Spans(regex, PreviewText) : [];
             var lineCount = PreviewText.Length == 0 ? 0 : PreviewText.Count(ch => ch == '\n') + 1;
             PreviewSummary = lineCount == 0 ? ""
@@ -570,6 +584,9 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
 
     private bool CanAct() => SelectedRow is not null && HasPreview;
 
+    /// <summary>The selected object's own source is loaded (not the previous object's, nor nothing yet).</summary>
+    private bool CanOpenSource() => CanAct() && SelectedRow is { } row && _loadedKey == Key(row.Group) && PreviewText.Length > 0;
+
     /// <summary>Double-click or Enter on a row: a code line opens the source there, anything else the object.</summary>
     public void Activate(MetadataSearchRow? row)
     {
@@ -586,7 +603,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
     }
 
     /// <summary>The source (or a table's CREATE script) in a new Query tab, caret on the selected hit.</summary>
-    [RelayCommand(CanExecute = nameof(CanAct))]
+    [RelayCommand(CanExecute = nameof(CanOpenSource))]
     private void OpenInQuery()
     {
         if (SelectedRow is { } row) OpenAtLine(row);
@@ -594,7 +611,7 @@ public partial class MetadataSearchViewModel(MetadataSearchService service, Defi
 
     private void OpenAtLine(MetadataSearchRow row)
     {
-        if (PreviewText.Length == 0) return;
+        if (!CanOpenSource() || _loadedKey != Key(row.Group)) return;
         var offset = PreviewLine > 0 ? OffsetOfLine(PreviewText, PreviewLine) : 0;
         OpenSqlRequested?.Invoke(PreviewText, NullIfEmpty(row.Group.Database), row.Group.ObjectName, offset);
     }

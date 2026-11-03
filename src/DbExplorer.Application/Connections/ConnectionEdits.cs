@@ -34,6 +34,9 @@ public static class ConnectionEdits
         || current.Port != edited.Port
         || !string.Equals(current.Database, edited.Database, StringComparison.Ordinal)
         || current.IntegratedSecurity != edited.IntegratedSecurity
+        || current.EntraAuth != edited.EntraAuth
+        || !string.Equals(current.EntraTenantId ?? "", edited.EntraTenantId ?? "", StringComparison.OrdinalIgnoreCase)
+        || !string.Equals(current.EntraClientId ?? "", edited.EntraClientId ?? "", StringComparison.OrdinalIgnoreCase)
         || !string.Equals(current.UserName ?? "", edited.UserName ?? "", StringComparison.Ordinal)
         || current.Encrypt != edited.Encrypt
         || current.TrustServerCertificate != edited.TrustServerCertificate

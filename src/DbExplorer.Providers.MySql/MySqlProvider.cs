@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using DbExplorer.Core.Abstractions;
+using DbExplorer.Core.Backup;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Core.Search;
@@ -16,7 +17,7 @@ namespace DbExplorer.Providers.MySql;
 /// MySQL 8+ and MariaDB 10.6+. A MySQL schema is a database in the rest of the app (Database and Schema both carry its
 /// name), and one connection sees every schema, so a server-wide load needs no connection per database.
 /// </summary>
-public sealed class MySqlProvider : IDatabaseProvider
+public sealed class MySqlProvider : IDatabaseProvider, IDatabaseBackupProvider
 {
     private const int MetadataStatementTimeoutMs = 120_000;
     private const int MetadataLockTimeoutMs = 5000;
@@ -37,6 +38,24 @@ public sealed class MySqlProvider : IDatabaseProvider
     public string ProviderKey => MySqlProviderFactory.ProviderKey;
 
     public string QuoteIdentifier(string identifier) => MySqlSql.Quote(identifier);
+
+    public async Task<BackupSupport> GetBackupSupportAsync(string? toolFolder, CancellationToken ct = default)
+    {
+        var server = await GetServerAsync(ct);
+        return await MySqlBackup.GetSupportAsync(server.MariaDb, server.Version, toolFolder, ct);
+    }
+
+    public async Task BackupAsync(BackupRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        await MySqlBackup.BackupAsync(_profile, (await GetServerAsync(ct)).MariaDb, request, toolFolder, progress, ct);
+
+    public Task<BackupFileInfo> InspectBackupAsync(string path, string? toolFolder, CancellationToken ct = default) =>
+        Task.Run(() => MySqlBackup.Inspect(path), ct);
+
+    public async Task<string> DescribeRestoreAsync(RestoreRequest request, string? toolFolder, CancellationToken ct = default) =>
+        await MySqlBackup.DescribeRestoreAsync((await GetServerAsync(ct)).MariaDb, request, toolFolder, ct);
+
+    public async Task RestoreAsync(RestoreRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        await MySqlBackup.RestoreAsync(_profile, (await GetServerAsync(ct)).MariaDb, request, toolFolder, progress, ct);
 
     /// <summary>What the server is: MariaDB reports "10.11.6-MariaDB-…" as its version.</summary>
     internal sealed record ServerInfo(bool MariaDb, Version Version);

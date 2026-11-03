@@ -14,7 +14,29 @@ public sealed class ConnectionProfile
     public int? Port { get; set; }
     public string Database { get; set; } = "";
     public bool IntegratedSecurity { get; set; }
+
+    /// <summary>Sign in with Microsoft Entra ID (Azure AD) instead of a database login; see <see cref="SignInMethods"/>.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<EntraAuthMode>))]
+    public EntraAuthMode EntraAuth { get; set; }
+
+    /// <summary>Entra directory (tenant) ID or domain; empty for the account's home tenant.</summary>
+    public string? EntraTenantId { get; set; }
+
+    /// <summary>
+    /// PostgreSQL with a service principal: the app's client ID. The server knows the app by its role name (the User),
+    /// so the two differ there; SQL Server takes the client ID as the user.
+    /// </summary>
+    public string? EntraClientId { get; set; }
+
     public string? UserName { get; set; }
+
+    /// <summary>Whether connecting needs <see cref="Password"/>: a database login, Entra password or a client secret.</summary>
+    [JsonIgnore]
+    public bool NeedsPassword => !IntegratedSecurity && EntraAuth is EntraAuthMode.None or EntraAuthMode.Password or EntraAuthMode.ServicePrincipal;
+
+    /// <summary>True when the password is needed but missing: the app asks for it on connect.</summary>
+    [JsonIgnore]
+    public bool MissingPassword => NeedsPassword && string.IsNullOrEmpty(Password);
 
     /// <summary>Never serialized in plain text; the connection store encrypts it separately.</summary>
     [JsonIgnore]

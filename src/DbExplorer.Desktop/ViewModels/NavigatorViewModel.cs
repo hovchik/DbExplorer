@@ -68,7 +68,7 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedIsConnection), nameof(SelectedIsOtherConnection), nameof(SelectedIsActiveConnection),
         nameof(SelectedIsObject), nameof(SelectedIsTableLike), nameof(SelectedIsTable), nameof(SelectedIsRoutine),
-        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument))]
+        nameof(SelectedHasCatalogActions), nameof(SelectedHasDatabase), nameof(SelectedHasName), nameof(SelectedCanDocument), nameof(SelectedCanBackup))]
     private NavigatorNode? _selectedNode;
 
     /// <summary>Raised for an object the Objects tab can show (it is in the session's catalog).</summary>
@@ -85,6 +85,9 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
 
     /// <summary>Export documentation of a database (null: the connection's own) and, from a schema row, one schema.</summary>
     public event Action<string?, string?>? DocumentationRequested;
+
+    /// <summary>Back up (false) or restore (true) the given database, or the connection's own when null.</summary>
+    public event Action<string?, bool>? BackupRequested;
 
     public bool IsConnected => _session is not null;
 
@@ -503,6 +506,9 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
     public bool SelectedCanDocument => SelectedHasDatabase &&
                                        SelectedNode!.Kind is NavigatorNodeKind.Connection or NavigatorNodeKind.Database or NavigatorNodeKind.Schema;
 
+    /// <summary>Back up / Restore: the connected connection or one of its databases.</summary>
+    public bool SelectedCanBackup => SelectedHasDatabase && SelectedNode!.Kind is NavigatorNodeKind.Connection or NavigatorNodeKind.Database;
+
     public bool SelectedHasName => SelectedNode is { Kind: not NavigatorNodeKind.Message };
 
     /// <summary>The object of an object row, or of the table a column / index / key row belongs to.</summary>
@@ -601,6 +607,18 @@ public partial class NavigatorViewModel(SessionService sessions) : ViewModelBase
         if (!SelectedCanDocument) return;
         var node = SelectedNode!;
         DocumentationRequested?.Invoke(DatabaseOf(node), node.Kind == NavigatorNodeKind.Schema ? node.Title : null);
+    }
+
+    [RelayCommand]
+    private void BackupDatabase()
+    {
+        if (SelectedCanBackup) BackupRequested?.Invoke(SelectedNode!.Kind == NavigatorNodeKind.Database ? DatabaseOf(SelectedNode) : null, false);
+    }
+
+    [RelayCommand]
+    private void RestoreDatabase()
+    {
+        if (SelectedCanBackup) BackupRequested?.Invoke(SelectedNode!.Kind == NavigatorNodeKind.Database ? DatabaseOf(SelectedNode) : null, true);
     }
 
     [RelayCommand]

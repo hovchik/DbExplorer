@@ -171,6 +171,7 @@ public partial class MainWindowViewModel : ViewModelBase
         navigator.HideRequested += () => ShowNavigator = false;
         navigator.ObjectActionRequested += OnNavigatorObjectAction;
         navigator.DocumentationRequested += (database, schema) => _ = ExportDocumentationAsync(database, schema);
+        navigator.BackupRequested += OpenBackupRestore;
         navigator.ConnectionActionRequested += (action, profile) => _ = OnNavigatorConnectionActionAsync(action, profile);
     }
 
@@ -289,7 +290,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Every app-wide setting in one window (Ctrl+, or the theme menu).</summary>
     [RelayCommand]
-    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs));
+    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs)
+    {
+        CurrentVersion = AppVersion,
+        CheckForUpdatesNow = _updates is null ? null : CheckForUpdatesNowAsync
+    });
 
     /// <summary>Runs at least this long notify when they finish out of sight (0 = never), from Preferences.</summary>
     public TimeSpan LongRunNotifyThreshold => TimeSpan.FromSeconds(_settings.LongRunNotifySeconds);
@@ -778,7 +783,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (SelectedProfile is not { } profile) return;
 
-        if ((!profile.IntegratedSecurity && string.IsNullOrEmpty(profile.Password)) || profile.Ssh.NeedsPassword)
+        if (profile.MissingPassword || profile.Ssh.NeedsPassword)
         {
             // Password (database or SSH) was not saved: ask for it.
             var withPassword = await _dialogs.EditConnectionAsync(profile.Clone(), "Enter password");
@@ -981,6 +986,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DisconnectCommand.NotifyCanExecuteChanged();
         RefreshMetadataCommand.NotifyCanExecuteChanged();
         ExportDocumentationCommand.NotifyCanExecuteChanged();
+        BackupDatabaseCommand.NotifyCanExecuteChanged();
+        RestoreDatabaseCommand.NotifyCanExecuteChanged();
         CancelLoadCommand.NotifyCanExecuteChanged();
     }
 }

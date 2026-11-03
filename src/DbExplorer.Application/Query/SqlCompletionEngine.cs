@@ -138,7 +138,18 @@ public sealed class SqlCompletionEngine
         new("LAST_INSERT_ID", "LAST_INSERT_ID()", "MySql"), new("FOUND_ROWS", "FOUND_ROWS()", "MySql"),
         new("JSON_EXTRACT", "JSON_EXTRACT(json, '$.path')", "MySql"), new("JSON_UNQUOTE", "JSON_UNQUOTE(json)", "MySql"),
         new("JSON_OBJECT", "JSON_OBJECT(key, value, …)", "MySql"), new("JSON_ARRAYAGG", "JSON_ARRAYAGG(expression)", "MySql"),
-        new("GREATEST", "GREATEST(value, …)", "MySql"), new("LEAST", "LEAST(value, …)", "MySql")
+        new("GREATEST", "GREATEST(value, …)", "MySql"), new("LEAST", "LEAST(value, …)", "MySql"),
+        // SQLite
+        new("STRFTIME", "strftime('%Y-%m-%d', value, modifier, …)", "Sqlite"), new("JULIANDAY", "julianday(value)", "Sqlite"),
+        new("UNIXEPOCH", "unixepoch(value)", "Sqlite"), new("IFNULL", "ifnull(value, replacement)", "Sqlite"),
+        new("IIF", "iif(condition, whenTrue, whenFalse)", "Sqlite"), new("LENGTH", "length(text)", "Sqlite"),
+        new("SUBSTR", "substr(text, start, length)", "Sqlite"), new("INSTR", "instr(text, find)", "Sqlite"),
+        new("PRINTF", "printf('%d items', value)", "Sqlite"), new("GROUP_CONCAT", "group_concat(expression, separator)", "Sqlite"),
+        new("TYPEOF", "typeof(value) → 'integer' | 'real' | 'text' | 'blob' | 'null'", "Sqlite"),
+        new("LAST_INSERT_ROWID", "last_insert_rowid()", "Sqlite"), new("CHANGES", "changes()", "Sqlite"),
+        new("RANDOM", "random()", "Sqlite"), new("HEX", "hex(value)", "Sqlite"),
+        new("JSON_EXTRACT", "json_extract(json, '$.path')", "Sqlite"), new("JSON_OBJECT", "json_object(key, value, …)", "Sqlite"),
+        new("JSON_GROUP_ARRAY", "json_group_array(value)", "Sqlite"), new("JSON_EACH", "json_each(json)", "Sqlite")
     ];
 
     public static readonly IReadOnlySet<string> KnownFunctionNames =
@@ -615,7 +626,7 @@ public sealed class SqlCompletionEngine
         "SELECT" or "DISTINCT" or "TOP" => ["FROM", "AS", "DISTINCT", "CASE", IsSqlServer ? "TOP" : "LIMIT", "INTO"],
         "WHERE" or "HAVING" or "ON" => ["AND", "OR", "NOT", "IN", "NOT IN", "EXISTS", "NOT EXISTS", "BETWEEN", "LIKE", "IS NULL", "IS NOT NULL",
                                         "GROUP BY", "ORDER BY", IsPostgres ? "ILIKE" : IsMySql ? "REGEXP" : "ESCAPE"],
-        "GROUP BY" => _providerKey == "MySql" ? ["HAVING", "ORDER BY", "WITH ROLLUP"] : ["HAVING", "ORDER BY", "ROLLUP", "CUBE"],
+        "GROUP BY" => _providerKey == "MySql" ? ["HAVING", "ORDER BY", "WITH ROLLUP"] : _providerKey == "Sqlite" ? ["HAVING", "ORDER BY"] : ["HAVING", "ORDER BY", "ROLLUP", "CUBE"],
         "ORDER BY" => ["ASC", "DESC", IsSqlServer ? "OFFSET" : "LIMIT", IsSqlServer ? "FETCH NEXT" : _providerKey == "MySql" ? "OFFSET" : "NULLS LAST"],
         "PARTITION BY" => ["ORDER BY"],
         "SET" => ["WHERE", "FROM", "OUTPUT", "RETURNING"],

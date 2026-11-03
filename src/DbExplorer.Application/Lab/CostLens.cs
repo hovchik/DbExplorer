@@ -78,6 +78,9 @@ public static class CostLens
             return plan is null ? null : FromShowPlan(plan.Columns, plan.Rows);
         }
 
+        // SQLite's plans carry no costs or row estimates.
+        if (key == SqlDialect.SqliteKey) return null;
+
         if (key == SqlDialect.MySqlKey)
         {
             var result = await session.Provider.ExecuteScriptAsync(PlanReader.BuildScript(statement, key, analyze: false, session.ServerVersion), database, 15, ct);

@@ -241,6 +241,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     public static string MapSchema(string schema, string sourceProviderKey, string targetProviderKey, string? targetDatabase = null) =>
         SqlDialect.SchemaIsDatabase(targetProviderKey) && !string.IsNullOrEmpty(targetDatabase) ? targetDatabase
         : sourceProviderKey == targetProviderKey ? schema
+        // SQLite's only schema is the file's own "main": tables from it land in the target's everyday schema.
+        : sourceProviderKey == SqlDialect.SqliteKey && Same(schema, "main") ? Design.TableScriptBuilder.DefaultSchema(targetProviderKey, targetDatabase)
         : targetProviderKey == SqlDialect.SqlServerKey && Same(schema, "public") ? "dbo"
         : targetProviderKey == SqlDialect.PostgresKey && Same(schema, "dbo") ? "public"
         : schema;
@@ -904,7 +906,15 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     {
         var a = c.Analysis;
         var t = c.Target;
-        foreach (var fk in c.SourceSession.Snapshot.ForeignKeysOf(table.Database, table.Schema, table.Name).Where(f => !f.IsVirtual))
+        var fks = c.SourceSession.Snapshot.ForeignKeysOf(table.Database, table.Schema, table.Name).Where(f => !f.IsVirtual).ToList();
+        if (fks.Count > 0 && SqlDialect.IsFileEngine(c.Target.ProviderKey))
+        {
+            // SQLite declares foreign keys only in CREATE TABLE; it has no ALTER TABLE ... ADD CONSTRAINT.
+            c.Notes.Add($"Foreign keys of {name} are not copied: SQLite can only declare them when the table is created. " +
+                        "To keep them, create the table in SQLite first with its FOREIGN KEY clauses, then copy only the data.");
+            return;
+        }
+        foreach (var fk in fks)
         {
             var selfReference = Same(fk.ReferencedSchema, table.Schema) && Same(fk.ReferencedTable, table.Name);
             var (parentSchema, parentName) = selfReference ? (schema, name)

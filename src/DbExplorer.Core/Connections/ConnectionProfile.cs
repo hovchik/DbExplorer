@@ -30,9 +30,10 @@ public sealed class ConnectionProfile
 
     public string? UserName { get; set; }
 
-    /// <summary>Whether connecting needs <see cref="Password"/>: a database login, Entra password or a client secret.</summary>
+    /// <summary>Whether connecting needs <see cref="Password"/>: a database login, Entra password or a client secret.
+    /// A database file (SQLite) never does.</summary>
     [JsonIgnore]
-    public bool NeedsPassword => !IntegratedSecurity && EntraAuth is EntraAuthMode.None or EntraAuthMode.Password or EntraAuthMode.ServicePrincipal;
+    public bool NeedsPassword => !IsFile && !IntegratedSecurity && EntraAuth is EntraAuthMode.None or EntraAuthMode.Password or EntraAuthMode.ServicePrincipal;
 
     /// <summary>True when the password is needed but missing: the app asks for it on connect.</summary>
     [JsonIgnore]
@@ -78,6 +79,10 @@ public sealed class ConnectionProfile
 
     [JsonIgnore]
     public bool IsProduction => Environment == ConnectionEnvironment.Production;
+
+    /// <summary>A database file (SQLite): Host holds its path, and there is no server, sign-in or password.</summary>
+    [JsonIgnore]
+    public bool IsFile => string.Equals(ProviderKey, "Sqlite", StringComparison.OrdinalIgnoreCase);
 
     public ConnectionProfile Clone()
     {

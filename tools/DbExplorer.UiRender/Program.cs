@@ -169,6 +169,7 @@ namespace DbExplorer.UiRender
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
+            await Step("sqlite", () => RenderSqliteAsync(root));
 
             await _vm.ShutdownAsync();
             await _provider.DisposeAsync();
@@ -890,6 +891,117 @@ namespace DbExplorer.UiRender
             await Settle(4);
             await Shot(_window, $"activity-{suffix}");
         }
+
+        /// <summary>
+        /// SQLite needs no server: a sample shop file is made in the temp root. Renders the file connection dialog, the
+        /// catalog, a query and its plan, and the tabs that explain what a file doesn't have (locks, activity, security).
+        /// </summary>
+        private async Task RenderSqliteAsync(string root)
+        {
+            var file = Path.Combine(root, "samples", "shop.db");
+            await DbExplorer.Providers.Sqlite.SqliteProviderFactory.CreateFileAsync(file);
+            var profile = new ConnectionProfile { Name = "Shop (SQLite)", Folder = "Local", ProviderKey = SqlDialect.SqliteKey, Host = file };
+            await using (var seed = new DbExplorer.Providers.Sqlite.SqliteProviderFactory().Create(profile))
+                await seed.ExecuteScriptAsync(SqliteSeed, null, 60);
+            _vm.Profiles.Add(profile);
+
+            var registry = _provider.GetRequiredService<ProviderRegistry>();
+            var tunnels = _provider.GetRequiredService<SshTunnelService>();
+            await ShowAndShoot(new ConnectionDialog { DataContext = new ConnectionDialogViewModel(registry, profile.Clone(), ["Local"], tunnels), Title = "Edit connection" },
+                "connection-dialog-sqlite");
+            var newVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = SqlDialect.SqliteKey }, ["Local"], tunnels, isNew: true);
+            await ShowAndShoot(new ConnectionDialog { DataContext = newVm, Title = "New connection" }, "connection-dialog-sqlite-new");
+
+            await _vm.DisconnectCommand.ExecuteAsync(null);
+            await WaitFor(() => !_vm.IsConnected && !_vm.IsBusy, "disconnect");
+            _vm.SelectedProfile = profile;
+            await _vm.ConnectCommand.ExecuteAsync(null);
+            await WaitFor(() => _vm.IsConnected && !_vm.IsBusy, "connect sqlite", 30_000);
+            if (!_vm.IsConnected) throw new InvalidOperationException(_vm.StatusText);
+            Console.WriteLine("Connected: " + _vm.StatusText);
+
+            _vm.SelectedTab = AppTab.Objects;
+            _vm.Objects.SelectedObject = _vm.Objects.Objects.FirstOrDefault(o => o.Type == DbObjectType.Table && o.Name == "orders");
+            await Settle(8);
+            await Shot(_window, "objects-sqlite");
+
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab("SELECT c.name, c.city, count(*) AS orders, round(sum(o.total), 2) AS total\nFROM customers c\nJOIN orders o ON o.customer_id = c.id\nWHERE o.status <> 'cancelled'\nGROUP BY c.id\nORDER BY total DESC;", "Top customers (SQLite)");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning, "query sqlite");
+            await Settle(4);
+            await Shot(_window, "query-sqlite");
+            await doc.ExplainCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning, "plan sqlite");
+            await Settle(4);
+            await Shot(_window, "plan-sqlite");
+
+            _vm.SelectedTab = AppTab.TableDesigner;
+            await Settle(6);
+            await Shot(_window, "table-designer-sqlite");
+
+            _vm.SelectedTab = AppTab.Locks;
+            await Settle(4);
+            await Shot(_window, "locks-sqlite");
+            _vm.SelectedTab = AppTab.Activity;
+            await Settle(4);
+            await Shot(_window, "activity-sqlite");
+            _vm.SelectedTab = AppTab.Security;
+            await Settle(6);
+            await Shot(_window, "security-sqlite");
+
+            _window.Width = 1024; _window.Height = 700;
+            _vm.SelectedTab = AppTab.Query;
+            await Settle(4);
+            await Shot(_window, "small-query-sqlite");
+            _window.Width = 1400; _window.Height = 900;
+            await Settle();
+        }
+
+        private const string SqliteSeed = """
+            CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE, city TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT NOT NULL UNIQUE, name TEXT NOT NULL, price NUMERIC(10,2) NOT NULL CHECK (price >= 0));
+            CREATE TABLE orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL REFERENCES customers (id),
+                status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'paid', 'shipped', 'cancelled')),
+                total REAL NOT NULL DEFAULT 0,
+                ordered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                note TEXT
+            );
+            CREATE TABLE order_items (
+                order_id INTEGER NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+                product_id INTEGER NOT NULL REFERENCES products (id),
+                qty INTEGER NOT NULL CHECK (qty > 0),
+                PRIMARY KEY (order_id, product_id)
+            ) WITHOUT ROWID;
+            CREATE INDEX ix_orders_customer ON orders (customer_id, ordered_at DESC);
+            CREATE INDEX ix_orders_open ON orders (status) WHERE status <> 'shipped';
+            CREATE VIEW v_order_totals AS
+                SELECT o.id, c.name AS customer, o.status, sum(i.qty * p.price) AS total
+                FROM orders o JOIN customers c ON c.id = o.customer_id
+                JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id
+                GROUP BY o.id;
+            CREATE TRIGGER trg_order_items_total AFTER INSERT ON order_items BEGIN
+                UPDATE orders SET total = total + NEW.qty * (SELECT price FROM products WHERE id = NEW.product_id) WHERE id = NEW.order_id;
+            END;
+            INSERT INTO customers (name, email, city) VALUES
+                ('Acme Corp', 'orders@acme.example', 'Oslo'), ('Globex', 'buy@globex.example', 'Rome'), ('Initech', NULL, 'Austin'),
+                ('Umbrella', 'shop@umbrella.example', 'Berlin'), ('Hooli', 'it@hooli.example', 'Palo Alto'), ('Vehement', NULL, 'Lyon');
+            INSERT INTO products (sku, name, price) VALUES
+                ('KB-01', 'Keyboard', 49.90), ('MS-02', 'Mouse', 19.50), ('MN-27', 'Monitor 27"', 279.00), ('CB-10', 'USB-C cable', 9.99), ('DK-04', 'Dock', 129.00);
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 60)
+            INSERT INTO orders (customer_id, status, ordered_at, note)
+            SELECT 1 + (i * 7) % 6, CASE i % 5 WHEN 0 THEN 'cancelled' WHEN 1 THEN 'new' WHEN 2 THEN 'paid' ELSE 'shipped' END,
+                   datetime('2026-10-01', '+' || (i * 11 % 30) || ' days', '+' || (i * 37 % 24) || ' hours'),
+                   CASE WHEN i % 9 = 0 THEN 'Leave at the door' END
+            FROM n;
+            INSERT INTO order_items (order_id, product_id, qty) SELECT id, 1 + id % 5, 1 + id % 3 FROM orders;
+            INSERT INTO order_items (order_id, product_id, qty) SELECT id, 1 + (id + 2) % 5, 1 FROM orders WHERE id % 2 = 0;
+            ANALYZE;
+            """;
 
         /// <summary>The Jobs tab with sample jobs (one that failed, one disabled, one with a run history) and the new-job form.</summary>
         private async Task RenderJobsAsync(string suffix)

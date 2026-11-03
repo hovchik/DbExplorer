@@ -58,6 +58,7 @@ public sealed partial class SqlAssistant(IAssistantModel model)
         "SqlServer" => "Microsoft SQL Server (T-SQL)",
         "Postgres" => "PostgreSQL",
         "MySql" => "MySQL or MariaDB (schemas are databases; quote names with backticks)",
+        "Sqlite" => "SQLite 3 (one file; no schemas besides main, no stored procedures; dates are ISO text; use LIMIT)",
         _ => providerKey
     };
 

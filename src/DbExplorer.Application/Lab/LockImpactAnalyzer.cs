@@ -49,6 +49,8 @@ public sealed class LockImpactAnalyzer
         var targets = new List<LockTarget>();
         var findings = new List<ImpactFinding>();
 
+        if (key == SqlDialect.SqliteKey) return SqliteReport(statements);
+
         foreach (var statement in statements)
         {
             ct.ThrowIfCancellationRequested();
@@ -83,6 +85,28 @@ public sealed class LockImpactAnalyzer
         if (findings.Count == 0)
             findings.Add(new ImpactFinding(ImpactSeverity.Info, "", "The script reads only: no locks that block other sessions."));
         return new LockImpactReport(merged, findings.OrderByDescending(f => f.Severity).ToList());
+    }
+
+    /// <summary>
+    /// SQLite locks the whole file, not rows or tables: while a script writes, no other connection can write, and
+    /// readers wait too unless the file is in WAL mode. There are no other sessions to look up.
+    /// </summary>
+    public static LockImpactReport SqliteReport(IReadOnlyList<string> statements)
+    {
+        var writes = statements
+            .Where(s => SqlAnatomy.KindOf(s) is not DmlKind.Select || ClassifyDdl(s, SqlDialect.SqliteKey) is not null)
+            .Select(s => SqlAnatomy.ParseDml(s)?.Target ?? "")
+            .ToList();
+        if (writes.Count == 0)
+            return new LockImpactReport([], [new ImpactFinding(ImpactSeverity.Info, "", "The script reads only: no locks that block other connections.")]);
+        var targets = writes.Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(t => new LockTarget(t, "WRITE", null, "whole-file lock")).ToList();
+        return new LockImpactReport(targets,
+        [
+            new ImpactFinding(ImpactSeverity.Warning, "",
+                "SQLite locks the whole database file while this script writes: no other connection can write until it commits, " +
+                "and readers wait too unless the file uses WAL (PRAGMA journal_mode = WAL).")
+        ]);
     }
 
     /// <summary>What the engine does with locks for one target; pure, so the rules are testable.</summary>

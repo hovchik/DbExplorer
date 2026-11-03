@@ -56,6 +56,12 @@ public sealed class PlanNode
     /// <summary>Rows the planner expected per execution.</summary>
     public double EstimatedRows { get; init; }
 
+    /// <summary>False when the engine estimates no row counts (SQLite), so 0 rows means "not known" and is not shown.</summary>
+    public bool HasRowEstimates { get; init; } = true;
+
+    /// <summary>A row count is known for this operator, estimated or measured.</summary>
+    public bool ShowsRows => HasRowEstimates || ActualRows is not null;
+
     /// <summary>Executions the planner expected (SQL Server rebinds/rewinds + 1; PostgreSQL does not say, so 1).</summary>
     public double EstimatedExecutions { get; init; } = 1;
 
@@ -114,7 +120,7 @@ public sealed class PlanNode
     public string RowsText =>
         ActualRows is { } actual
             ? $"{PlanFormat.Count(actual)} of ≈{PlanFormat.Count(EstimatedRows * Math.Max(1, ActualExecutions ?? 1))} est."
-            : $"≈ {PlanFormat.Count(EstimatedRows)} rows";
+            : HasRowEstimates ? $"≈ {PlanFormat.Count(EstimatedRows)} rows" : "";
 
     public override string ToString() => Object is null ? Operator : $"{Operator} · {Object}";
 }

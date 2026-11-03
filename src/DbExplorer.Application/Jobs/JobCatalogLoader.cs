@@ -22,7 +22,14 @@ public static class JobCatalogLoader
     };
 
     public static Task<JobCatalog> LoadAsync(IDatabaseProvider provider, string? defaultDatabase, CancellationToken ct = default) =>
-        EngineOf(provider.ProviderKey) switch
+        SqlDialect.IsFileEngine(provider.ProviderKey)
+            ? Task.FromResult(new JobCatalog
+            {
+                Engine = JobEngine.PgCron, Available = false, Source = "SQLite",
+                Setup = "SQLite is a file, not a server, so it has no job scheduler. Run scripts on a schedule with the " +
+                        "operating system instead (Task Scheduler on Windows, cron elsewhere) using the sqlite3 command-line tool."
+            })
+            : EngineOf(provider.ProviderKey) switch
         {
             JobEngine.SqlServerAgent => LoadSqlServerAsync(provider, ct),
             JobEngine.MySqlEvents => LoadMySqlAsync(provider, ct),

@@ -61,6 +61,7 @@ public sealed class DryRunService
             {
                 SqlDialect.SqlServerKey => "SET LOCK_TIMEOUT 5000;",
                 SqlDialect.MySqlKey => "SET SESSION innodb_lock_wait_timeout = 5; SET SESSION lock_wait_timeout = 5;",
+                SqlDialect.SqliteKey => "PRAGMA busy_timeout = 5000;",
                 _ => "SET LOCAL lock_timeout = '5s';"
             }, timeoutSeconds, ct);
 

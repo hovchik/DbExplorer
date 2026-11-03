@@ -38,6 +38,7 @@ public sealed partial class PlanViewModel : ObservableObject
     {
         "SqlServer" => "sqlplan",
         "MySql" when !Plan.Raw.TrimStart().StartsWith('{') => "txt",
+        "Sqlite" => "txt",
         _ => "json"
     };
 
@@ -65,8 +66,9 @@ public sealed partial class PlanViewModel : ObservableObject
         {
             if (SelectedNode is not { } n) return [];
             var facts = new List<PlanFact>();
-            facts.Add(new("Estimated rows", PlanFormat.Count(n.EstimatedRows) +
-                                            (n.EstimatedExecutions > 1 ? $" per execution × {PlanFormat.Count(n.EstimatedExecutions)}" : "")));
+            if (n.HasRowEstimates)
+                facts.Add(new("Estimated rows", PlanFormat.Count(n.EstimatedRows) +
+                                                (n.EstimatedExecutions > 1 ? $" per execution × {PlanFormat.Count(n.EstimatedExecutions)}" : "")));
             if (n.ActualRows is { } actual)
                 facts.Add(new("Actual rows", PlanFormat.Count(actual) + (n.ActualExecutions is { } e && e > 1 ? $" in {PlanFormat.Count(e)} executions" : "")));
             facts.Add(new(Plan.IsActual && Plan.Provider != "SqlServer" ? "Share of the time" : "Share of the cost", PlanFormat.Percent(n.Share)));

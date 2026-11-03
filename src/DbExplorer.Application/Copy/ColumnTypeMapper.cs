@@ -21,6 +21,8 @@ public static class ColumnTypeMapper
 
         return (sourceProviderKey, targetProviderKey) switch
         {
+            (_, SqlDialect.SqliteKey) => ToSqlite(column),
+            (SqlDialect.SqliteKey, _) => FromSqlite(column, targetProviderKey),
             (SqlDialect.SqlServerKey, SqlDialect.MySqlKey) => SqlServerToMySql(column),
             (SqlDialect.MySqlKey, SqlDialect.SqlServerKey) => MySqlToSqlServer(column),
             (SqlDialect.MySqlKey, _) => MySqlToPostgres(column),
@@ -28,6 +30,58 @@ public static class ColumnTypeMapper
             (SqlDialect.SqlServerKey, _) => SqlServerToPostgres(column),
             _ => PostgresToSqlServer(column)
         };
+    }
+
+    /// <summary>SQLite stores any value in any column; the declared name only picks an affinity, so the family is kept readable.</summary>
+    private static Mapping ToSqlite(DbColumn c) => Design.ColumnTypes.Family(c.BaseType, SizeOf(c.DataType)) switch
+    {
+        Design.TypeFamily.Integer => new("integer"),
+        Design.TypeFamily.Boolean => new("boolean"),
+        Design.TypeFamily.Decimal => new(ArgsOf(c.DataType) is { Count: 2 } a ? $"numeric({a[0]},{a[1]})" : "numeric"),
+        Design.TypeFamily.Float => new("real"),
+        Design.TypeFamily.Date => new("date"),
+        Design.TypeFamily.DateTime => new("datetime"),
+        Design.TypeFamily.Binary => new("blob"),
+        Design.TypeFamily.Text when ArgsOf(c.DataType) is { Count: 1 } a && ParseInt(a[0]) is int n => new($"varchar({n})"),
+        Design.TypeFamily.Other => new("text", $"{c.Name}: {c.DataType} has no SQLite equivalent; stored as text."),
+        _ => new("text")
+    };
+
+    /// <summary>
+    /// From SQLite's declared type (often just INTEGER, TEXT, REAL, BLOB or nothing) to the target's everyday type for
+    /// the same kind of value. Text without a length becomes the target's unbounded text, since SQLite never limited it.
+    /// </summary>
+    private static Mapping FromSqlite(DbColumn c, string target)
+    {
+        var args = ArgsOf(c.DataType);
+        var family = Design.ColumnTypes.Family(c.BaseType, SizeOf(c.DataType));
+        if (family == Design.TypeFamily.Other)
+            family = (c.DataType ?? "").ToUpperInvariant() switch
+            {
+                var t when t.Contains("INT", StringComparison.Ordinal) => Design.TypeFamily.Integer,
+                var t when t.Contains("CHAR", StringComparison.Ordinal) || t.Contains("CLOB", StringComparison.Ordinal) || t.Contains("TEXT", StringComparison.Ordinal) => Design.TypeFamily.LargeText,
+                var t when t.Length == 0 || t.Contains("BLOB", StringComparison.Ordinal) => Design.TypeFamily.Binary,
+                var t when t.Contains("REAL", StringComparison.Ordinal) || t.Contains("FLOA", StringComparison.Ordinal) || t.Contains("DOUB", StringComparison.Ordinal) => Design.TypeFamily.Float,
+                _ => Design.TypeFamily.Decimal
+            };
+        string? warning = null;
+        if (family == Design.TypeFamily.Binary && (c.DataType ?? "").Length == 0)
+            warning = $"{c.Name} has no declared type in SQLite (any value); copied as binary, change it if it holds text or numbers.";
+        if (family == Design.TypeFamily.Text && !(args.Count == 1 && ParseInt(args[0]) is not null)) family = Design.TypeFamily.LargeText;
+
+        // SQLite stores every integer in up to 8 bytes whatever the declared type (INT, SMALLINT…), so only a 64-bit
+        // target column is sure to hold the values.
+        if (family == Design.TypeFamily.Integer) return new("bigint", warning);
+        if (family == Design.TypeFamily.Text) return new(target == SqlDialect.SqlServerKey ? $"nvarchar({args[0]})" : $"varchar({args[0]})", warning);
+        if (family == Design.TypeFamily.Decimal && args.Count == 2) return new($"{(target == SqlDialect.PostgresKey ? "numeric" : "decimal")}({args[0]},{args[1]})", warning);
+        var (type, size) = Design.ColumnTypes.Preferred(target, family);
+        return new(size is null ? type : $"{type}({size})", warning);
+    }
+
+    private static string? SizeOf(string? dataType)
+    {
+        var open = dataType?.IndexOf('(') ?? -1;
+        return open >= 0 && dataType!.EndsWith(')') ? dataType[(open + 1)..^1] : null;
     }
 
     /// <summary>MySQL varchar lengths above this go to TEXT: a row holds at most 64 KB, and utf8mb4 takes 4 bytes a character.</summary>

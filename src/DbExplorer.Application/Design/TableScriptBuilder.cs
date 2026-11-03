@@ -16,6 +16,9 @@ public static class TableScriptBuilder
         var table = d.Table(SchemaOf(design, providerKey), NameOf(design));
         var columns = design.Columns.Where(c => c.Name.Trim().Length > 0).ToList();
         var sb = new StringBuilder();
+        var pk = design.PrimaryKey.ToList();
+        // SQLite numbers a column only as a column-level INTEGER PRIMARY KEY AUTOINCREMENT, never through a table constraint.
+        var sqliteRowid = providerKey == SqlDialect.SqliteKey && pk.Count == 1 && pk[0].IsIdentity ? pk[0] : null;
 
         if (createSchema) sb.Append(d.CreateSchemaIfMissing(SchemaOf(design, providerKey))).Append('\n');
 
@@ -23,6 +26,11 @@ public static class TableScriptBuilder
         var lines = new List<string>();
         foreach (var c in columns)
         {
+            if (ReferenceEquals(c, sqliteRowid))
+            {
+                lines.Add($"    {d.Quote(c.Name.Trim())} INTEGER NOT NULL CONSTRAINT {d.Quote(PrimaryKeyName(design, d))} PRIMARY KEY AUTOINCREMENT");
+                continue;
+            }
             var line = new StringBuilder("    ").Append(d.Quote(c.Name.Trim())).Append(' ').Append(c.FullType.Length > 0 ? c.FullType : "?");
             if (c.IsIdentity) line.Append(d.IdentityClause);
             line.Append(c.WritesNotNull ? " NOT NULL" : " NULL");
@@ -30,8 +38,7 @@ public static class TableScriptBuilder
             lines.Add(line.ToString());
         }
 
-        var pk = design.PrimaryKey.ToList();
-        if (pk.Count > 0)
+        if (pk.Count > 0 && sqliteRowid is null)
             lines.Add($"    CONSTRAINT {d.Quote(PrimaryKeyName(design, d))} PRIMARY KEY ({string.Join(", ", pk.Select(c => d.Quote(c.Name.Trim())))})");
 
         foreach (var fk in design.ForeignKeys.Where(f => f.Column.Length > 0 && f.ReferencedTable.Length > 0))
@@ -47,11 +54,12 @@ public static class TableScriptBuilder
         return sb.ToString();
     }
 
-    /// <summary>The engine's usual schema when none is given: dbo or public; on MySQL the schema is the database itself.</summary>
+    /// <summary>The engine's usual schema when none is given: dbo or public; on MySQL the schema is the database itself; main on SQLite.</summary>
     public static string DefaultSchema(string providerKey, string? database = null) => providerKey switch
     {
         SqlDialect.SqlServerKey => "dbo",
         SqlDialect.MySqlKey => database ?? "",
+        SqlDialect.SqliteKey => "main",
         _ => "public"
     };
 

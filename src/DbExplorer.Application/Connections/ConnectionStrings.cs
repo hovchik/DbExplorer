@@ -53,12 +53,14 @@ public static class ConnectionStrings
     public const string Postgres = "Postgres";
     public const string SqlServer = "SqlServer";
     public const string MySql = "MySql";
+    public const string Sqlite = "Sqlite";
 
     public static string EngineName(string providerKey) => providerKey switch
     {
         Postgres => "PostgreSQL",
         SqlServer => "SQL Server",
         MySql => "MySQL",
+        Sqlite => "SQLite",
         _ => providerKey
     };
 
@@ -67,6 +69,7 @@ public static class ConnectionStrings
     {
         if (string.IsNullOrWhiteSpace(text)) return false;
         var t = text.Trim();
+        if (SqliteFile(t) is not null) return true;
         if (UrlPattern.IsMatch(t)) return SchemeEngine(UrlPattern.Match(t).Groups["scheme"].Value) is not null;
         return t.Contains('=') && (t.Contains(';') || IsLibpq(t));
     }
@@ -84,6 +87,12 @@ public static class ConnectionStrings
 
         // The whole string was copied with its quotes, from code or a config file.
         if (t.Length > 1 && (t[0] == '"' && t[^1] == '"' || t[0] == '\'' && t[^1] == '\'')) t = t[1..^1].Trim();
+
+        if (SqliteFile(t) is { } file)
+        {
+            result = new ParsedConnection { ProviderKey = Sqlite, Host = file };
+            return true;
+        }
 
         try
         {
@@ -107,6 +116,43 @@ public static class ConnectionStrings
             error = ex.Message;
             return false;
         }
+    }
+
+    // ---- SQLite: a file, not a server -------------------------------------------------------------------------
+
+    private static readonly Regex SqliteUrl = new(@"^(?:jdbc:sqlite:|sqlite:///?|sqlite3:///?|file:)(?<path>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex SqliteDataSource = new(@"^\s*(?:Data\s*Source|Filename)\s*=\s*(?<path>""[^""]+""|'[^']+'|[^;]+)\s*(?:;(?<rest>.*))?$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    private static readonly string[] SqliteExtensions = [".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".sl3"];
+
+    /// <summary>
+    /// The database file a SQLite connection string or URL names: Data Source=shop.db (Microsoft.Data.Sqlite,
+    /// System.Data.SQLite), sqlite:///shop.db (SQLAlchemy), jdbc:sqlite:shop.db, file:shop.db. Data Source alone is
+    /// SQL Server's key too, so it counts as SQLite only when the value is a file (an extension SQLite files use, or a
+    /// path) and no server key follows.
+    /// </summary>
+    internal static string? SqliteFile(string text)
+    {
+        if (SqliteUrl.Match(text) is { Success: true } url)
+        {
+            var path = url.Groups["path"].Value;
+            var query = path.IndexOf('?');
+            if (query >= 0) path = path[..query];
+            path = Uri.UnescapeDataString(path);
+            // sqlite:////abs/path and sqlite:///C:/path: the third slash only ends the empty host.
+            if (text.StartsWith("sqlite", StringComparison.OrdinalIgnoreCase) && path.Length > 2 && path[0] == '/' && path[2] == ':') path = path[1..];
+            return path.Length > 0 ? path : null;
+        }
+        if (SqliteDataSource.Match(text) is not { Success: true } m) return null;
+        var value = m.Groups["path"].Value.Trim().Trim('"', '\'');
+        var rest = m.Groups["rest"].Value;
+        var serverKeys = Regex.IsMatch(rest, @"\b(Initial\s*Catalog|Database|User\s*ID|UID|Integrated\s*Security|Trusted_Connection|Server|Port)\s*=", RegexOptions.IgnoreCase);
+        var looksLikeFile = SqliteExtensions.Any(e => value.EndsWith(e, StringComparison.OrdinalIgnoreCase)) ||
+                            value.Contains('/') || (value.Contains('\\') && value.Contains(':')) || value == ":memory:";
+        return looksLikeFile && !serverKeys ? value : null;
     }
 
     // ---- URLs -------------------------------------------------------------------------------------------------
@@ -701,6 +747,8 @@ public static class ConnectionStrings
             ? null : p.UserName;
         return (p.ProviderKey, style) switch
         {
+            (Sqlite, ConnectionStringStyle.KeyValue) => Pairs(("Data Source", p.Host), ("Mode", p.ReadOnly ? "ReadOnly" : null)),
+            (Sqlite, ConnectionStringStyle.Url) => "sqlite:///" + p.Host.Replace('\\', '/'),
             (SqlServer, ConnectionStringStyle.KeyValue) => SqlServerKeyValue(p, user, password),
             (SqlServer, ConnectionStringStyle.Url) => SqlServerJdbc(p, user, password),
             (MySql, ConnectionStringStyle.KeyValue) => Pairs(

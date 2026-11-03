@@ -5,7 +5,8 @@ using DbExplorer.Core.Models;
 
 namespace DbExplorer.Application.Query.Plans;
 
-/// <summary>Asks the engine for plans it can draw (PostgreSQL JSON, SQL Server showplan XML, MySQL trees, MariaDB JSON)
+/// <summary>Asks the engine for plans it can draw (PostgreSQL JSON, SQL Server showplan XML, MySQL trees, MariaDB JSON, SQLite's
+/// EXPLAIN QUERY PLAN)
 /// and reads them.</summary>
 public static class PlanReader
 {
@@ -23,6 +24,10 @@ public static class PlanReader
     /// <param name="serverVersion">The session's server version: MySQL and MariaDB explain differently.</param>
     public static string BuildScript(string sql, string providerKey, bool analyze, string? serverVersion = null)
     {
+        // SQLite only estimates: nothing runs, with or without analyze.
+        if (providerKey == SqlDialect.SqliteKey)
+            return string.Join("\n", Statements(sql).Select(s => $"EXPLAIN QUERY PLAN {s};"));
+
         if (providerKey == SqlDialect.MySqlKey)
         {
             var mariaDb = IsMariaDb(serverVersion);
@@ -59,6 +64,13 @@ public static class PlanReader
     public static IReadOnlyList<ExecutionPlan> Read(IReadOnlyList<QueryResultSet> resultSets, string providerKey, string sql)
     {
         if (providerKey == SqlDialect.MySqlKey) return ReadMySql(resultSets, sql);
+        if (providerKey == SqlDialect.SqliteKey)
+        {
+            var explained = Statements(sql);
+            return resultSets.Where(SqlitePlanParser.IsPlan)
+                .Select((rs, i) => SqlitePlanParser.Parse(rs, i < explained.Count ? explained[i] : null))
+                .ToList();
+        }
 
         var plans = new List<ExecutionPlan>();
         var statements = providerKey == SqlDialect.SqlServerKey ? [] : Statements(sql);

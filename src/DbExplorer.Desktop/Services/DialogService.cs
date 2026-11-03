@@ -437,9 +437,10 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
         var vm = new DataRelationsViewModel(queryService, session, term, matches) { OpenSql = openSql, OpenObject = openObject };
         var window = new DataRelationsWindow { DataContext = vm };
         window.Closed += (_, _) => vm.Cancel();
-        _ = vm.LoadAsync();
 
+        // Show the window first: loading builds the diagram and runs the queries in the background, with progress.
         if (Owner is not null) window.Show(Owner);
         else window.Show();
+        _ = vm.LoadAsync();
     }
 }

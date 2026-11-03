@@ -25,10 +25,16 @@
       <Button Classes="icon" Content="＋" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in" />
       <Button Content="Copy Mermaid" Click="OnCopyMermaid" ToolTip.Tip="Copy the diagram as a Mermaid erDiagram" />
       <Button Content="Reload data" Command="{Binding LoadCommand}" />
+      <Button Content="Stop" Command="{Binding StopCommand}" IsVisible="{Binding IsRunning}"
+              ToolTip.Tip="Stop loading; the rows already loaded stay" />
       <Button Content="Open SQL in Query tab" Command="{Binding OpenInEditorCommand}"
               ToolTip.Tip="Open the selected result's SELECT in a new Query tab to refine it" />
       <TextBlock Classes="hint" Text="Highlighted: tables the value was found in" />
-      <ProgressBar Width="100" VerticalAlignment="Center" IsIndeterminate="True" IsVisible="{Binding IsRunning}" />
+      <ProgressBar Width="140" VerticalAlignment="Center" IsVisible="{Binding IsRunning}"
+                   IsIndeterminate="{Binding IsProgressIndeterminate}" Minimum="0"
+                   Maximum="{Binding ProgressMaximum}" Value="{Binding Progress}"
+                   ShowProgressText="{Binding !IsProgressIndeterminate}" ProgressTextFormat="{}{0}/{3}"
+                   AutomationProperties.Name="Loading related rows" />
     </WrapPanel>
 
     <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,6,0,0" Text="{Binding Status}" TextWrapping="Wrap" />

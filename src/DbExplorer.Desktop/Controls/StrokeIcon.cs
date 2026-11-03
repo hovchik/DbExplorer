@@ -12,6 +12,7 @@ namespace DbExplorer.Desktop.Controls;
 public static class Icons
 {
     public const string Plus = "M12 5v14 M5 12h14";
+    public const string Download = "M12 4v11 M7 10l5 5 5-5 M5 20h14";
     public const string Pencil = "M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z M13.5 6.5l4 4";
     public const string Copy = "M9 9h11v11H9z M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4";
     public const string Trash = "M4 7h16 M10 3h4 M6 7l1 12.2a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8L18 7 M10 11v6 M14 11v6";

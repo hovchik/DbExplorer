@@ -3,6 +3,7 @@
 A cross-platform desktop app (.NET 10 + Avalonia) for exploring databases without disturbing them.
 SQL Server is the primary engine; PostgreSQL (12+) and MySQL / MariaDB (MySQL 8+, MariaDB 10.6+) are the other providers.
 Connections can go through an **SSH tunnel** (password or private key; the server's host key is pinned on first use).
+SQL Server / Azure SQL and Azure Database for PostgreSQL connections can sign in with **Microsoft Entra ID** (browser sign-in with MFA, `az login` / Visual Studio / managed identity, a service principal, or for SQL Server the Windows account of an Entra-joined machine).
 
 ## Features
 

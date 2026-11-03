@@ -35,7 +35,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
     {
         _profile = profile;
         _allDatabases = string.IsNullOrWhiteSpace(profile.Database);
-        _dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(profile));
+        _dataSource = PostgresSql.CreateDataSource(profile);
     }
 
     public string ProviderKey => PostgresProviderFactory.ProviderKey;
@@ -175,7 +175,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
     private async Task<ReadOnlyScope> OpenReadOnlyAsync(string? database, DataSearchOptions options, CancellationToken ct, bool anyDatabase = false)
     {
         var useOwnDataSource = (_allDatabases || anyDatabase) && !string.IsNullOrEmpty(database) && database != _profile.Database;
-        var scoped = useOwnDataSource ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database)) : null;
+        var scoped = useOwnDataSource ? PostgresSql.CreateDataSource(_profile, database) : null;
         NpgsqlConnection? cn = null;
         try
         {
@@ -256,7 +256,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
 
         var useOwnDataSource = _allDatabases && !string.IsNullOrEmpty(table.Database) && table.Database != _profile.Database;
         await using var scopedDataSource = useOwnDataSource
-            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, table.Database))
+            ? PostgresSql.CreateDataSource(_profile, table.Database)
             : null;
         var dataSource = scopedDataSource ?? _dataSource;
 
@@ -328,7 +328,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
         var useOwnDataSource = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database;
 
         await using var scopedDataSource = useOwnDataSource
-            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            ? PostgresSql.CreateDataSource(_profile, targetDatabase)
             : null;
         var dataSource = scopedDataSource ?? _dataSource;
 
@@ -343,7 +343,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
         var useOwnDataSource = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database;
 
         await using var scopedDataSource = useOwnDataSource
-            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            ? PostgresSql.CreateDataSource(_profile, targetDatabase)
             : null;
         await using var cn = await (scopedDataSource ?? _dataSource).OpenConnectionAsync(ct);
         // No timeout (a large export takes as long as it takes; Cancel stops it) and no rows kept from other result sets.
@@ -553,7 +553,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
         var useOwnDataSource = !string.IsNullOrEmpty(database) && database != _profile.Database;
 
         await using var scopedDataSource = useOwnDataSource
-            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database))
+            ? PostgresSql.CreateDataSource(_profile, database)
             : null;
         var dataSource = scopedDataSource ?? _dataSource;
 
@@ -646,7 +646,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
     {
         var targetDatabase = database ?? _profile.Database;
         var scoped = !string.IsNullOrEmpty(targetDatabase) && targetDatabase != _profile.Database
-            ? NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, targetDatabase))
+            ? PostgresSql.CreateDataSource(_profile, targetDatabase)
             : null;
         NpgsqlConnection? cn = null;
         try
@@ -893,7 +893,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
 
     private async Task<IReadOnlyList<T>> QueryInDatabaseAsync<T>(string sql, object? param, string database, CancellationToken ct)
     {
-        await using var dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database));
+        await using var dataSource = PostgresSql.CreateDataSource(_profile, database);
         await using var cn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await cn.BeginTransactionAsync(ct);
         await ApplySettingsAsync(cn, tx, MetadataStatementTimeoutMs, MetadataLockTimeoutMs, ct);
@@ -906,7 +906,7 @@ public sealed class PostgresProvider : IDatabaseProvider, IRoutineDebugProvider,
 
     private async Task<T?> ScalarInDatabaseAsync<T>(string sql, object? param, string database, CancellationToken ct)
     {
-        await using var dataSource = NpgsqlDataSource.Create(PostgresSql.BuildConnectionString(_profile, database));
+        await using var dataSource = PostgresSql.CreateDataSource(_profile, database);
         await using var cn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await cn.BeginTransactionAsync(ct);
         await ApplySettingsAsync(cn, tx, MetadataStatementTimeoutMs, MetadataLockTimeoutMs, ct);

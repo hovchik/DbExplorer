@@ -395,6 +395,7 @@ public sealed class TeamSync
         string.Equals(a.Host.Trim(), b.Host.Trim(), StringComparison.OrdinalIgnoreCase) &&
         a.Port == b.Port &&
         a.IntegratedSecurity == b.IntegratedSecurity &&
+        a.EntraAuth == b.EntraAuth &&
         string.Equals(a.UserName ?? "", b.UserName ?? "", StringComparison.Ordinal) &&
         a.Ssh.Enabled == b.Ssh.Enabled &&
         (!a.Ssh.Enabled ||

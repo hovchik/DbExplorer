@@ -12,6 +12,7 @@ using DbExplorer.Application.Connections.Ssh;
 using DbExplorer.Application.Providers;
 using DbExplorer.Application.Copy;
 using DbExplorer.Application.Query;
+using DbExplorer.Application.Updates;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop;
@@ -114,6 +115,7 @@ namespace DbExplorer.UiRender
             var root = Path.Combine(Path.GetTempPath(), "DbExplorer.UiRender", Guid.NewGuid().ToString("N"));
             var services = App.ConfigureServices();
             services.AddSingleton(new AppPaths(root)); // never the user's own connections and settings
+            services.AddSingleton<IReleaseSource>(new SampleReleases()); // never GitHub
             _provider = services.BuildServiceProvider();
 
             _window = App.CreateMainWindow(_provider);
@@ -159,6 +161,8 @@ namespace DbExplorer.UiRender
             await Step("migration", RenderMigrationAsync);
             await Step("keys", RenderKeysAndVimAsync);
             await Step("fullresult", RenderFullResultAsync);
+            await Step("updates", RenderUpdatesAsync);
+            await Step("charts", RenderChartsAsync);
             await Step("backup", RenderBackupAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
@@ -575,6 +579,69 @@ namespace DbExplorer.UiRender
             await Settle(4);
         }
 
+        /// <summary>Charts of query results: bars, a line split by a column (with the hover tooltip), area, pie and
+        /// scatter, bars split by a column, and the Values picker; then the 1024 px window.</summary>
+        private async Task RenderChartsAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            _vm.Query.OpenInNewTab(
+                "SELECT p.name AS product, sum(oi.quantity * oi.unit_price) AS revenue, sum(oi.quantity) AS units\n" +
+                "FROM order_items oi JOIN products p ON p.id = oi.product_id\nGROUP BY p.name ORDER BY revenue DESC LIMIT 12;\n" +
+                "SELECT d::date AS week, s AS status, 20 + abs(hashtext(d::text || s)) % 40 + (extract(month FROM d)::int * 3) AS orders\n" +
+                "FROM generate_series('2026-01-05'::date, '2026-10-26'::date, '1 week') d CROSS JOIN unnest(ARRAY['new','paid','shipped']) s;\n" +
+                "SELECT status, count(*) AS orders FROM orders GROUP BY status;\n" +
+                "SELECT name, price, stock FROM products;\n" +
+                "SELECT p.name AS product, o.status, sum(oi.quantity) AS units FROM order_items oi\n" +
+                "JOIN orders o ON o.id = oi.order_id JOIN products p ON p.id = oi.product_id\n" +
+                "WHERE p.id <= 6 GROUP BY p.id, p.name, o.status ORDER BY p.id, o.status;", "Charts");
+            var doc = _vm.Query.SelectedDocument!;
+            await Settle();
+            await doc.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !doc.IsRunning && doc.ResultSets.Count == 5, "chart queries");
+            await Settle(4);
+
+            ResultGridView Grid() => _window.GetVisualDescendants().OfType<ResultGridView>().First(g => g.IsEffectivelyVisible);
+            async Task Show(int result, ChartSpec? spec, string name)
+            {
+                doc.SelectedResult = doc.ResultSets[result];
+                await Settle(4);
+                var grid = Grid();
+                grid.ShowChart(true);
+                if (spec is not null) grid.SetChart(spec);
+                await Settle(6);
+                await Shot(_window, name);
+            }
+
+            await Show(0, null, "chart-bar"); // the default: bars of revenue by product
+            await Show(4, new ChartSpec(ChartKind.Bar, 0, [2], PivotAggregate.Sum, SeriesField: 1), "chart-bar-split");
+            var values = Grid().FindControl<Button>("ChartValuesButton")!;
+            values.Flyout!.ShowAt(values);
+            await Settle(8);
+            await Shot(_window, "chart-values-menu");
+            values.Flyout.Hide();
+            await Settle();
+
+            await Show(1, new ChartSpec(ChartKind.Line, 0, [2], PivotAggregate.Sum, SeriesField: 1), "chart-line");
+            var chart = Grid().FindControl<DbExplorer.Desktop.Controls.ChartControl>("ChartView")!;
+            var at = chart.TranslatePoint(new Point(chart.Bounds.Width * 0.55, chart.Bounds.Height * 0.5), _window)!.Value;
+            _window.MouseMove(at);
+            await Settle(4);
+            await Shot(_window, "chart-line-hover");
+            _window.MouseMove(new Point(2, 2));
+            await Show(1, new ChartSpec(ChartKind.Area, 0, [2], PivotAggregate.Sum), "chart-area");
+            await Show(2, new ChartSpec(ChartKind.Pie, 0, [1], PivotAggregate.Sum), "chart-pie");
+            await Show(3, new ChartSpec(ChartKind.Scatter, 1, [2], PivotAggregate.Sum), "chart-scatter");
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Show(1, new ChartSpec(ChartKind.Line, 0, [2], PivotAggregate.Sum, SeriesField: 1), "small-chart-line");
+            await Show(2, new ChartSpec(ChartKind.Pie, 0, [1], PivotAggregate.Sum), "small-chart-pie");
+            _window.Width = 1400;
+            _window.Height = 900;
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
+        }
+
         /// <summary>Pinned results: a run's result pinned, then the same query run again after a change, so both are on screen.</summary>
         private async Task RenderPinnedResultsAsync()
         {
@@ -644,6 +711,27 @@ namespace DbExplorer.UiRender
             };
             badVm.FillFromConnectionStringCommand.Execute(null);
             await ShowAndShoot(new ConnectionDialog { DataContext = badVm, Title = "New connection" }, "connection-string-error");
+
+            // Microsoft Entra ID: the offer on an Azure host, browser sign-in on Azure SQL, and an app on Azure PostgreSQL.
+            var sqlKey = registry.All.First(p => p.Key == "SqlServer");
+            var azureVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = sqlKey.Key }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "shop-prod.database.windows.net", Database = "shop"
+            };
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-offer");
+            azureVm.UserName = "ann@contoso.com";
+            azureVm.UseEntraSignInCommand.Execute(null);
+            await ShowAndShoot(new ConnectionDialog { DataContext = azureVm, Title = "New connection" }, "entra-interactive");
+            var pgAppVm = new ConnectionDialogViewModel(registry, new ConnectionProfile { ProviderKey = "Postgres" }, ["Local"], tunnels, isNew: true)
+            {
+                Host = "pg-prod.postgres.database.azure.com", Database = "shop"
+            };
+            pgAppVm.SelectedSignIn = pgAppVm.SignInOptions.First(o => o.Method == SignInMethod.EntraServicePrincipal);
+            pgAppVm.UserName = "reporting-app";
+            pgAppVm.ClientId = "6f1c2b0e-4d1a-4c55-9a7e-2f0b8c1d3e42";
+            pgAppVm.Password = "secret";
+            pgAppVm.TenantId = "contoso.onmicrosoft.com";
+            await ShowAndShoot(new ConnectionDialog { DataContext = pgAppVm, Title = "New connection" }, "entra-postgres-app");
 
             var sshDraft = _vm.Profiles[0].Clone();
             sshDraft.Ssh.Enabled = true;
@@ -1113,6 +1201,59 @@ namespace DbExplorer.UiRender
             await Settle(8);
             await Shot(window, "preferences-small-notifications");
             window.Close();
+            await Settle();
+        }
+
+        /// <summary>A sample release list instead of GitHub's, so the update bar has something to offer.</summary>
+        private sealed class SampleReleases : IReleaseSource
+        {
+            public Task<IReadOnlyList<ReleaseInfo>> GetReleasesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<ReleaseInfo>>(
+            [
+                new ReleaseInfo(AppVersion.Parse("1.1.0"), "v1.1.0", "DB Explorer 1.1.0", "https://github.com/hovchik/DbExplorer/releases/tag/v1.1.0",
+                    "https://github.com/hovchik/DbExplorer/releases/download/v1.1.0/DbExplorer-Setup-1.1.0.exe", 48_600_000,
+                    new DateTimeOffset(2026, 11, 1, 10, 0, 0, TimeSpan.Zero), "", false)
+            ]);
+        }
+
+        /// <summary>The update bar under the toolbar (both sizes), the palette entries and Preferences' Updates section
+        /// after Check now.</summary>
+        private async Task RenderUpdatesAsync()
+        {
+            _window.Width = 1400;
+            _window.Height = 900;
+            _vm.SelectedTab = AppTab.Query;
+            _vm.OpenLink = _ => { };
+            var result = await _vm.CheckForUpdatesNowAsync();
+            Console.WriteLine("Update check: " + result?.Describe());
+            await Settle(6);
+            await Shot(_window, "update-bar");
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(6);
+            await Shot(_window, "small-update-bar");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            _vm.OpenCommandPaletteCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<CommandPaletteWindow>().Any(), "palette", 10_000);
+            var palette = _window.OwnedWindows.OfType<CommandPaletteWindow>().First();
+            ((CommandPaletteViewModel)palette.DataContext!).Query = "update";
+            await Settle(6);
+            await Shot(palette, "update-palette");
+            palette.Close();
+            await Settle();
+
+            _vm.OpenPreferencesCommand.Execute(null);
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);
+            var window = _window.OwnedWindows.OfType<PreferencesWindow>().First();
+            var prefs = (PreferencesViewModel)window.DataContext!;
+            await prefs.CheckUpdatesNowCommand.ExecuteAsync(null);
+            var list = window.FindControl<ListBox>("SectionList")!;
+            list.SelectedIndex = list.Items.Cast<ListBoxItem>().ToList().FindIndex(i => (string?)i.Tag == "UpdatesSection");
+            await Settle(8);
+            await Shot(window, "preferences-updates");
+            window.Close();
+            _vm.DismissUpdateCommand.Execute(null);
             await Settle();
         }
 

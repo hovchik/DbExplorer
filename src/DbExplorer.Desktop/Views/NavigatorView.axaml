@@ -145,6 +145,10 @@
                     ToolTip.Tip="A new Query tab on this row's database" />
           <MenuItem Header="Export documentation…" Command="{Binding ExportDocumentationCommand}" IsVisible="{Binding SelectedCanDocument}"
                     ToolTip.Tip="Tables, columns, keys, comments and the diagram as one HTML or Markdown file" />
+          <MenuItem Header="Back up…" Command="{Binding BackupDatabaseCommand}" IsVisible="{Binding SelectedCanBackup}"
+                    ToolTip.Tip="The whole database to one file: a .bak on the server (SQL Server) or a pg_dump / mysqldump file here" />
+          <MenuItem Header="Restore…" Command="{Binding RestoreDatabaseCommand}" IsVisible="{Binding SelectedCanBackup}"
+                    ToolTip.Tip="From a backup file into a new database or this one. Shows what will run and asks first." />
           <MenuItem Header="Copy name" Command="{Binding CopyNameCommand}" IsVisible="{Binding SelectedHasName}" />
           <MenuItem Header="Refresh" Command="{Binding RefreshCommand}" IsVisible="{Binding SelectedHasDatabase}" />
         </ContextMenu>

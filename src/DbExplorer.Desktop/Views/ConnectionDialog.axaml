@@ -164,15 +164,28 @@
       <!-- Sign-in -->
       <TextBlock Classes="section" Text="Sign-in" />
       <StackPanel Spacing="8">
-        <CheckBox Content="Integrated security (Windows / Kerberos)"
-                  IsChecked="{Binding IntegratedSecurity}" IsEnabled="{Binding CanUseIntegratedSecurity}" />
-        <Grid ColumnDefinitions="*,12,*" IsEnabled="{Binding !IntegratedSecurity}">
-          <StackPanel Grid.Column="0">
-            <TextBlock Classes="field" Text="User" />
+        <StackPanel>
+          <TextBlock Classes="field" Text="Sign in with" />
+          <ComboBox ItemsSource="{Binding SignInOptions}" SelectedItem="{Binding SelectedSignIn}" HorizontalAlignment="Stretch" />
+          <TextBlock Classes="hint" Text="{Binding SignInHint}" IsVisible="{Binding HasSignInHint}" TextWrapping="Wrap" Margin="0,4,0,0" />
+        </StackPanel>
+        <Border IsVisible="{Binding ShowEntraOffer}" Padding="10,6" CornerRadius="4"
+                Background="{DynamicResource AppCodeBackgroundBrush}" BorderThickness="1"
+                BorderBrush="{DynamicResource SystemAccentColor}">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12"
+                       Text="This is an Azure server: you can sign in with your Microsoft Entra account instead." />
+            <Button Grid.Column="1" Content="Use Microsoft sign-in" Margin="8,0,0,0" Padding="10,2" Classes="accent"
+                    Command="{Binding UseEntraSignInCommand}" ToolTip.Tip="Sign in through the browser (MFA)" />
+          </Grid>
+        </Border>
+        <Grid ColumnDefinitions="*,12,*">
+          <StackPanel Grid.Column="0" IsVisible="{Binding UsesUser}">
+            <TextBlock Classes="field" Text="{Binding UserLabel}" />
             <TextBox Text="{Binding UserName}" />
           </StackPanel>
-          <StackPanel Grid.Column="2">
-            <TextBlock Classes="field" Text="Password" />
+          <StackPanel Grid.Column="2" IsVisible="{Binding UsesPassword}">
+            <TextBlock Classes="field" Text="{Binding PasswordLabel}" />
             <TextBox Text="{Binding Password}" PasswordChar="•" RevealPassword="{Binding #RevealPassword.IsChecked}">
               <TextBox.InnerRightContent>
                 <ToggleButton x:Name="RevealPassword" Content="👁" Padding="6,0" MinHeight="0" Margin="0,0,2,0"
@@ -182,7 +195,17 @@
             </TextBox>
           </StackPanel>
         </Grid>
-        <CheckBox Content="Save password" IsChecked="{Binding SavePassword}" IsEnabled="{Binding !IntegratedSecurity}"
+        <Grid ColumnDefinitions="*,12,*" IsVisible="{Binding UsesTenant}">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="field" Text="Directory (tenant)" />
+            <TextBox Text="{Binding TenantId}" Watermark="{Binding TenantHint}" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" IsVisible="{Binding UsesClientId}">
+            <TextBlock Classes="field" Text="Client ID" />
+            <TextBox Text="{Binding ClientId}" Watermark="from the app registration" />
+          </StackPanel>
+        </Grid>
+        <CheckBox Content="Save password" IsChecked="{Binding SavePassword}" IsVisible="{Binding UsesPassword}"
                   ToolTip.Tip="Encrypted for the current Windows user (DPAPI). Not saved on macOS/Linux: the app asks on connect." />
       </StackPanel>
 

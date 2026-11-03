@@ -484,6 +484,31 @@
       </Grid>
     </Border>
 
+    <!-- A newer release: download it, read what's new, skip that version, or hide the bar until the next check -->
+    <Border DockPanel.Dock="Top" Margin="8,6,8,2" Padding="12,8" CornerRadius="6" BorderThickness="1"
+            BorderBrush="{DynamicResource SystemControlHighlightAccentBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}"
+            IsVisible="{Binding ShowUpdateBar}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <controls:StrokeIcon Grid.Column="0" Data="{x:Static controls:Icons.Download}" Foreground="{DynamicResource SystemControlHighlightAccentBrush}"
+                             Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" Text="{Binding UpdateBarTitle}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="hint" FontSize="12" Text="{Binding UpdateBarDetail}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+          <Button Content="Skip this version" Command="{Binding SkipUpdateCommand}"
+                  ToolTip.Tip="Don't mention this version again at start-up; a newer one is still shown" />
+          <Button Content="What's new" Command="{Binding OpenUpdateNotesCommand}" ToolTip.Tip="Open the release notes on GitHub" />
+          <Button Classes="accent" Content="{Binding UpdateDownloadText}" Command="{Binding DownloadUpdateCommand}"
+                  ToolTip.Tip="Download the installer in your browser; run it to update" />
+          <Button Padding="6" Background="Transparent" BorderThickness="0" Command="{Binding DismissUpdateCommand}"
+                  ToolTip.Tip="Hide until the next check">
+            <controls:StrokeIcon Data="{x:Static controls:Icons.Close}" Width="14" Height="14" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
     <!-- Status bar: the whole line opens the last 50 messages; the full text is in the tooltip; an unseen error
          keeps a red mark until the history is opened -->
     <Border DockPanel.Dock="Bottom" Padding="4,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
@@ -592,6 +617,9 @@
         </TabItem>
         <TabItem Header="Security" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Logins, users and roles: memberships and permissions, edited as a reviewed script">
           <views:SecurityView DataContext="{Binding Security}" />
+        </TabItem>
+        <TabItem Header="Jobs" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Scheduled jobs: SQL Server Agent, pg_cron or MySQL events, with their runs">
+          <views:JobsView DataContext="{Binding Jobs}" />
         </TabItem>
       </TabControl>
     </Grid>

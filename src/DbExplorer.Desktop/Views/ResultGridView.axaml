@@ -2,6 +2,7 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:views="using:DbExplorer.Desktop.Views"
 			 xmlns:services="using:DbExplorer.Desktop.Services"
+			 xmlns:controls="using:DbExplorer.Desktop.Controls"
 			 x:Class="DbExplorer.Desktop.Views.ResultGridView">
   <UserControl.Resources>
 	<!-- Softer, IDE-style selection so the type colours of values stay readable on selected rows -->
@@ -65,6 +66,9 @@
 		<ToggleButton x:Name="PivotToggle" Classes="compact" Content="Pivot" Margin="0,0,6,2"
 					  MinHeight="26" Padding="10,2" FontSize="12" CornerRadius="6"
 					  ToolTip.Tip="Cross-tabulate the rows in view: group by row fields, spread a column's values across, and sum, count or average a value" />
+		<ToggleButton x:Name="ChartToggle" Classes="compact" Content="Chart" Margin="0,0,6,2"
+					  MinHeight="26" Padding="10,2" FontSize="12" CornerRadius="6"
+					  ToolTip.Tip="Draw the rows in view as a bar, line, area, pie or scatter chart" />
 		<Button x:Name="ClearAllButton" Classes="compact" Content="Clear filters &amp; sort" Margin="0,0,10,2" IsVisible="False"
 				Click="OnClearAll" ToolTip.Tip="Remove every filter and sort and show all fetched rows" />
 		<Button x:Name="AddRowButton" Classes="compact" Content="+ Row" Margin="0,0,4,2" IsVisible="False" Click="OnAddRow"
@@ -119,6 +123,36 @@
 	  </DockPanel>
 	</Border>
 
+	<!-- Chart fields: the kind of chart, the X column, the values and how they're summarised, and an optional split -->
+	<Border x:Name="ChartBar" DockPanel.Dock="Top" IsVisible="False" Margin="0,2,0,4" Padding="8,4" CornerRadius="6"
+			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}">
+	  <DockPanel>
+		<StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
+		  <Button Classes="compact" Content="Copy data" Click="OnCopyChartData"
+				  ToolTip.Tip="Copy the charted values as text (pastes into Excel as cells)" />
+		  <Button Classes="compact" Content="Save PNG…" Click="OnSaveChartImage"
+				  ToolTip.Tip="Save the chart as a PNG image" />
+		  <Button Classes="compact" Content="Show rows" Click="OnCloseChart" ToolTip.Tip="Back to the result rows" />
+		</StackPanel>
+		<WrapPanel Orientation="Horizontal">
+		  <ComboBox x:Name="ChartKindBox" MinWidth="86" MinHeight="26" FontSize="12" Margin="0,0,10,2"
+					ToolTip.Tip="Kind of chart" />
+		  <TextBlock Classes="hint" Text="X" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <ComboBox x:Name="ChartXBox" MinWidth="120" MinHeight="26" FontSize="12" Margin="0,0,10,2"
+					ToolTip.Tip="Column along the X axis; rows with the same value are summarised into one point" />
+		  <TextBlock Classes="hint" Text="Values" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <ComboBox x:Name="ChartAggregateBox" MinWidth="70" MinHeight="26" FontSize="12" Margin="0,0,4,2"
+					ToolTip.Tip="How values that share an X are summarised" />
+		  <Button x:Name="ChartValuesButton" Classes="compact" Margin="0,0,10,2"
+				  ToolTip.Tip="Columns drawn as series (up to 8); none counts rows" />
+		  <TextBlock x:Name="ChartSplitLabel" Classes="hint" Text="Split by" VerticalAlignment="Center" Margin="0,0,4,2" />
+		  <ComboBox x:Name="ChartSplitBox" MinWidth="110" MinHeight="26" FontSize="12" Margin="0,0,10,2"
+					ToolTip.Tip="Draw one series per value of this column (up to 8)" />
+		  <TextBlock x:Name="ChartInfoText" Classes="hint" VerticalAlignment="Center" Margin="0,0,0,2" TextTrimming="CharacterEllipsis" />
+		</WrapPanel>
+	  </DockPanel>
+	</Border>
+
 	<!-- The result was cut off at the row limit: fetch more rows, or export every row straight to a file -->
 	<Border x:Name="MoreRowsBar" DockPanel.Dock="Top" IsVisible="False" Margin="0,2,0,4" Padding="8,4" CornerRadius="6"
 			BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" Background="{DynamicResource AppSubtleBackgroundBrush}">
@@ -157,6 +191,10 @@
 	</Border>
 
 	<Panel>
+	<Border x:Name="ChartPanel" IsVisible="False" BorderThickness="1" CornerRadius="6" ClipToBounds="True"
+			BorderBrush="{DynamicResource AppBorderBrush}">
+	  <controls:ChartControl x:Name="ChartView" />
+	</Border>
 	<DataGrid x:Name="PivotGrid" IsVisible="False" IsReadOnly="True" AutoGenerateColumns="False"
 			  CanUserResizeColumns="True" CanUserSortColumns="False" CanUserReorderColumns="False"
 			  SelectionMode="Extended" HeadersVisibility="Column" GridLinesVisibility="All" RowHeight="26">

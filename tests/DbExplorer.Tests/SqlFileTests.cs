@@ -11,6 +11,7 @@ namespace DbExplorer.Tests;
 
 /// <summary>.sql files: encodings kept on save, files changed by other programs, the Recent list, command-line files
 /// and the channel that hands them to the running window.</summary>
+[Collection(nameof(HeadlessUiCollection))]
 public class SqlFileTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "dbx-sqlfile-" + Guid.NewGuid().ToString("N"));

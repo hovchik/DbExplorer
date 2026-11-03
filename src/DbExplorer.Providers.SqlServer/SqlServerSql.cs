@@ -61,7 +61,7 @@ public static class SqlServerSql
         {
             DataSource = p.Port is int port ? $"{p.Host},{port}" : p.Host,
             InitialCatalog = databaseOverride ?? p.Database,
-            IntegratedSecurity = p.IntegratedSecurity,
+            IntegratedSecurity = p.IntegratedSecurity && p.EntraAuth == EntraAuthMode.None,
             TrustServerCertificate = p.TrustServerCertificate,
             Encrypt = p.Encrypt ? SqlConnectionEncryptOption.Mandatory : SqlConnectionEncryptOption.Optional,
             ApplicationName = applicationName,
@@ -70,7 +70,16 @@ public static class SqlServerSql
             MultipleActiveResultSets = false
         };
 
-        if (!p.IntegratedSecurity)
+        if (p.EntraAuth != EntraAuthMode.None)
+        {
+            // The driver signs in with Entra itself (MSAL / Azure.Identity) and caches the token for the process.
+            b.Authentication = EntraMethod(p.EntraAuth);
+            if (p.EntraAuth is EntraAuthMode.Interactive or EntraAuthMode.Password or EntraAuthMode.ServicePrincipal
+                && !string.IsNullOrWhiteSpace(p.UserName))
+                b.UserID = p.UserName.Trim();
+            if (p.EntraAuth is EntraAuthMode.Password or EntraAuthMode.ServicePrincipal) b.Password = p.Password ?? "";
+        }
+        else if (!p.IntegratedSecurity)
         {
             b.UserID = p.UserName ?? "";
             b.Password = p.Password ?? "";
@@ -81,4 +90,16 @@ public static class SqlServerSql
 
         return b.ConnectionString;
     }
+
+    public static SqlAuthenticationMethod EntraMethod(EntraAuthMode mode) => mode switch
+    {
+        EntraAuthMode.Interactive => SqlAuthenticationMethod.ActiveDirectoryInteractive,
+        EntraAuthMode.Integrated => SqlAuthenticationMethod.ActiveDirectoryIntegrated,
+#pragma warning disable CS0618 // Microsoft is retiring the password flow; it is offered for accounts that still allow it.
+        EntraAuthMode.Password => SqlAuthenticationMethod.ActiveDirectoryPassword,
+#pragma warning restore CS0618
+        EntraAuthMode.Default => SqlAuthenticationMethod.ActiveDirectoryDefault,
+        EntraAuthMode.ServicePrincipal => SqlAuthenticationMethod.ActiveDirectoryServicePrincipal,
+        _ => SqlAuthenticationMethod.NotSpecified
+    };
 }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using Dapper;
 using DbExplorer.Core.Abstractions;
+using DbExplorer.Core.Backup;
 using DbExplorer.Core.Connections;
 using DbExplorer.Core.Models;
 using DbExplorer.Core.Search;
@@ -10,7 +11,7 @@ using Microsoft.Data.SqlClient;
 
 namespace DbExplorer.Providers.SqlServer;
 
-public sealed class SqlServerProvider : IDatabaseProvider
+public sealed class SqlServerProvider : IDatabaseProvider, IDatabaseBackupProvider
 {
     private const int MetadataLockTimeoutMs = 5000;
     private const int MetadataCommandTimeoutSeconds = 120;
@@ -40,6 +41,21 @@ public sealed class SqlServerProvider : IDatabaseProvider
     }
 
     public string ProviderKey => SqlServerProviderFactory.ProviderKey;
+
+    public async Task<BackupSupport> GetBackupSupportAsync(string? toolFolder, CancellationToken ct = default) =>
+        SqlServerBackup.Support(await SqlServerBackup.ReadFactsAsync(_profile, ct));
+
+    public Task BackupAsync(BackupRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        SqlServerBackup.BackupAsync(_profile, request, progress, ct);
+
+    public Task<BackupFileInfo> InspectBackupAsync(string path, string? toolFolder, CancellationToken ct = default) =>
+        SqlServerBackup.InspectAsync(_profile, path, ct);
+
+    public Task<string> DescribeRestoreAsync(RestoreRequest request, string? toolFolder, CancellationToken ct = default) =>
+        SqlServerBackup.DescribeRestoreAsync(_profile, request, ct);
+
+    public Task RestoreAsync(RestoreRequest request, string? toolFolder, IProgress<BackupProgress> progress, CancellationToken ct = default) =>
+        SqlServerBackup.RestoreAsync(_profile, request, progress, ct);
 
     public string QuoteIdentifier(string identifier) => SqlServerSql.Quote(identifier);
 

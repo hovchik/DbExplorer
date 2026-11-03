@@ -86,6 +86,12 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
         set => _settings.SetSqlInspections(value);
     }
 
+    public bool InlineResults
+    {
+        get => _settings.InlineResults;
+        set => _settings.SetInlineResults(value);
+    }
+
     // ---- New Query tabs ----
 
     public decimal MaxRowLimit => AppSettingsService.MaxRowLimit;
@@ -289,6 +295,7 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(EditorFontSize));
         OnPropertyChanged(nameof(EditorWordWrap));
         OnPropertyChanged(nameof(SqlInspections));
+        OnPropertyChanged(nameof(InlineResults));
     }
 
     private void OnExperimentChanged(ExperimentalFeature feature) => OnPropertyChanged(feature.ToString());

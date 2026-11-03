@@ -1,3 +1,4 @@
+using DbExplorer.Application.Copy;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -47,6 +48,11 @@ public partial class ActivityViewModel : ViewModelBase, ISessionAware
         IsLoadingTopQueries = false;
         Requests = [];
         TopQueries = [];
+        if (IsFile)
+        {
+            RequestsStatus = "SQLite is a file, not a server: there are no other sessions or running requests to list.";
+            TopQueriesStatus = "SQLite keeps no statement statistics. Use Explain in a Query tab to see how one query runs.";
+        }
         RefreshRequestsCommand.NotifyCanExecuteChanged();
         LoadTopQueriesCommand.NotifyCanExecuteChanged();
     }
@@ -62,7 +68,10 @@ public partial class ActivityViewModel : ViewModelBase, ISessionAware
         if (TopQueries.Count > 0) _ = LoadTopQueriesAsync();
     }
 
-    private bool CanRefresh => _session is not null;
+    /// <summary>SQLite: nothing server-wide to read; the statuses say so.</summary>
+    private bool IsFile => SqlDialect.IsFileEngine(_session?.Provider.ProviderKey);
+
+    private bool CanRefresh => _session is not null && !IsFile;
 
     [RelayCommand(CanExecute = nameof(CanRefresh), AllowConcurrentExecutions = true)]
     private async Task RefreshRequestsAsync()
@@ -91,7 +100,7 @@ public partial class ActivityViewModel : ViewModelBase, ISessionAware
         }
     }
 
-    private bool CanLoadTopQueries => _session is not null && !IsLoadingTopQueries;
+    private bool CanLoadTopQueries => _session is not null && !IsLoadingTopQueries && !IsFile;
 
     [RelayCommand(CanExecute = nameof(CanLoadTopQueries), AllowConcurrentExecutions = true)]
     private async Task LoadTopQueriesAsync()

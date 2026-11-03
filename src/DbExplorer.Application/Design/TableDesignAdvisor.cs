@@ -95,6 +95,14 @@ public static class TableDesignAdvisor
             Add("identity-count", DesignSeverity.Error, "Only one identity column is allowed",
                 provider == SqlDialect.MySqlKey ? "MySQL allows one AUTO_INCREMENT column per table." : "SQL Server allows one IDENTITY column per table.");
 
+        // SQLite numbers a column only when it is the whole primary key (INTEGER PRIMARY KEY AUTOINCREMENT).
+        if (provider == SqlDialect.SqliteKey)
+            foreach (var column in columns.Where(c => c.IsIdentity && !(c.IsPrimaryKey && design.PrimaryKey.Count() == 1)))
+                Add($"identity-key:{column.Name}", DesignSeverity.Error, $"{column.Name} is an identity but not the whole primary key",
+                    "SQLite only numbers a column that is the table's single-column INTEGER PRIMARY KEY.",
+                    "Make it the only primary key column",
+                    d => d with { Columns = d.Columns.Select(c => c with { IsPrimaryKey = TableDesign.Same(c.Name, column.Name), IsNullable = TableDesign.Same(c.Name, column.Name) ? false : c.IsNullable }).ToList() });
+
         // MySQL needs an AUTO_INCREMENT column to lead a key, or the CREATE / ALTER fails.
         if (provider == SqlDialect.MySqlKey)
             foreach (var column in columns.Where(c => c.IsIdentity && !c.IsPrimaryKey &&

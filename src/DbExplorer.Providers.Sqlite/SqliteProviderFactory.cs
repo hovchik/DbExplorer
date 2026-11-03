@@ -25,6 +25,8 @@ public sealed class SqliteProviderFactory : IDatabaseProviderFactory
         return new SqliteProvider(profile);
     }
 
+    public Task CreateDatabaseFileAsync(string path, CancellationToken ct = default) => CreateFileAsync(path, ct);
+
     /// <summary>A file holds one database, which SQLite calls main.</summary>
     public Task<IReadOnlyList<string>> ListDatabasesAsync(ConnectionProfile profile, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<string>>([SqliteSql.Main]);

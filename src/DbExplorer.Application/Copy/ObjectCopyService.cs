@@ -241,6 +241,8 @@ public sealed class ObjectCopyService(DefinitionService definitions, QueryExecut
     public static string MapSchema(string schema, string sourceProviderKey, string targetProviderKey, string? targetDatabase = null) =>
         SqlDialect.SchemaIsDatabase(targetProviderKey) && !string.IsNullOrEmpty(targetDatabase) ? targetDatabase
         : sourceProviderKey == targetProviderKey ? schema
+        // SQLite's only schema is the file's own "main": tables from it land in the target's everyday schema.
+        : sourceProviderKey == SqlDialect.SqliteKey && Same(schema, "main") ? Design.TableScriptBuilder.DefaultSchema(targetProviderKey, targetDatabase)
         : targetProviderKey == SqlDialect.SqlServerKey && Same(schema, "public") ? "dbo"
         : targetProviderKey == SqlDialect.PostgresKey && Same(schema, "dbo") ? "public"
         : schema;

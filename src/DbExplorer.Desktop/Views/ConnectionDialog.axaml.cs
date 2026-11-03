@@ -67,6 +67,61 @@ public partial class ConnectionDialog : Window
         set { if (value) Tabs.SelectedIndex = 1; }
     }
 
+    private static readonly FilePickerFileType SqliteFiles = new("SQLite database")
+    {
+        Patterns = ["*.db", "*.sqlite", "*.sqlite3", "*.db3", "*.s3db", "*.sl3"]
+    };
+
+    /// <summary>The folder of the file already chosen, so the picker opens next to it.</summary>
+    private async Task<IStorageFolder?> CurrentFolderAsync()
+    {
+        var folder = _vm is { Host: { Length: > 0 } host } ? Path.GetDirectoryName(host.Trim().Trim('"')) : null;
+        return !string.IsNullOrEmpty(folder) && Directory.Exists(folder) ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
+    }
+
+    private async void OnBrowseFile(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open a SQLite database",
+            AllowMultiple = false,
+            FileTypeFilter = [SqliteFiles, FilePickerFileTypes.All],
+            SuggestedStartLocation = await CurrentFolderAsync()
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path)
+        {
+            _vm.Host = path;
+            if (string.IsNullOrWhiteSpace(_vm.Name)) _vm.Name = Path.GetFileNameWithoutExtension(path);
+        }
+    }
+
+    private async void OnNewFile(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Create a SQLite database",
+            DefaultExtension = "db",
+            SuggestedFileName = string.IsNullOrWhiteSpace(_vm.Name) ? "database.db" : _vm.Name.Trim() + ".db",
+            FileTypeChoices = [SqliteFiles],
+            ShowOverwritePrompt = true,
+            SuggestedStartLocation = await CurrentFolderAsync()
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        // The picker asked before overwriting: an existing file is replaced by an empty database.
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _vm.Message = "✗ " + ex.Message;
+            return;
+        }
+        await _vm.CreateFileAsync(path);
+    }
+
     private async void OnBrowseKey(object? sender, RoutedEventArgs e)
     {
         if (_vm is null) return;

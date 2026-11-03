@@ -53,6 +53,7 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
     public static ConnectionFailure Classify(Exception error, ConnectionProfile? profile = null)
     {
         var detail = DetailOf(error);
+        if (FileFailure(error, detail) is { } file) return file;
         var kind = KindOf(error);
         var host = string.IsNullOrWhiteSpace(profile?.Host) ? "the server" : $"\"{profile!.Host.Trim()}\"";
         var endpoint = profile is null || string.IsNullOrWhiteSpace(profile.Host)
@@ -83,6 +84,25 @@ public sealed record ConnectionFailure(ConnectionFailureKind Kind, string Title,
             ConnectionFailureKind.Ssh => new(kind, "SSH tunnel failed", "", detail),
             _ => new(kind, "Connection failed", "", detail)
         };
+    }
+
+    /// <summary>SQLite: the connection is a file, so a failure is about the path, the file's permissions or its content.</summary>
+    private static ConnectionFailure? FileFailure(Exception error, string detail)
+    {
+        for (var e = error; e is not null; e = e.InnerException)
+        {
+            if (e is FileNotFoundException)
+                return new(ConnectionFailureKind.DatabaseMissing, "Database file not found",
+                    "Check the path, or create an empty database with New file… in the connection settings.", detail);
+            if (e.GetType().Name != "SqliteException") continue;
+            if (Mentions(e.Message, "file is not a database", "file is encrypted"))
+                return new(ConnectionFailureKind.Other, "Not a SQLite database",
+                    "The file exists but is not a SQLite 3 database, or it is encrypted (SQLCipher), which the app can't open.", detail);
+            if (Mentions(e.Message, "unable to open database file", "attempt to write a readonly database"))
+                return new(ConnectionFailureKind.Other, "Can't open the database file",
+                    "Check that you may read and write the file and its folder, or tick Read-only to open it without writing.", detail);
+        }
+        return null;
     }
 
     /// <summary>The most useful message in the chain: the SSH explanation, or the outermost driver message.</summary>

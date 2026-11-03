@@ -1,3 +1,4 @@
+using DbExplorer.Application.Copy;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -154,8 +155,15 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
         BlockingTree = [];
         ClearRecording();
         RecorderStatus = "Turn on auto-refresh to record: blocking seen by any refresh is kept for replay.";
+        if (IsFile) Status = FileNote;
         RefreshCommand.NotifyCanExecuteChanged();
     }
+
+    /// <summary>SQLite: a file has no sessions and locks to list, so the tab explains that instead of failing.</summary>
+    private bool IsFile => SqlDialect.IsFileEngine(_session?.Provider.ProviderKey);
+
+    private const string FileNote =
+        "SQLite is a file, not a server: there are no other sessions or row locks to list. A writer locks the whole file while it commits.";
 
     partial void OnAutoRefreshChanged(bool value)
     {
@@ -167,7 +175,7 @@ public partial class LocksViewModel : ViewModelBase, ISessionAware
 
     partial void OnBlockingOnlyChanged(bool value) => ApplyFilter();
 
-    private bool CanRefresh => _session is not null;
+    private bool CanRefresh => _session is not null && !IsFile;
 
     [RelayCommand(CanExecute = nameof(CanRefresh), AllowConcurrentExecutions = true)]
     private async Task RefreshAsync()

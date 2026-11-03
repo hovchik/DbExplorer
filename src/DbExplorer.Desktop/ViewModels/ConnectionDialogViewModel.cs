@@ -251,6 +251,10 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [ObservableProperty] private bool _isBusy;
 
     public string PortHint => $"default {SelectedProvider.DefaultPort}";
+
+    /// <summary>SQLite: the connection is a file. Host holds its path; port, sign-in, TLS and SSH are hidden.</summary>
+    public bool IsFileEngine => SelectedProvider.IsFileBased;
+    public bool IsServerEngine => !IsFileEngine;
     public bool CanUseIntegratedSecurity => SelectedProvider.SupportsIntegratedSecurity;
     public bool CanUseReadOnlyIntent => SelectedProvider.SupportsReadOnlyIntent;
 
@@ -261,6 +265,10 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         OnPropertyChanged(nameof(PortHint));
         OnPropertyChanged(nameof(CanUseIntegratedSecurity));
         OnPropertyChanged(nameof(CanUseReadOnlyIntent));
+        OnPropertyChanged(nameof(IsFileEngine));
+        OnPropertyChanged(nameof(IsServerEngine));
+        // A server name means nothing as a file path, and the reverse.
+        if (value.IsFileBased && !_fillingFromConnectionString && Host.Trim() == "localhost") Host = "";
         Databases.Clear();
     }
 
@@ -346,9 +354,36 @@ public partial class ConnectionDialogViewModel : ViewModelBase
         }
     }
 
+    /// <summary>File-based engines: makes an empty database at <paramref name="path"/> and points the connection at it.</summary>
+    public async Task CreateFileAsync(string path)
+    {
+        IsBusy = true;
+        try
+        {
+            await SelectedProvider.CreateDatabaseFileAsync(path);
+            Host = path;
+            if (string.IsNullOrWhiteSpace(Name)) Name = Path.GetFileNameWithoutExtension(path);
+            Message = $"✓ Created {Path.GetFileName(path)}. Save to keep the connection.";
+        }
+        catch (Exception ex)
+        {
+            Message = "✗ " + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     [RelayCommand]
     private void Save()
     {
+        if (IsFileEngine)
+        {
+            if (string.IsNullOrWhiteSpace(Host)) { Message = "Choose the database file, or make one with New file…"; return; }
+            CloseRequested?.Invoke(true);
+            return;
+        }
         if (string.IsNullOrWhiteSpace(Host)) { Message = "Host is required."; return; }
         if (!string.IsNullOrWhiteSpace(Port) && !(int.TryParse(Port, out var port) && port is > 0 and <= 65535))
         { Message = "Port must be a number from 1 to 65535 (or empty for the default)."; return; }
@@ -366,7 +401,7 @@ public partial class ConnectionDialogViewModel : ViewModelBase
     [RelayCommand]
     private void Cancel() => CloseRequested?.Invoke(false);
 
-    public ConnectionProfile ToProfile() => new()
+    public ConnectionProfile ToProfile() => IsFileEngine ? ToFileProfile() : new()
     {
         Id = _id,
         Name = string.IsNullOrWhiteSpace(Name) ? $"{Host.Trim()}/{Database.Trim()}" : Name.Trim(),
@@ -396,4 +431,22 @@ public partial class ConnectionDialogViewModel : ViewModelBase
             Passphrase = string.IsNullOrEmpty(SshPassphrase) ? null : SshPassphrase
         }
     };
+
+    /// <summary>A file connection: the path in Host (quotes from a pasted path dropped), named after the file by default.</summary>
+    private ConnectionProfile ToFileProfile()
+    {
+        var path = Host.Trim().Trim('"', '\'');
+        return new ConnectionProfile
+        {
+            Id = _id,
+            Name = string.IsNullOrWhiteSpace(Name) ? (Path.GetFileNameWithoutExtension(path) is { Length: > 0 } n ? n : path) : Name.Trim(),
+            Folder = ConnectionFolders.Normalize(Folder),
+            ProviderKey = SelectedProvider.Key,
+            Host = path,
+            ReadOnly = ReadOnly,
+            Environment = Environment,
+            TrustServerCertificate = false,
+            ReadOnlyIntent = false
+        };
+    }
 }

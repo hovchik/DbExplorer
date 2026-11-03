@@ -38,6 +38,7 @@ public sealed partial class PlanViewModel : ObservableObject
     {
         "SqlServer" => "sqlplan",
         "MySql" when !Plan.Raw.TrimStart().StartsWith('{') => "txt",
+        "Sqlite" => "txt",
         _ => "json"
     };
 

@@ -83,7 +83,7 @@
       <TextBlock Classes="field" Text="Connection string or URL" />
       <Grid ColumnDefinitions="*,8,Auto">
         <TextBox x:Name="ConnectionStringBox" Grid.Column="0" Text="{Binding ConnectionStringText}" FontSize="12"
-                 Watermark="Paste a URL (postgresql://, mysql://, jdbc:…) or Server=…;Database=…"
+                 Watermark="Paste a URL (postgresql://, mysql://, sqlite:///, jdbc:…) or Server=…;Database=…"
                  ToolTip.Tip="Fills in the engine, server, port, database, user, password and TLS settings below. Nothing connects until you press Test or Save." />
         <Button Grid.Column="2" Content="Fill in" Command="{Binding FillFromConnectionStringCommand}" />
       </Grid>
@@ -119,7 +119,8 @@
       </Grid>
 
       <!-- Server -->
-      <TextBlock Classes="section" Text="Server" />
+      <TextBlock Classes="section" Text="Server" IsVisible="{Binding IsServerEngine}" />
+      <TextBlock Classes="section" Text="Database file" IsVisible="{Binding IsFileEngine}" />
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="195,12,*,12,112">
           <StackPanel Grid.Column="0">
@@ -127,16 +128,28 @@
             <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Providers}"
                       SelectedItem="{Binding SelectedProvider}" DisplayMemberBinding="{Binding DisplayName}" />
           </StackPanel>
-          <StackPanel Grid.Column="2">
+          <StackPanel Grid.Column="2" IsVisible="{Binding IsServerEngine}">
             <TextBlock Classes="field" Text="Host" />
             <TextBox Text="{Binding Host}" Watermark="{Binding HostHint}" />
           </StackPanel>
-          <StackPanel Grid.Column="4">
+          <StackPanel Grid.Column="4" IsVisible="{Binding IsServerEngine}">
             <TextBlock Classes="field" Text="Port" />
             <TextBox Text="{Binding Port}" Watermark="{Binding PortHint}" />
           </StackPanel>
+          <!-- SQLite: a file instead of a server -->
+          <StackPanel Grid.Column="2" Grid.ColumnSpan="3" IsVisible="{Binding IsFileEngine}">
+            <TextBlock Classes="field" Text="File" />
+            <Grid ColumnDefinitions="*,6,Auto,6,Auto">
+              <TextBox Grid.Column="0" x:Name="FileBox" Text="{Binding Host}" Watermark="path to a .db, .sqlite or .sqlite3 file"
+                       ToolTip.Tip="The SQLite database file. The app never creates it by accident: use New file… for an empty database." />
+              <Button Grid.Column="2" Content="Browse…" Click="OnBrowseFile" ToolTip.Tip="Open an existing SQLite database file" />
+              <Button Grid.Column="4" Content="New file…" Click="OnNewFile" ToolTip.Tip="Create an empty SQLite database file" />
+            </Grid>
+          </StackPanel>
         </Grid>
-        <StackPanel>
+        <TextBlock Classes="hint" TextWrapping="Wrap" FontSize="12" IsVisible="{Binding IsFileEngine}"
+                   Text="SQLite keeps the whole database in this one file. There is no server, sign-in or encryption to set up; foreign keys are enforced." />
+        <StackPanel IsVisible="{Binding IsServerEngine}">
           <TextBlock Classes="field" Text="Database" />
           <TextBox x:Name="DatabaseBox" Text="{Binding Database}" Watermark="server default if empty">
             <TextBox.InnerRightContent>
@@ -162,8 +175,8 @@
       </StackPanel>
 
       <!-- Sign-in -->
-      <TextBlock Classes="section" Text="Sign-in" />
-      <StackPanel Spacing="8">
+      <TextBlock Classes="section" Text="Sign-in" IsVisible="{Binding IsServerEngine}" />
+      <StackPanel Spacing="8" IsVisible="{Binding IsServerEngine}">
         <CheckBox Content="Integrated security (Windows / Kerberos)"
                   IsChecked="{Binding IntegratedSecurity}" IsEnabled="{Binding CanUseIntegratedSecurity}" />
         <Grid ColumnDefinitions="*,12,*" IsEnabled="{Binding !IntegratedSecurity}">
@@ -189,23 +202,26 @@
       <!-- Options -->
       <TextBlock Classes="section" Text="Options" />
       <WrapPanel>
-        <CheckBox Content="Encrypt (TLS)" IsChecked="{Binding Encrypt}" Margin="0,0,14,4"
+        <CheckBox Content="Encrypt (TLS)" IsChecked="{Binding Encrypt}" Margin="0,0,14,4" IsVisible="{Binding IsServerEngine}"
                   ToolTip.Tip="Require an encrypted SSL/TLS connection. On by default for servers on another computer." />
-        <CheckBox Content="Trust certificate" IsChecked="{Binding TrustServerCertificate}" Margin="0,0,14,4"
+        <CheckBox Content="Trust certificate" IsChecked="{Binding TrustServerCertificate}" Margin="0,0,14,4" IsVisible="{Binding IsServerEngine}"
                   ToolTip.Tip="Accept any server certificate without checking it (self-signed certificates). Encrypts, but does not stop someone in between from reading the traffic." />
         <CheckBox Content="Read-only intent" IsChecked="{Binding ReadOnlyIntent}" IsEnabled="{Binding CanUseReadOnlyIntent}"
+                  IsVisible="{Binding IsServerEngine}"
                   Margin="0,0,14,4"
                   ToolTip.Tip="ApplicationIntent=ReadOnly: Availability Group listeners route the app to a readable secondary" />
         <CheckBox Content="Read-only (block writes)" IsChecked="{Binding ReadOnly}" Margin="0,0,14,4"
-                  ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only." />
+                  ToolTip.Tip="Nothing that changes data or schema runs on this connection: write scripts, result edits, table creation, copies and procedures are refused. PostgreSQL also opens its sessions read-only, and SQLite opens the file read-only." />
       </WrapPanel>
-      <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding TlsSummary}" />
-      <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12" IsVisible="{Binding HasTlsWarning}"
-                 Foreground="{DynamicResource AppPlanWarningBrush}" Text="{Binding TlsWarning, StringFormat='⚠ {0}'}" />
+      <StackPanel IsVisible="{Binding IsServerEngine}">
+        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding TlsSummary}" />
+        <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12" IsVisible="{Binding HasTlsWarning}"
+                   Foreground="{DynamicResource AppPlanWarningBrush}" Text="{Binding TlsWarning, StringFormat='⚠ {0}'}" />
+      </StackPanel>
     </StackPanel>
     </TabItem>
 
-    <TabItem>
+    <TabItem IsVisible="{Binding IsServerEngine}">
       <TabItem.Header>
         <StackPanel Orientation="Horizontal" Spacing="6">
           <TextBlock Text="SSH" />

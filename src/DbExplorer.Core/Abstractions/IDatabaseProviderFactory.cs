@@ -17,6 +17,10 @@ public interface IDatabaseProviderFactory
     /// </summary>
     bool IsFileBased => false;
 
+    /// <summary>File-based engines: creates an empty database file at <paramref name="path"/>.</summary>
+    Task CreateDatabaseFileAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException($"{DisplayName} databases live on a server, not in a file.");
+
     IDatabaseProvider Create(ConnectionProfile profile);
 
     Task<IReadOnlyList<string>> ListDatabasesAsync(ConnectionProfile profile, CancellationToken ct = default);

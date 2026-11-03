@@ -35,6 +35,8 @@ public static class DefaultTranslator
         var toPostgres = targetProviderKey == SqlDialect.PostgresKey;
         var toMySql = targetProviderKey == SqlDialect.MySqlKey;
 
+        if (targetProviderKey == SqlDialect.SqliteKey) return ToSqlite(core, lower);
+
         if (Number.IsMatch(core))
         {
             if (target is "boolean" or "bool") return core == "0" ? "FALSE" : "TRUE";
@@ -65,6 +67,23 @@ public static class DefaultTranslator
             "newid()" or "newsequentialid()" => toPostgres ? "gen_random_uuid()" : toMySql ? "(UUID())" : null,
             "gen_random_uuid()" or "uuid_generate_v4()" => toPostgres ? null : toMySql ? "(UUID())" : "NEWID()",
             "uuid()" => toPostgres ? "gen_random_uuid()" : toMySql ? null : "NEWID()",
+            _ => null
+        };
+    }
+
+    /// <summary>SQLite takes literals and its three clock keywords as they are; anything else would need brackets and
+    /// one of its own functions, so it is dropped (and reported) like other untranslatable defaults.</summary>
+    private static string? ToSqlite(string core, string lower)
+    {
+        if (Number.IsMatch(core)) return core;
+        if (lower is "true" or "false") return lower == "true" ? "1" : "0";
+        if (Text.Match(core) is { Success: true } text) return $"'{text.Groups[1].Value}'";
+        return lower switch
+        {
+            "getdate()" or "sysdatetime()" or "current_timestamp" or "now()" or "localtimestamp" or "localtimestamp()"
+                or "transaction_timestamp()" or "getutcdate()" or "sysutcdatetime()" or "utc_timestamp()" or "sysdatetimeoffset()" => "CURRENT_TIMESTAMP",
+            "current_date" or "curdate()" => "CURRENT_DATE",
+            "current_time" or "curtime()" => "CURRENT_TIME",
             _ => null
         };
     }

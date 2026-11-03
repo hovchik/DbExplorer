@@ -162,6 +162,12 @@ public partial class MainWindowViewModel
             Command("Comparer", "Compare data", Comparer.CompareDataCommand, keywords: "diff rows");
             Command("Locks", "Refresh locks", Locks.RefreshCommand, keywords: "blocking");
             Command("Activity", "Refresh activity", Activity.RefreshRequestsCommand, keywords: "sessions requests");
+            if (Jobs.NewJobCommand.CanExecute(null))
+                Add("Jobs", "New scheduled job…", () =>
+                {
+                    SelectedTab = AppTab.Jobs;
+                    Jobs.NewJobCommand.Execute(null);
+                }, keywords: "agent cron schedule event create", id: "new-job");
         }
         Command("ER model", "New ER model", ErModel.NewModelCommand, keywords: "diagram design");
         Command("ER model", "Open ER model…", ErModel.OpenModelCommand, keywords: "dbxmodel file");

@@ -49,6 +49,20 @@ public class TabDatabaseMemoryTests : IDisposable
     }
 
     [Fact]
+    public void Peeking_shows_the_database_to_start_in_without_using_it_up()
+    {
+        var memory = new TabDatabaseMemory { Pending = "Legacy" };
+        memory.Remember(Sales, "SalesDb");
+
+        Assert.Equal("SalesDb", memory.Peek(Sales));
+        Assert.Equal("Legacy", memory.Peek(Reporting));
+        Assert.Equal("Legacy", memory.Peek(null));
+        // Still there for the connection that opens first.
+        Assert.Equal("Legacy", memory.Resolve(Reporting, out _));
+        Assert.Null(memory.Peek(Reporting));
+    }
+
+    [Fact]
     public void Forgetting_with_null_returns_to_the_default()
     {
         var memory = new TabDatabaseMemory();

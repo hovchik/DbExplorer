@@ -35,6 +35,14 @@ public sealed class TabDatabaseMemory
         return string.IsNullOrWhiteSpace(pending) ? null : pending;
     }
 
+    /// <summary>
+    /// The database the tab will start in on <paramref name="connectionId"/>, without using up <see cref="Pending"/>:
+    /// what a tab shows while that connection is not open yet (just restarted, waiting for "Connect to …").
+    /// </summary>
+    public string? Peek(Guid? connectionId) =>
+        connectionId is { } id && _byConnection.TryGetValue(id, out var db) ? db
+        : string.IsNullOrWhiteSpace(Pending) ? null : Pending;
+
     /// <summary>Remembers <paramref name="database"/> for <paramref name="connectionId"/>; null or blank forgets it.</summary>
     public void Remember(Guid connectionId, string? database)
     {

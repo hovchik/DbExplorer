@@ -240,6 +240,56 @@ public class MultipleConnectionsTests : IDisposable
         Assert.Same(shop, older.AttachedSession);
     }
 
+    /// <summary>Regression: after a restart the tabs showed "(connection default)" until (and unless) their connection
+    /// opened again, so the database they were in looked lost.</summary>
+    [AvaloniaFact]
+    public async Task Restored_tabs_show_their_database_before_the_connection_opens_and_run_there_once_it_does()
+    {
+        var (provider, workspace, open) = Workspace();
+        await using var _ = provider;
+        var shop = Session("Shop", "Shop", Table("Orders", "Sales"), Table("Customers"), Table("Totals", "Reports"));
+        var reports = Session("Reports", "Reports");
+        await provider.GetRequiredService<ScriptStore>().SaveTabsAsync(
+        [
+            new QueryTabState { Title = "Sales", Sql = "SELECT 1", ConnectionId = shop.Profile.Id, Database = "Sales",
+                Databases = new() { [shop.Profile.Id] = "Sales", [reports.Profile.Id] = "Archive" } },
+            new QueryTabState { Title = "Reports", Sql = "SELECT 2", ConnectionId = shop.Profile.Id, Database = "Reports",
+                Databases = new() { [shop.Profile.Id] = "Reports" } },
+            new QueryTabState { Title = "Older file", Sql = "SELECT 3", Database = "Sales" }
+        ]);
+        await workspace.RestoreTabsAsync();
+        workspace.Profiles = [shop.Profile, reports.Profile];
+        var (sales, onReports, older) = (workspace.Documents[0], workspace.Documents[1], workspace.Documents[2]);
+
+        // Nothing open yet: each tab already shows the database it will run in.
+        Assert.Equal(["Sales", "Reports", "Sales"], workspace.Documents.Select(d => d.CurrentDatabase));
+        Assert.Equal(["Sales"], sales.AvailableDatabases);
+        Assert.False(sales.CanChangeDatabase);
+        // Saved again before the connection opens (autosave, closing at once): nothing is lost.
+        Assert.True(await workspace.SaveTabsAsync());
+        var saved = await provider.GetRequiredService<ScriptStore>().LoadTabsAsync();
+        Assert.Equal(["Sales", "Reports", "Sales"], saved.Select(t => t.Database));
+        Assert.Equal("Archive", saved[0].Databases![reports.Profile.Id]);
+
+        Open(workspace, open, shop);
+        Assert.Equal(["Sales", "Reports", "Sales"], workspace.Documents.Select(d => d.CurrentDatabase));
+        Assert.All(workspace.Documents, d => Assert.Same(shop, d.AttachedSession));
+        Assert.Equal(shop.Profile.Id, older.ConnectionId);
+
+        // Moved to a connection that is not open: it shows the database it used there before, or the default.
+        workspace.BindTab(sales, reports.Profile);
+        Assert.Null(sales.AttachedSession);
+        Assert.Equal("Archive", sales.CurrentDatabase);
+        workspace.BindTab(onReports, reports.Profile);
+        Assert.Null(onReports.CurrentDatabase);
+
+        // Its own connection closing keeps the database on screen.
+        open.Remove(shop);
+        workspace.Attach(null);
+        Assert.Null(older.AttachedSession);
+        Assert.Equal("Sales", older.CurrentDatabase);
+    }
+
     [AvaloniaFact]
     public async Task A_tab_with_an_open_transaction_cannot_move_to_another_connection()
     {

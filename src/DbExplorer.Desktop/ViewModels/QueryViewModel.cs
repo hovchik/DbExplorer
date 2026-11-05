@@ -245,11 +245,14 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     }
 
     /// <summary>Connects the tab to <paramref name="session"/>. It starts in the database it last used on that connection
-    /// (see <see cref="Databases"/>), otherwise in the connection's database. Detached, it keeps showing its database.</summary>
+    /// (see <see cref="Databases"/>), otherwise in the connection's database. Detached, it keeps showing its database; not
+    /// attached yet (restored at start, moved to a closed connection), it shows the one it will start in.</summary>
     public void Attach(DatabaseSession? session)
     {
         var remembered = false;
         var preferredDatabase = session is null ? null : Databases.Resolve(session.Profile.Id, out remembered);
+        // Closing the tab's own connection (disconnect, shutdown) keeps the database on screen as it is.
+        var closingOwnConnection = session is null && _session is { } previous && previous.Profile.Id == ConnectionId;
         if (!ReferenceEquals(session, _session))
         {
             // A statement still running belongs to the old connection: stop it (its results are discarded, see EnsureCurrent).
@@ -288,7 +291,10 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         DatabaseWarning = "";
         if (session is null)
         {
-            // Disconnected (or the app is closing): the tab still shows, and saves, the database it was in.
+            // Disconnected (or the app is closing): the tab still shows, and saves, the database it was in. Restored at
+            // start, or moved to a connection that is not open, it shows the one it will use there once that connection
+            // opens, instead of "(connection default)" until then.
+            if (!closingOwnConnection) CurrentDatabase = NullIfEmpty(Databases.Peek(ConnectionId));
             AvailableDatabases = MergeNames([CurrentDatabase]);
         }
         else

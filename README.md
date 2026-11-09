@@ -122,7 +122,7 @@ Windows is the supported platform for this release. The Linux and macOS builds a
 | Anywhere | Ctrl+K or Ctrl+P command palette, Ctrl+, preferences |
 | Query tabs | Ctrl+N new, Ctrl+O open, Ctrl+S save (Ctrl+Shift+S save as), Ctrl+W close, Ctrl+PgUp / Ctrl+PgDn switch, Ctrl+Shift+PgUp / PgDn move |
 | Running | F5 or Ctrl+E run the script (or the selection), Ctrl+Enter run the statement at the caret, Ctrl+L estimated plan, Ctrl+Shift+L actual plan |
-| Editing | Ctrl+Space completion, Ctrl+Shift+F format, Ctrl+/ comment, Ctrl+D duplicate line, Alt+Up / Alt+Down move lines, Ctrl+Shift+U / Ctrl+Alt+U upper / lower case, Ctrl+G go to line, Ctrl+H replace, F12 go to definition, Alt+Enter quick fixes, F8 next warning |
+| Editing | Ctrl+Space completion, Ctrl+Shift+F format (Ctrl+Alt+F the statement at the caret, Ctrl+Alt+Shift+F join into one line; style in Preferences › SQL formatting), Ctrl+/ comment, Ctrl+D duplicate line, Alt+Up / Alt+Down move lines, Ctrl+Shift+U / Ctrl+Alt+U upper / lower case, Ctrl+G go to line, Ctrl+H replace, F12 go to definition, Alt+Enter quick fixes, F8 next warning |
 | Several carets | Ctrl+Alt+Click add a caret, Alt+J next occurrence, Ctrl+Alt+Shift+J all occurrences, Alt+drag or Alt+Shift+arrows box selection, Esc back to one |
 | View | Ctrl+wheel or Ctrl+= / Ctrl+- / Ctrl+0 zoom, Alt+Z word wrap, Ctrl+Shift+Up / Down resize editor and results |
 | Result grids | Ctrl+C copy (Ctrl+Shift+C with header), F2 edit or open the cell's text, Ctrl+S commit edits, Alt+Insert add row, Ctrl+Delete delete rows |

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbExplorer.Application;
 using DbExplorer.Application.Assistant;
+using DbExplorer.Application.Query;
 using DbExplorer.Application.Updates;
 using DbExplorer.Core.Models;
 using DbExplorer.Desktop.Services;
@@ -91,6 +92,98 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
         get => _settings.InlineResults;
         set => _settings.SetInlineResults(value);
     }
+
+    // ---- SQL formatting ----
+
+    /// <summary>The window's name for the SQL formatting section (Query tab › Tools › Formatting options… scrolls to it).</summary>
+    public const string FormattingSection = "FormattingSection";
+
+    /// <summary>A choice in one of the formatting drop-downs.</summary>
+    public sealed record Choice<T>(T Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    public IReadOnlyList<Choice<SqlKeywordCase>> KeywordCases { get; } =
+    [
+        new(SqlKeywordCase.Upper, "UPPER CASE"), new(SqlKeywordCase.Lower, "lower case"), new(SqlKeywordCase.AsTyped, "As typed")
+    ];
+
+    /// <summary>Indent sizes; 0 stands for a tab.</summary>
+    public IReadOnlyList<Choice<int>> Indents { get; } =
+    [
+        new(2, "2 spaces"), new(4, "4 spaces"), new(8, "8 spaces"), new(0, "Tab")
+    ];
+
+    public IReadOnlyList<Choice<SqlCommaStyle>> CommaStyles { get; } =
+    [
+        new(SqlCommaStyle.EndOfLine, "At the end of the line"), new(SqlCommaStyle.StartOfLine, "At the start of the next line")
+    ];
+
+    private SqlFormatOptions Format => _settings.SqlFormat;
+
+    private void SetFormat(SqlFormatOptions options)
+    {
+        _settings.SetSqlFormat(options);
+        OnFormatChanged();
+    }
+
+    private void OnFormatChanged()
+    {
+        OnPropertyChanged(nameof(KeywordCase));
+        OnPropertyChanged(nameof(Indent));
+        OnPropertyChanged(nameof(CommaStyle));
+        OnPropertyChanged(nameof(OneItemPerLine));
+        OnPropertyChanged(nameof(BreakAndOr));
+        OnPropertyChanged(nameof(CompactShortExpressions));
+        OnPropertyChanged(nameof(FormatPreview));
+    }
+
+    public Choice<SqlKeywordCase> KeywordCase
+    {
+        get => KeywordCases.First(c => c.Value == Format.KeywordCase);
+        set { if (value is not null) SetFormat(Format with { KeywordCase = value.Value }); }
+    }
+
+    public Choice<int> Indent
+    {
+        get => Indents.FirstOrDefault(c => Format.UseTabs ? c.Value == 0 : c.Value == Format.IndentSize)
+               ?? new Choice<int>(Format.IndentSize, $"{Format.IndentSize} spaces");
+        set { if (value is not null) SetFormat(value.Value == 0 ? Format with { UseTabs = true } : Format with { UseTabs = false, IndentSize = value.Value }); }
+    }
+
+    public Choice<SqlCommaStyle> CommaStyle
+    {
+        get => CommaStyles.First(c => c.Value == Format.Commas);
+        set { if (value is not null) SetFormat(Format with { Commas = value.Value }); }
+    }
+
+    public bool OneItemPerLine
+    {
+        get => Format.OneItemPerLine;
+        set => SetFormat(Format with { OneItemPerLine = value });
+    }
+
+    public bool BreakAndOr
+    {
+        get => Format.BreakAndOr;
+        set => SetFormat(Format with { BreakAndOr = value });
+    }
+
+    public bool CompactShortExpressions
+    {
+        get => Format.CompactShortExpressions;
+        set => SetFormat(Format with { CompactShortExpressions = value });
+    }
+
+    /// <summary>A sample query laid out with the chosen style, under the options.</summary>
+    public string FormatPreview => SqlFormatter.Format(PreviewSql, Format).Replace("\t", "    ");
+
+    internal const string PreviewSql =
+        "with recent as (select customer_id, max(ordered_at) as last_order from orders group by customer_id) " +
+        "select c.id, c.name, case when r.last_order is null then 'never' when r.last_order < now() - interval '1 year' then 'lapsed' else 'active' end as status " +
+        "from customers c left join recent r on r.customer_id = c.id " +
+        "where c.country in ('AM', 'FR') and c.deleted_at is null order by c.name";
 
     // ---- New Query tabs ----
 
@@ -279,13 +372,14 @@ public sealed partial class PreferencesViewModel : ViewModelBase, IDisposable
     private async Task ResetAsync()
     {
         if (!await _dialogs.ConfirmAsync(
-                "Put every preference back to its default? Theme, editor zoom and wrap, SQL warnings, new tab defaults, " +
+                "Put every preference back to its default? Theme, editor zoom and wrap, SQL warnings, SQL formatting, new tab defaults, " +
                 "notifications, start-up, updates, rendering and the experimental features are reset. Connections, saved queries, " +
                 "snippets and the AI key are kept.",
                 "Reset")) return;
         _settings.ResetPreferences();
         _lastNotifySeconds = AppSettingsService.DefaultLongRunNotifySeconds;
         OnPropertyChanged(string.Empty);
+        OnFormatChanged();
     }
 
     private void OnThemeChanged(AppThemeMode _) => OnPropertyChanged(nameof(Theme));

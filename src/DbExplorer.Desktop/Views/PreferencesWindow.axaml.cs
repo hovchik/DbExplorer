@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace DbExplorer.Desktop.Views;
 
@@ -15,6 +16,17 @@ public partial class PreferencesWindow : Window
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
+
+    /// <summary>Selects a section in the list (which scrolls to it) once the page is laid out.</summary>
+    public void ShowSection(string name) => Dispatcher.UIThread.Post(() =>
+    {
+        foreach (var item in SectionList.Items.OfType<ListBoxItem>())
+            if (item.Tag as string == name)
+            {
+                SectionList.SelectedItem = null;
+                SectionList.SelectedItem = item;
+            }
+    }, DispatcherPriority.Loaded);
 
     /// <summary>A click in the section list scrolls that section to the top of the page.</summary>
     private void OnSectionSelected(object? sender, SelectionChangedEventArgs e)

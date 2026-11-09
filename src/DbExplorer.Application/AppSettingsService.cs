@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DbExplorer.Application.Query;
 using DbExplorer.Core.Models;
 
 namespace DbExplorer.Application;
@@ -44,6 +45,7 @@ public sealed class AppSettingsService
         DefaultRowLimit = ClampRowLimit(stored.DefaultRowLimit ?? DefaultRowLimitValue);
         DefaultAutoCommit = !stored.DefaultAutoCommitOff;
         LongRunNotifySeconds = ClampNotifySeconds(stored.LongRunNotifySeconds ?? DefaultLongRunNotifySeconds);
+        SqlFormat = (stored.SqlFormat ?? SqlFormatOptions.Default).Normalized();
         _backupToolFolders = new Dictionary<string, string>(stored.BackupToolFolders ?? [], StringComparer.OrdinalIgnoreCase);
         LastBackupFolder = stored.LastBackupFolder;
         CheckForUpdates = !stored.UpdateCheckOff;
@@ -150,6 +152,17 @@ public sealed class AppSettingsService
 
     public static int ClampNotifySeconds(int seconds) => Math.Clamp(seconds, 0, MaxLongRunNotifySeconds);
 
+    /// <summary>The SQL formatter's style (Format, Ctrl+Shift+F), the same in every Query tab.</summary>
+    public SqlFormatOptions SqlFormat { get; private set; }
+
+    public void SetSqlFormat(SqlFormatOptions options)
+    {
+        options = options.Normalized();
+        if (SqlFormat == options) return;
+        SqlFormat = options;
+        Save();
+    }
+
     /// <summary>Whether DB Explorer looks for a newer release on GitHub at start-up (at most once a day).</summary>
     public bool CheckForUpdates { get; private set; }
 
@@ -205,6 +218,7 @@ public sealed class AppSettingsService
         DefaultRowLimit = DefaultRowLimitValue;
         DefaultAutoCommit = true;
         LongRunNotifySeconds = DefaultLongRunNotifySeconds;
+        SqlFormat = SqlFormatOptions.Default;
         ReconnectOnStart = true;
         SoftwareRendering = false;
         CheckForUpdates = true;
@@ -368,6 +382,7 @@ public sealed class AppSettingsService
                 DefaultRowLimit = DefaultRowLimit == DefaultRowLimitValue ? null : DefaultRowLimit,
                 DefaultAutoCommitOff = !DefaultAutoCommit,
                 LongRunNotifySeconds = LongRunNotifySeconds == DefaultLongRunNotifySeconds ? null : LongRunNotifySeconds,
+                SqlFormat = SqlFormat == SqlFormatOptions.Default ? null : SqlFormat,
                 UpdateCheckOff = !CheckForUpdates,
                 PreReleaseUpdates = IncludePreReleaseUpdates,
                 LastUpdateCheck = LastUpdateCheck,
@@ -398,6 +413,9 @@ public sealed class AppSettingsService
         public bool InlineResultsOff { get; set; }
 
         public bool SoftwareRendering { get; set; }
+
+        /// <summary>Null while the formatter uses its default style.</summary>
+        public SqlFormatOptions? SqlFormat { get; set; }
 
         /// <summary>Stored as "hidden" so the navigator starts shown.</summary>
         public bool NavigatorHidden { get; set; }

@@ -62,7 +62,7 @@ public static class SqlScriptTools
             if (t.Kind == SqlTokenKind.OpenParen) depth++;
             else if (t.Kind == SqlTokenKind.CloseParen) depth = Math.Max(0, depth - 1);
             else if (t.Kind == SqlTokenKind.Word && BlockOpeners.Contains(t.Text) && !IsBeginTransaction(tokens, i)) blocks++;
-            else if (t.Is("END") && blocks > 0) blocks--;
+            else if (t.Is("END") && blocks > 0 && !EndsUncountedBlock(tokens, i)) blocks--;
 
             if (start < 0) start = t.Start;
             end = t.End;
@@ -102,160 +102,15 @@ public static class SqlScriptTools
         }));
     }
 
-    private static readonly HashSet<string> NewLineBefore = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SELECT", "FROM", "WHERE", "HAVING", "VALUES", "SET", "UNION", "EXCEPT", "INTERSECT", "RETURNING", "LIMIT", "OFFSET",
-        "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "OUTER", "INSERT", "UPDATE", "DELETE", "WITH"
-    };
+    /// <summary>Formats a script with the default style; see <see cref="SqlFormatter"/>.</summary>
+    public static string Format(string text, IReadOnlySet<string>? keywords = null) => SqlFormatter.Format(text, null, keywords);
 
-    private static readonly HashSet<string> JoinModifiers = new(StringComparer.OrdinalIgnoreCase) { "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "OUTER", "NATURAL" };
-
-    /// <summary>
-    /// Formats DML for reading: keywords upper-cased, one clause per line, one select/group/order item per line,
-    /// AND/OR on their own lines. Strings, comments and quoted identifiers are kept byte for byte. Statements
-    /// with BEGIN…END blocks (procedural code) are only keyword-cased, never re-flowed.
-    /// </summary>
-    public static string Format(string text, IReadOnlySet<string>? keywords = null)
-    {
-        keywords ??= SqlCompletionEngine.KeywordSet;
-        var tokens = SqlLexer.Tokenize(text);
-        if (tokens.Select((t, i) => t.Is("BEGIN") && !IsBeginTransaction(tokens, i)).Any(b => b) || tokens.Any(t => t.Is("CREATE") || t.Is("ALTER")))
-            return string.Concat(tokens.Select(t => t.Kind == SqlTokenKind.Word && keywords.Contains(t.Text) ? t.Text.ToUpperInvariant() : t.Text));
-
-        var sb = new StringBuilder();
-        var depth = 0;
-        var listClause = false;       // inside SELECT / GROUP BY / ORDER BY / SET list: break after commas
-        var inJoin = false;           // ON starts a line only as a join condition (not in SET NOCOUNT ON)
-        var pendingSpace = false;
-        var lineStart = true;
-        const string Indent = "    ";
-
-        void NewLine(int extra = 0)
-        {
-            TrimEndSpaces(sb);
-            if (sb.Length > 0) sb.Append('\n');
-            sb.Append(string.Concat(Enumerable.Repeat(Indent, depth + extra)));
-            lineStart = true;
-            pendingSpace = false;
-        }
-
-        void Emit(string s)
-        {
-            if (pendingSpace && !lineStart) sb.Append(' ');
-            sb.Append(s);
-            lineStart = false;
-            pendingSpace = false;
-        }
-
-        for (var i = 0; i < tokens.Count; i++)
-        {
-            var t = tokens[i];
-            var previous = PreviousSignificant(tokens, i);
-            switch (t.Kind)
-            {
-                case SqlTokenKind.Whitespace:
-                    pendingSpace = true;
-                    if (CountNewLines(t.Text) >= 2 && depth == 0) { NewLine(); sb.Append('\n'); }
-                    continue;
-                case SqlTokenKind.Comment:
-                    Emit(t.Text.TrimEnd());
-                    if (t.Text.StartsWith("--", StringComparison.Ordinal)) NewLine(listClause ? 1 : 0);
-                    continue;
-                case SqlTokenKind.Comma:
-                    sb.Append(',');
-                    lineStart = false;
-                    if (listClause && depth == 0) NewLine(1);
-                    else pendingSpace = true;
-                    continue;
-                case SqlTokenKind.Dot:
-                    TrimEndSpaces(sb);
-                    sb.Append('.');
-                    pendingSpace = false;
-                    lineStart = false;
-                    continue;
-                case SqlTokenKind.OpenParen:
-                    if (previous is { } p && (p.IsIdentifier || p.Kind == SqlTokenKind.Word)) pendingSpace = keywords.Contains(p.Text) && !IsFunctionLike(p.Text);
-                    Emit("(");
-                    depth++;
-                    continue;
-                case SqlTokenKind.CloseParen:
-                    depth = Math.Max(0, depth - 1);
-                    pendingSpace = false;
-                    Emit(")");
-                    continue;
-                case SqlTokenKind.Semicolon:
-                    TrimEndSpaces(sb);
-                    sb.Append(';');
-                    listClause = false;
-                    NewLine();
-                    continue;
-            }
-
-            var word = t.Kind == SqlTokenKind.Word && keywords.Contains(t.Text) ? t.Text.ToUpperInvariant() : t.Text;
-            if (t.Kind == SqlTokenKind.Word && depth == 0)
-            {
-                var upper = t.Text.ToUpperInvariant();
-                var joinContinuation = upper is "JOIN" or "OUTER" && previous is { } pj && JoinModifiers.Contains(pj.Text);
-                var insertInto = upper == "INTO" || (upper == "FROM" && previous is { } pd && pd.Is("DELETE"));
-                var tableHint = upper == "WITH" && NextSignificant(tokens, i) is { Kind: SqlTokenKind.OpenParen };
-                if (NewLineBefore.Contains(upper) && !joinContinuation && !insertInto && !tableHint)
-                {
-                    inJoin = upper is "JOIN" or "INNER" or "LEFT" or "RIGHT" or "FULL" or "CROSS" or "OUTER";
-                    NewLine();
-                    listClause = upper is "SELECT" or "SET";
-                    Emit(word);
-                    if (listClause) NewLine(1);
-                    continue;
-                }
-                if (upper is "BY" && previous is { } pb && (pb.Is("GROUP") || pb.Is("ORDER")))
-                {
-                    Emit(word);
-                    listClause = true;
-                    NewLine(1);
-                    continue;
-                }
-                if (upper is "GROUP" or "ORDER" && NextSignificant(tokens, i) is { } nb && nb.Is("BY"))
-                {
-                    NewLine();
-                    Emit(word);
-                    continue;
-                }
-                if (upper is "AND" or "OR" && !IsBetweenAnd(tokens, i))
-                {
-                    NewLine(1);
-                    Emit(word);
-                    continue;
-                }
-                if (upper == "ON" && inJoin)
-                {
-                    NewLine(1);
-                    Emit(word);
-                    continue;
-                }
-                if (upper is "FROM" or "WHERE" or "HAVING" or "LIMIT" or "OFFSET" or "VALUES" or "RETURNING") listClause = false;
-            }
-
-            Emit(word);
-        }
-
-        TrimEndSpaces(sb);
-        return sb.ToString().Trim('\n') + (text.EndsWith('\n') ? "\n" : "");
-    }
-
-    private static bool IsFunctionLike(string word) =>
-        SqlCompletionEngine.KnownFunctionNames.Contains(word);
-
-    /// <summary>"BETWEEN a AND b": that AND is part of the predicate, not a new condition.</summary>
-    private static bool IsBetweenAnd(IReadOnlyList<SqlToken> tokens, int index)
-    {
-        for (var i = index - 1; i >= 0 && i >= index - 12; i--)
-        {
-            var t = tokens[i];
-            if (t.Is("BETWEEN")) return true;
-            if (t.Is("AND") || t.Is("OR") || t.Is("WHERE") || t.Is("ON") || t.Kind == SqlTokenKind.Semicolon) return false;
-        }
-        return false;
-    }
+    /// <summary>END IF / END LOOP / END WHILE / END REPEAT (MySQL, PL/pgSQL): their openers are not counted as blocks.</summary>
+    private static bool EndsUncountedBlock(IReadOnlyList<SqlToken> tokens, int index) =>
+        tokens.Skip(index + 1).Where(t => !t.IsTrivia).Take(2).ToList() is [var word, ..] rest &&
+        (word.Is("IF") || word.Is("LOOP") || word.Is("WHILE") || word.Is("REPEAT")) &&
+        // T-SQL has no END IF: "END IF @x = 1" is a block's END and the next statement.
+        (rest.Count == 1 || rest[1].Kind == SqlTokenKind.Semicolon || word.Is("LOOP") && rest[1].Kind == SqlTokenKind.Word);
 
     private static bool IsBeginTransaction(IReadOnlyList<SqlToken> tokens, int index) =>
         index >= 0 && tokens[index].Is("BEGIN") && NextSignificant(tokens, index) is { } next &&
@@ -283,9 +138,4 @@ public static class SqlScriptTools
     }
 
     private static int CountNewLines(string s) => s.Count(ch => ch == '\n');
-
-    private static void TrimEndSpaces(StringBuilder sb)
-    {
-        while (sb.Length > 0 && sb[^1] is ' ' or '\t') sb.Length--;
-    }
 }

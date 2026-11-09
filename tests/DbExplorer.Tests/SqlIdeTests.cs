@@ -183,8 +183,7 @@ public class SqlScriptToolsTests
             GROUP BY
                 o.OrderId,
                 c.Name
-            ORDER BY
-                n DESC
+            ORDER BY n DESC
             """, formatted);
     }
 
@@ -193,7 +192,7 @@ public class SqlScriptToolsTests
     {
         Assert.Contains("'select from where'", SqlScriptTools.Format("select 'select from where' as x"));
         const string proc = "create procedure p as\nbegin\n  select 1\nend";
-        Assert.Equal("CREATE PROCEDURE p AS\nBEGIN\n  SELECT 1\nEND", SqlScriptTools.Format(proc));
+        Assert.Equal("CREATE PROCEDURE p AS\nBEGIN\n    SELECT 1\nEND", SqlScriptTools.Format(proc));
     }
 
     [Fact]

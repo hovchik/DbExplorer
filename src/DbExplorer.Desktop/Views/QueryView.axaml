@@ -141,7 +141,13 @@
 			<MenuItem Header="Run on multiple databases" ToggleType="CheckBox" IsChecked="{Binding RunOnMultipleDatabases, Mode=TwoWay}"
 					  ToolTip.Tip="Run the same script on every selected database and stack the results with a Database column. The databases are picked with the button that appears next to Tools." />
 			<Separator />
-			<MenuItem Header="Format" services:Keymap.Command="editor.format" Click="OnFormat" />
+			<MenuItem Header="Format" services:Keymap.Command="editor.format" Click="OnFormat"
+					  ToolTip.Tip="Formats the selection, or the whole script when nothing is selected" />
+			<MenuItem Header="Format statement at caret" services:Keymap.Command="editor.format-statement" Click="OnFormatStatement" />
+			<MenuItem Header="Join into one line" services:Keymap.Command="editor.compact" Click="OnCompactSql"
+					  ToolTip.Tip="Joins the selection, or the statement at the caret, into one line (line comments become /* */)" />
+			<MenuItem Header="Formatting options…" Click="OnFormatOptions"
+					  ToolTip.Tip="Keyword case, indentation, commas and line breaks, in Preferences" />
 			<MenuItem Header="Comment / uncomment lines" services:Keymap.Command="editor.comment" Click="OnToggleComment" />
 			<MenuItem Header="UPPER CASE selection" services:Keymap.Command="editor.upper" Click="OnUpperCase" />
 			<MenuItem Header="lower case selection" services:Keymap.Command="editor.lower" Click="OnLowerCase" />

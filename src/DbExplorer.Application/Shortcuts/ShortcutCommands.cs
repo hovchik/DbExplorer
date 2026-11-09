@@ -49,6 +49,8 @@ public static class ShortcutCommands
     public const string ExplainAnalyze = "editor.explain-analyze";
     public const string Complete = "editor.complete";
     public const string Format = "editor.format";
+    public const string FormatStatement = "editor.format-statement";
+    public const string CompactSql = "editor.compact";
     public const string ToggleComment = "editor.comment";
     public const string Replace = "editor.replace";
     public const string GoToLine = "editor.go-to-line";
@@ -197,6 +199,8 @@ public static class ShortcutCommands
         Add(ExplainAnalyze, e, "Execution plan with actual run (EXPLAIN ANALYZE)", "Ctrl+Shift+L");
         Add(Complete, e, "Completion: names, keywords, snippets", "Ctrl+Space");
         Add(Format, e, "Format the selection, or the whole script", "Ctrl+Shift+F");
+        Add(FormatStatement, e, "Format the statement at the caret", "Ctrl+Alt+F");
+        Add(CompactSql, e, "Join the selection or statement into one line", "Ctrl+Alt+Shift+F");
         Add(ToggleComment, e, "Comment or uncomment the lines", "Ctrl+/");
         Add(Replace, e, "Find and replace", "Ctrl+H");
         Add(GoToLine, e, "Go to line", "Ctrl+G");

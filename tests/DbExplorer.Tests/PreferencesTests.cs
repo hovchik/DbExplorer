@@ -209,4 +209,28 @@ public class PreferencesTests : IDisposable
         public string Protect(string plainText) => throw new NotSupportedException();
         public string? Unprotect(string protectedText) => null;
     }
+
+    [Fact]
+    public void Formatting_choices_change_the_saved_style_and_the_preview()
+    {
+        var settings = Settings();
+        using var vm = Preferences(settings);
+        Assert.StartsWith("WITH recent AS (", vm.FormatPreview);
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.KeywordCase = vm.KeywordCases.Single(c => c.Value == SqlKeywordCase.Lower);
+        vm.Indent = vm.Indents.Single(c => c.Value == 0);
+        vm.CommaStyle = vm.CommaStyles.Single(c => c.Value == SqlCommaStyle.StartOfLine);
+        vm.BreakAndOr = false;
+
+        Assert.StartsWith("with recent as (", vm.FormatPreview);
+        Assert.Contains("\n    , ", vm.FormatPreview);
+        Assert.Contains(nameof(PreferencesViewModel.FormatPreview), changed);
+        var reloaded = Settings().SqlFormat;
+        Assert.Equal(SqlKeywordCase.Lower, reloaded.KeywordCase);
+        Assert.True(reloaded.UseTabs);
+        Assert.False(reloaded.BreakAndOr);
+        Assert.Equal("Tab", vm.Indent.Label);
+    }
 }

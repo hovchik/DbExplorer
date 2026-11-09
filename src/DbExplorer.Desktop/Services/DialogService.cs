@@ -49,7 +49,8 @@ public interface IDialogService
 
     /// <summary>The Preferences window (Ctrl+,); one at a time, brought to the front if already open. The view model is
     /// created only when a new window opens.</summary>
-    void ShowPreferences(Func<PreferencesViewModel> create);
+    /// <summary>Shows the Preferences window (or brings it to the front), scrolled to <paramref name="section"/> when given.</summary>
+    void ShowPreferences(Func<PreferencesViewModel> create, string? section = null);
 
     /// <summary>Asks for a value per query parameter; null when cancelled.</summary>
     Task<IReadOnlyDictionary<string, string>?> PromptParametersAsync(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> defaults);
@@ -401,17 +402,19 @@ public sealed class DialogService(ProviderRegistry registry, SshTunnelService tu
 
     private PreferencesWindow? _preferences;
 
-    public void ShowPreferences(Func<PreferencesViewModel> create)
+    public void ShowPreferences(Func<PreferencesViewModel> create, string? section = null)
     {
         if (Owner is null) return;
         if (_preferences is not null)
         {
             _preferences.Activate();
+            if (section is not null) _preferences.ShowSection(section);
             return;
         }
         _preferences = new PreferencesWindow { DataContext = create() };
         _preferences.Closed += (_, _) => _preferences = null;
         _preferences.Show(Owner);
+        if (section is not null) _preferences.ShowSection(section);
     }
 
     public Task ShowGetDataAsync(

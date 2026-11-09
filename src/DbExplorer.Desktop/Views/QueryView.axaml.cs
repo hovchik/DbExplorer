@@ -441,6 +441,8 @@ public partial class QueryView : UserControl
             case EditorAction.Explain: Explain(analyze: false); break;
             case EditorAction.ExplainAnalyze: Explain(analyze: true); break;
             case EditorAction.Format: Format(); break;
+            case EditorAction.FormatStatement: FormatStatement(); break;
+            case EditorAction.CompactSql: CompactSql(); break;
             case EditorAction.ToggleComment: ToggleComment(); break;
             case EditorAction.Find: _search.IsReplaceMode = false; _search.Open(); break;
             case EditorAction.Replace: _search.IsReplaceMode = true; _search.Open(); break;
@@ -500,6 +502,8 @@ public partial class QueryView : UserControl
             case ShortcutCommands.Explain: Explain(analyze: false); break;
             case ShortcutCommands.ExplainAnalyze: Explain(analyze: true); break;
             case ShortcutCommands.Format: Format(); break;
+            case ShortcutCommands.FormatStatement: FormatStatement(); break;
+            case ShortcutCommands.CompactSql: CompactSql(); break;
             case ShortcutCommands.ToggleComment: ToggleComment(); break;
             case ShortcutCommands.Replace: _search.IsReplaceMode = true; _search.Open(); break;
             case ShortcutCommands.ZoomIn: Zoom(+1); break;
@@ -674,15 +678,64 @@ public partial class QueryView : UserControl
         if (command.CanExecute(run)) command.Execute(run);
     }
 
+    private SqlFormatOptions FormatOptions => _vm?.Settings.SqlFormat ?? SqlFormatOptions.Default;
+
+    /// <summary>Formats the selection, or the whole script when nothing is selected.</summary>
     private void Format()
     {
-        var document = Editor.Document;
-        var (start, length) = Editor.SelectionLength > 0 ? (Editor.SelectionStart, Editor.SelectionLength) : (0, document.TextLength);
+        var hasSelection = Editor.SelectionLength > 0;
+        var (start, length) = hasSelection ? (Editor.SelectionStart, Editor.SelectionLength) : (0, Editor.Document.TextLength);
         if (length == 0) return;
-        var formatted = SqlScriptTools.Format(document.GetText(start, length));
-        document.Replace(start, length, formatted);
-        if (start > 0 || Editor.SelectionLength > 0) Editor.Select(start, formatted.Length);
+        ReplaceRange(SqlFormatter.FormatRange(Editor.Document.Text, start, length, FormatOptions), select: hasSelection);
     }
+
+    /// <summary>Formats only the statement at the caret (or the selection, when there is one).</summary>
+    private void FormatStatement()
+    {
+        if (Editor.SelectionLength > 0) { Format(); return; }
+        var text = Editor.Document.Text;
+        if (SqlScriptTools.StatementAt(text, Editor.CaretOffset) is not { Length: > 0 } statement) return;
+        ReplaceRange(SqlFormatter.FormatRange(text, statement.Start, statement.Length, FormatOptions), select: false);
+    }
+
+    /// <summary>Joins the selection, or the statement at the caret, into one line.</summary>
+    private void CompactSql()
+    {
+        var text = Editor.Document.Text;
+        var (start, length) = Editor.SelectionLength > 0
+            ? (Editor.SelectionStart, Editor.SelectionLength)
+            : SqlScriptTools.StatementAt(text, Editor.CaretOffset) is { Length: > 0 } s ? (s.Start, s.Length) : (0, 0);
+        if (length == 0) return;
+        var part = text.Substring(start, length);
+        var lead = part.Length - part.TrimStart().Length;
+        var trimmed = part.Trim();
+        ReplaceRange(new SqlTextEdit(start + lead, trimmed.Length, SqlFormatter.Compact(trimmed)), select: true);
+    }
+
+    /// <summary>Applies a formatter edit as one undo step, keeping the caret on the same token.</summary>
+    private void ReplaceRange(SqlTextEdit edit, bool select)
+    {
+        var document = Editor.Document;
+        var old = document.GetText(edit.Start, edit.Length);
+        if (old == edit.Text) return;
+        var caret = Editor.CaretOffset;
+        document.Replace(edit.Start, edit.Length, edit.Text);
+        if (select) Editor.Select(edit.Start, edit.Text.Length);
+        else if (caret >= edit.Start && caret <= edit.Start + edit.Length)
+            Editor.CaretOffset = edit.Start + SqlFormatter.MapOffset(old, edit.Text, caret - edit.Start);
+        else if (caret > edit.Start + edit.Length)
+            Editor.CaretOffset = Math.Min(document.TextLength, caret + edit.Text.Length - edit.Length);
+    }
+
+    /// <summary>Preferences, scrolled to the SQL formatting options.</summary>
+    private void OpenFormatOptions()
+    {
+        if (TopLevel.GetTopLevel(this)?.DataContext is MainWindowViewModel main) main.OpenPreferencesAt(PreferencesViewModel.FormattingSection);
+    }
+
+    private void OnFormatStatement(object? sender, RoutedEventArgs e) => FormatStatement();
+    private void OnCompactSql(object? sender, RoutedEventArgs e) => CompactSql();
+    private void OnFormatOptions(object? sender, RoutedEventArgs e) => OpenFormatOptions();
 
     /// <summary>The whole lines touched by the selection (or the caret line).</summary>
     private (int Start, int Length) SelectedLines()

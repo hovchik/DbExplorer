@@ -208,6 +208,7 @@ namespace DbExplorer.UiRender
             await Step("jobs", () => RenderJobsAsync("postgres"));
             await Step("multi", RenderMultipleConnectionsAsync);
             await Step("builder", RenderQueryBuilderAsync);
+            await Step("format", RenderFormattingAsync);
 
             if (mssql is not null) await Step("sqlserver", () => RenderOtherEngineAsync("Shop (SQL Server)", "sqlserver"));
             if (mysql is not null) await Step("mysql", () => RenderOtherEngineAsync("Shop (MariaDB)", "mysql"));
@@ -1702,11 +1703,89 @@ namespace DbExplorer.UiRender
             list.SelectedIndex = 0;
             await Settle(8);
             await Shot(window, "preferences-small");
-            list.SelectedIndex = 3;
+            list.SelectedIndex = 4;
             await Settle(8);
             await Shot(window, "preferences-small-notifications");
             window.Close();
             await Settle();
+        }
+
+        /// <summary>The SQL formatter: a messy script before and after Format, procedural code opened up by block, the
+        /// Tools menu entries, Preferences' SQL formatting section, and the same script in another style.</summary>
+        private async Task RenderFormattingAsync()
+        {
+            _vm.SelectedTab = AppTab.Query;
+            const string script =
+                "-- Customers and how they are doing\n" +
+                "with recent as (select customer_id, max(ordered_at) as last_order, count(*) as orders from orders group by customer_id) " +
+                "select c.id, c.name, c.email, case when r.last_order is null then 'never' when r.orders > 2 then 'regular' else 'occasional' end as segment, " +
+                "(select count(*) from orders o where o.customer_id = c.id and o.status = 'paid') as paid " +
+                "from customers c left join recent r on r.customer_id = c.id where c.email is not null and exists (select 1 from orders o2 where o2.customer_id = c.id and o2.status in ('paid', 'shipped')) order by c.name;\n\n" +
+                "update orders set status='shipped', note = 'sent' where id in (select id from orders where status = 'paid' and ordered_at < now() - interval '2 days');\n\n" +
+                "create table shipments (id bigint generated always as identity primary key, order_id int not null references orders(id), carrier varchar(40), shipped_at timestamptz default now());\n";
+            _vm.Query.OpenInNewTab(script, "Formatting");
+            var doc = _vm.Query.SelectedDocument!;
+            doc.RequestEditorAction(EditorAction.MaximizeEditor);
+            await Settle(8);
+            await Shot(_window, "format-before");
+            doc.RequestEditorAction(EditorAction.Format);
+            await Settle(8);
+            await Shot(_window, "format-after");
+
+            const string procedural =
+                "create or replace function order_total(p_order int) returns numeric language plpgsql as $$ declare v numeric; begin " +
+                "select sum(quantity * price) into v from order_items where order_id = p_order; if v is null then raise notice 'order % has no items', p_order; return 0; " +
+                "elsif v > 1000 then v := v * 0.95; end if; return v; exception when others then return -1; end; $$;\n\n" +
+                "create procedure dbo.archive_orders @before date as begin set nocount on; begin try begin tran; " +
+                "insert into archive.orders select * from dbo.orders where ordered_at < @before; delete from dbo.orders where ordered_at < @before; commit; " +
+                "end try begin catch rollback; throw; end catch end\n";
+            doc.SetText(procedural, markClean: true);
+            await Settle(4);
+            doc.RequestEditorAction(EditorAction.Format);
+            await Settle(8);
+            await Shot(_window, "format-procedural");
+
+            var tools = _window.GetVisualDescendants().OfType<Button>().First(b => b.Content as string == "Tools ▾" && b.IsEffectivelyVisible);
+            tools.Flyout!.ShowAt(tools);
+            await Settle(8);
+            await Shot(_window, "format-tools-menu");
+            tools.Flyout.Hide();
+            await Settle();
+
+            _vm.OpenPreferencesAt(PreferencesViewModel.FormattingSection);
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);
+            var window = _window.OwnedWindows.OfType<PreferencesWindow>().First();
+            await Settle(12);
+            await Shot(window, "preferences-formatting");
+            var prefs = (PreferencesViewModel)window.DataContext!;
+            prefs.KeywordCase = prefs.KeywordCases.Single(c => c.Value == SqlKeywordCase.Lower);
+            prefs.Indent = prefs.Indents.Single(c => c.Value == 2);
+            prefs.CommaStyle = prefs.CommaStyles.Single(c => c.Value == SqlCommaStyle.StartOfLine);
+            await Settle(8);
+            await Shot(window, "preferences-formatting-lower");
+            window.Close();
+            await Settle();
+
+            doc.SetText(script, markClean: true);
+            await Settle(4);
+            doc.RequestEditorAction(EditorAction.Format);
+            await Settle(8);
+            await Shot(_window, "format-after-lower");
+            _provider.GetRequiredService<AppSettingsService>().SetSqlFormat(SqlFormatOptions.Default);
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            doc.SetText(script, markClean: true);
+            await Settle(4);
+            doc.RequestEditorAction(EditorAction.Format);
+            await Settle(8);
+            await Shot(_window, "small-format-after");
+            _window.Width = 1400;
+            _window.Height = 900;
+
+            doc.RequestEditorAction(EditorAction.ResetLayout);
+            _vm.Query.Documents.Remove(doc);
+            await Settle(4);
         }
 
         /// <summary>A sample release list instead of GitHub's, so the update bar has something to offer.</summary>

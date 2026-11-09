@@ -336,11 +336,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Every app-wide setting in one window (Ctrl+, or the theme menu).</summary>
     [RelayCommand]
-    private void OpenPreferences() => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs)
+    private void OpenPreferences() => OpenPreferencesAt(null);
+
+    /// <summary>Preferences, scrolled to one of its sections (a <c>…Section</c> name of the window).</summary>
+    public void OpenPreferencesAt(string? section) => _dialogs.ShowPreferences(() => new PreferencesViewModel(_settings, _assistantSettings, _dialogs)
     {
         CurrentVersion = AppVersion,
         CheckForUpdatesNow = _updates is null ? null : CheckForUpdatesNowAsync
-    });
+    }, section);
 
     /// <summary>Runs at least this long notify when they finish out of sight (0 = never), from Preferences.</summary>
     public TimeSpan LongRunNotifyThreshold => TimeSpan.FromSeconds(_settings.LongRunNotifySeconds);

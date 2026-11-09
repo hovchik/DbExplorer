@@ -59,6 +59,8 @@ public partial class MainWindowViewModel
             Command("Query", "Commit transaction", doc.CommitCommand, subtitle: doc.Title);
             Command("Query", "Rollback transaction", doc.RollbackCommand, subtitle: doc.Title, keywords: "undo");
             Editor("Format SQL", EditorAction.Format, K(ShortcutCommands.Format), "beautify pretty indent");
+            Editor("Format the statement at the caret", EditorAction.FormatStatement, K(ShortcutCommands.FormatStatement), "beautify pretty indent current");
+            Editor("Join SQL into one line", EditorAction.CompactSql, K(ShortcutCommands.CompactSql), "compact minify single line flatten");
             Editor("Comment or uncomment lines", EditorAction.ToggleComment, K(ShortcutCommands.ToggleComment), "toggle");
             Editor("Find", EditorAction.Find, "Ctrl+F", "search");
             Editor("Find and replace", EditorAction.Replace, K(ShortcutCommands.Replace), "search substitute");

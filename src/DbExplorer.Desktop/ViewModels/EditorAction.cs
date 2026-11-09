@@ -9,6 +9,8 @@ public enum EditorAction
     Explain,
     ExplainAnalyze,
     Format,
+    FormatStatement,
+    CompactSql,
     ToggleComment,
     Find,
     Replace,

@@ -56,6 +56,7 @@
       <ListBox AutomationProperties.Name="Sections" x:Name="SectionList" Classes="sections" Background="Transparent" SelectionChanged="OnSectionSelected">
         <ListBoxItem Content="Appearance" Tag="AppearanceSection" />
         <ListBoxItem Content="SQL editor" Tag="EditorSection" />
+        <ListBoxItem Content="SQL formatting" Tag="FormattingSection" />
         <ListBoxItem Content="New Query tabs" Tag="QueryTabsSection" />
         <ListBoxItem Content="Notifications" Tag="NotificationsSection" />
         <ListBoxItem Content="Start-up" Tag="StartupSection" />
@@ -100,6 +101,32 @@
             <CheckBox Content="Show results under the statement that produced them" IsChecked="{Binding InlineResults}" />
             <TextBlock Classes="hint indented" TextWrapping="Wrap"
                        Text="The first 10 rows of each result appear in the editor, right below the statement, until you run it again or close them. The grid below still shows every result." />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="FormattingSection" Classes="section">
+          <StackPanel>
+            <TextBlock Classes="heading" Text="SQL formatting" />
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Keywords" />
+              <ComboBox AutomationProperties.Name="Keyword case" ItemsSource="{Binding KeywordCases}" SelectedItem="{Binding KeywordCase}" Width="220" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Indent" />
+              <ComboBox AutomationProperties.Name="Indent" ItemsSource="{Binding Indents}" SelectedItem="{Binding Indent}" Width="220" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="label" Text="Commas in lists" />
+              <ComboBox AutomationProperties.Name="Commas in lists" ItemsSource="{Binding CommaStyles}" SelectedItem="{Binding CommaStyle}" Width="220" />
+            </StackPanel>
+            <CheckBox Content="One column per line in SELECT, GROUP BY, ORDER BY, SET and VALUES" IsChecked="{Binding OneItemPerLine}" />
+            <CheckBox Content="AND / OR start a new line" IsChecked="{Binding BreakAndOr}" />
+            <CheckBox Content="Keep short CASE expressions, subqueries and single-column lists on one line" IsChecked="{Binding CompactShortExpressions}" />
+            <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,4,0,0">
+              <SelectableTextBlock Classes="mono" Text="{Binding FormatPreview}" AutomationProperties.Name="Formatting preview" />
+            </Border>
+            <TextBlock Classes="hint" TextWrapping="Wrap"
+                       Text="Used by Format (Ctrl+Shift+F: the selection or the whole script) and Format statement at caret (Ctrl+Alt+F), in each Query tab's Tools menu. Procedures, functions and triggers keep their line breaks and are re-indented by block. Only spaces, line breaks and keyword case change; strings and comments stay as written." />
           </StackPanel>
         </Border>
 

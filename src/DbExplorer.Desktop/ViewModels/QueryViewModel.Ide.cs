@@ -7,6 +7,7 @@ using DbExplorer.Application.Query.Plans;
 using DbExplorer.Application.Sessions;
 using DbExplorer.Core.Abstractions;
 using DbExplorer.Core.Models;
+using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.ViewModels;
 
@@ -88,6 +89,33 @@ public partial class QueryViewModel
         await SafeAppendHistoryAsync(sql, succeeded: true, error: null);
     }
 
+    /// <summary>Set when a statement in the open transaction changed the schema: the catalog is read again once it is
+    /// committed (a rollback undoes the change, and until the commit other connections cannot see it).</summary>
+    private (DatabaseSession Session, string? Database)? _schemaChangedInTransaction;
+
+    /// <summary>
+    /// A script that creates, alters or drops objects ran: read the catalog again in the background, so the
+    /// navigator, Objects tab, pickers and suggestions show the change without a manual Refresh metadata. Inside the
+    /// tab's transaction that waits for Commit, except on MySQL, where DDL commits on its own.
+    /// </summary>
+    private void AfterSchemaChange(DatabaseSession session, IReadOnlyList<string> targets, bool inTransaction)
+    {
+        if (inTransaction && session.Provider.ProviderKey != SqlDialect.MySqlKey)
+        {
+            if (_transaction is not null && ReferenceEquals(session, _session)) _schemaChangedInTransaction = (session, TargetDatabase);
+            return;
+        }
+        RefreshCatalogInBackground(session, targets.Count > 0 ? [.. targets] : [TargetDatabase]);
+    }
+
+    private void RefreshCatalogInBackground(DatabaseSession session, IReadOnlyList<string?> databases)
+    {
+        if (session.Lifetime.IsCancellationRequested) return;
+        // A server-level connection reads every database in one catalog, so several targets are usually one read.
+        foreach (var database in databases.Distinct(StringComparer.OrdinalIgnoreCase))
+            _ = sessions.RefreshInBackgroundAsync(session, database, ex => ErrorLog.Write("background metadata refresh", ex));
+    }
+
     private bool CanEndTransaction => HasOpenTransaction && !IsRunning;
 
     [RelayCommand(CanExecute = nameof(CanEndTransaction))]
@@ -101,6 +129,8 @@ public partial class QueryViewModel
     {
         if (_transaction is not { } tx) return;
         _transaction = null;
+        var changedSchema = _schemaChangedInTransaction;
+        _schemaChangedInTransaction = null;
         // Closing the tab or changing the connection mid-run: a statement may still be running on the transaction's
         // connection, which cannot roll back (or be disposed) under it. Stop it first.
         await StopRunAsync();
@@ -109,6 +139,7 @@ public partial class QueryViewModel
             if (commit) await tx.CommitAsync();
             else await tx.RollbackAsync();
             Status = (commit ? "Committed." : "Rolled back.") + (reason is null ? "" : $" ({reason})");
+            if (commit && changedSchema is { } changed) RefreshCatalogInBackground(changed.Session, [changed.Database]);
         }
         catch (Exception ex)
         {

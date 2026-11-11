@@ -34,6 +34,26 @@ public sealed class DatabaseSession(
     internal ConcurrentDictionary<string, Lazy<Task<MetadataSnapshot>>> DatabaseSnapshots { get; } =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Background catalog reads after a schema change, per database ("" for the session's own catalog):
+    /// see <see cref="SessionService.RefreshInBackgroundAsync"/>.</summary>
+    internal Dictionary<string, BackgroundRefresh> BackgroundRefreshes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    internal sealed class BackgroundRefresh
+    {
+        public Task Task = Task.CompletedTask;
+        /// <summary>Asked for again while the read ran: the read may have started before the change, so one more.</summary>
+        public bool Again;
+    }
+
+    /// <summary>
+    /// Raised (on the caller's thread) when the catalog of one database the session's own snapshot does not cover was
+    /// read again (<see cref="SessionService.RefreshDatabaseSnapshotAsync"/>); the argument is that database.
+    /// Changes to the session's own catalog raise <see cref="SnapshotChanged"/> instead.
+    /// </summary>
+    public event EventHandler<string>? DatabaseSnapshotChanged;
+
+    internal void RaiseDatabaseSnapshotChanged(string database) => DatabaseSnapshotChanged?.Invoke(this, database);
+
     internal void ReplaceSnapshot(MetadataSnapshot snapshot)
     {
         Snapshot = snapshot;

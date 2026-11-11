@@ -132,7 +132,72 @@ public sealed class SessionService(ProviderRegistry registry, MetadataService me
         await using var provider = session.Factory.Create(profile);
         var fresh = await Task.Run(async () => (await metadata.LoadAsync(profile, provider, forceRefresh: true, ct).ConfigureAwait(false)).Warm(), ct);
         session.DatabaseSnapshots[database!] = new Lazy<Task<MetadataSnapshot>>(() => Task.FromResult(fresh));
+        session.RaiseDatabaseSnapshotChanged(database!);
         return fresh;
+    }
+
+    /// <summary>
+    /// Re-reads the catalog after a script changed the schema, without holding anything up: no busy state, no
+    /// progress, and the window stays usable. <paramref name="database"/> is where the script ran (null for the
+    /// connection's default); the session's own catalog is read when it covers that database, otherwise just that
+    /// database's. Asking again while a read for the same database runs queues one more read after it (that read may
+    /// have started before the change) instead of starting a second one. A failure keeps the previous catalog and is
+    /// passed to <paramref name="failed"/>; the returned task never faults. Disconnecting stops it.
+    /// </summary>
+    public Task RefreshInBackgroundAsync(DatabaseSession session, string? database = null, Action<Exception>? failed = null)
+    {
+        var own = string.IsNullOrEmpty(database) || string.Equals(session.Profile.Database, database, StringComparison.OrdinalIgnoreCase) ||
+                  session.Snapshot.ContainsDatabase(database!);
+        var key = own ? "" : database!;
+        lock (session.BackgroundRefreshes)
+        {
+            if (session.BackgroundRefreshes.TryGetValue(key, out var running))
+            {
+                running.Again = true;
+                return running.Task;
+            }
+            var state = new DatabaseSession.BackgroundRefresh();
+            session.BackgroundRefreshes[key] = state;
+            state.Task = RunBackgroundRefreshAsync(session, own ? null : database, key, state, failed);
+            return state.Task;
+        }
+    }
+
+    private async Task RunBackgroundRefreshAsync(DatabaseSession session, string? database, string key,
+        DatabaseSession.BackgroundRefresh state, Action<Exception>? failed)
+    {
+        // Let the caller finish what it was doing (showing the results) before anything else happens.
+        await Task.Yield();
+        var ct = session.Lifetime;
+        while (true)
+        {
+            try
+            {
+                if (!ct.IsCancellationRequested)
+                {
+                    if (database is null) await RefreshMetadataAsync(session, ct);
+                    else await RefreshDatabaseSnapshotAsync(session, database, ct);
+                }
+            }
+            catch (Exception) when (ct.IsCancellationRequested)
+            {
+                // Disconnected meanwhile: nothing to update any more.
+            }
+            catch (Exception ex)
+            {
+                failed?.Invoke(ex);
+            }
+
+            lock (session.BackgroundRefreshes)
+            {
+                if (!state.Again || ct.IsCancellationRequested)
+                {
+                    session.BackgroundRefreshes.Remove(key);
+                    return;
+                }
+                state.Again = false;
+            }
+        }
     }
 
     /// <summary>Re-applies the relationships accepted for the session's connection (after the user accepted or removed one).</summary>

@@ -529,13 +529,26 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         await RecordAsync(doc, LocalHistoryReason.Closed);
         await doc.EndTransactionAsync(commit: false, reason: "tab closed");
         doc.Attach(null);
+        // Move to the nearest tab on the left before the tab goes away. Removing the selected item first lets the
+        // TabControl pick its own replacement, and it always picked the first tab.
+        if (ReferenceEquals(SelectedDocument, doc) || SelectedDocument is null)
+            SelectedDocument = TabAfterClosing(Documents, index);
         Documents.Remove(doc);
         if (Documents.Count == 0) NewTab();
-        else if (SelectedDocument == doc || SelectedDocument is null) SelectedDocument = Documents[Math.Clamp(index, 0, Documents.Count - 1)];
+        else if (SelectedDocument is null || !Documents.Contains(SelectedDocument)) SelectedDocument = Documents[Math.Clamp(index - 1, 0, Documents.Count - 1)];
         RefreshConnections();
         await SaveTabsAsync();
         return true;
     }
+
+    /// <summary>
+    /// The tab that gets the focus when the tab at <paramref name="closingIndex"/> closes: the nearest one on its left, or the
+    /// new first tab when the leftmost closes; null when it is the only tab.
+    /// </summary>
+    public static T? TabAfterClosing<T>(IReadOnlyList<T> tabs, int closingIndex) where T : class =>
+        tabs.Count <= 1 || closingIndex < 0 || closingIndex >= tabs.Count ? null
+        : closingIndex > 0 ? tabs[closingIndex - 1]
+        : tabs[1];
 
     /// <summary>Brings back the most recently closed tab (Ctrl+Shift+T).</summary>
     [RelayCommand(CanExecute = nameof(HasRecentlyClosed))]

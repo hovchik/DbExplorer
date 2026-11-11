@@ -131,4 +131,44 @@ public class QueryTabSwitchTests : IDisposable
         Assert.Same(editors[0].Document, FoldingDocument(editors[0]));
         s.Window.Close();
     }
+
+    [Theory]
+    [InlineData(new[] { "a", "b", "c", "d" }, 2, "b")] // middle: its left neighbour
+    [InlineData(new[] { "a", "b", "c", "d" }, 3, "c")] // last: the new last
+    [InlineData(new[] { "a", "b", "c", "d" }, 0, "b")] // leftmost: the new leftmost
+    [InlineData(new[] { "a" }, 0, null)] // only tab: none
+    public void The_tab_left_of_a_closed_tab_gets_the_focus(string[] tabs, int closing, string? expected) =>
+        Assert.Equal(expected, QueryWorkspaceViewModel.TabAfterClosing(tabs, closing));
+
+    [AvaloniaFact]
+    public async Task Closing_the_selected_tab_focuses_the_nearest_tab_on_its_left()
+    {
+        var s = Show();
+        await using var _ = s.Provider;
+        var docs = s.Workspace.Documents.ToList(); // four tabs
+
+        s.Workspace.SelectedDocument = docs[2];
+        Pump(s.Window, s.Errors);
+        await s.Workspace.CloseTabCommand.ExecuteAsync(docs[2]);
+        Pump(s.Window, s.Errors);
+        Assert.Same(docs[1], s.Workspace.SelectedDocument);
+        Assert.Same(docs[1], s.Tabs.SelectedItem);
+        Assert.Same(docs[1].Document, s.Editor.Document);
+
+        // The leftmost tab: the one that is now first.
+        s.Workspace.SelectedDocument = docs[0];
+        Pump(s.Window, s.Errors);
+        await s.Workspace.CloseTabCommand.ExecuteAsync(docs[0]);
+        Pump(s.Window, s.Errors);
+        Assert.Same(docs[1], s.Workspace.SelectedDocument);
+        Assert.Same(docs[1], s.Tabs.SelectedItem);
+
+        // Closing a tab that is not selected keeps the selection where it is.
+        await s.Workspace.CloseTabCommand.ExecuteAsync(docs[3]);
+        Pump(s.Window, s.Errors);
+        Assert.Same(docs[1], s.Workspace.SelectedDocument);
+
+        Assert.Empty(s.Errors);
+        s.Window.Close();
+    }
 }

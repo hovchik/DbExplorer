@@ -418,7 +418,7 @@
                     ToolTip.Tip="Refresh metadata: re-read the catalog from the server and update the local cache">
               <controls:StrokeIcon Data="{x:Static controls:Icons.Refresh}" />
             </Button>
-            <Button Classes="tool" ToolTip.Tip="Theme and preferences">
+            <Button Classes="tool" ToolTip.Tip="Theme">
               <controls:StrokeIcon Data="{Binding SelectedTheme, Converter={x:Static conv:ThemeModeToIconConverter.Instance}}" />
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -447,15 +447,13 @@
                                            IsVisible="{Binding SelectedTheme, Converter={x:Static conv:EnumEqualsConverter.Instance}, ConverterParameter=HighContrast}" />
                     </MenuItem.Icon>
                   </MenuItem>
-                  <Separator />
-                  <MenuItem Header="Preferences…" services:Keymap.Command="app.preferences" Command="{Binding OpenPreferencesCommand}"
-                            ToolTip.Tip="Theme, editor, new Query tab defaults, notifications, start-up, rendering, experimental features and the AI key">
-                    <MenuItem.Icon>
-                      <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" Width="14" Height="14" />
-                    </MenuItem.Icon>
-                  </MenuItem>
                 </MenuFlyout>
               </Button.Flyout>
+            </Button>
+            <!-- Preferences has its own button (not a theme-menu item); the tooltip names its current shortcut -->
+            <Button x:Name="PreferencesButton" Classes="tool" Command="{Binding OpenPreferencesCommand}"
+                    AutomationProperties.Name="Preferences" ToolTip.Tip="Preferences">
+              <controls:StrokeIcon Data="{x:Static controls:Icons.Settings}" />
             </Button>
 
             <Border Classes="divider" Margin="6,0" />

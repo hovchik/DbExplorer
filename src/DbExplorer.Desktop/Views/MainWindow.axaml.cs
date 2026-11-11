@@ -31,6 +31,10 @@ public partial class MainWindow : Window
             (ShortcutCommands.Preferences, vm.OpenPreferencesCommand),
             (ShortcutCommands.SearchNames, vm.OpenSearchNamesCommand)
         ]);
+        // The Preferences button's tooltip names the shortcut it has now (it can be rebound).
+        Keymap.Changed += UpdatePreferencesTip;
+        Closed += (_, _) => Keymap.Changed -= UpdatePreferencesTip;
+        UpdatePreferencesTip();
         MainTabs.TemplateApplied += OnMainTabsTemplateApplied;
         MainTabs.SizeChanged += (_, e) => { if (e.WidthChanged) FitMainTabHeaders(); };
         MainTabs.SelectionChanged += (_, e) =>
@@ -158,6 +162,14 @@ public partial class MainWindow : Window
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainWindowViewModel.ShowNavigator)) ApplyNavigatorWidth();
+    }
+
+    private void UpdatePreferencesTip()
+    {
+        var key = Keymap.Current.Primary(ShortcutCommands.Preferences);
+        ToolTip.SetTip(PreferencesButton, key is null
+            ? "Preferences: theme, SQL editor and formatting, new Query tab defaults, notifications, start-up, updates and the AI key"
+            : $"Preferences ({key}): theme, SQL editor and formatting, new Query tab defaults, notifications, start-up, updates and the AI key");
     }
 
     /// <summary>The navigator column: its saved width while shown, nothing while hidden (the tabs take it all).</summary>

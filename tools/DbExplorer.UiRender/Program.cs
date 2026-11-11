@@ -1667,17 +1667,27 @@ namespace DbExplorer.UiRender
 
         /// <summary>The command palette (recent commands, "&gt;" commands only, a key search), a command run through it
         /// against the real editor, and the F1 shortcut sheet.</summary>
-        /// <summary>The Preferences window (Ctrl+,) at the top and scrolled to its last sections, and the theme menu
-        /// that now leads to it.</summary>
+        /// <summary>The Preferences window (Ctrl+,) at the top and scrolled to its last sections, the theme menu (theme
+        /// only) and the toolbar's own Preferences button with its tooltip.</summary>
         private async Task RenderPreferencesAsync()
         {
             var themeButton = _window.GetVisualDescendants().OfType<Button>()
-                .First(b => ToolTip.GetTip(b) as string == "Theme and preferences");
+                .First(b => ToolTip.GetTip(b) as string == "Theme");
             themeButton.Flyout!.ShowAt(themeButton);
             await Settle(8);
             await Shot(_window, "preferences-theme-menu");
             themeButton.Flyout.Hide();
             await Settle();
+
+            var prefsButton = _window.FindControl<Button>("PreferencesButton")!;
+            ToolTip.SetIsOpen(prefsButton, true);
+            await Settle(8);
+            await Shot(_window, "preferences-button");
+            ToolTip.SetIsOpen(prefsButton, false);
+            prefsButton.Command!.Execute(null); // the button itself opens the window
+            await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences from button", 10_000);
+            _window.OwnedWindows.OfType<PreferencesWindow>().First().Close();
+            await Settle(4);
 
             _vm.OpenPreferencesCommand.Execute(null);
             await WaitFor(() => _window.OwnedWindows.OfType<PreferencesWindow>().Any(), "open preferences", 10_000);

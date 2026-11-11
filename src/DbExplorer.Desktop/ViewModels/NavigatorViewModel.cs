@@ -120,6 +120,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         {
             gone.SnapshotChanged -= OnCatalogChanged;
             gone.DatabasesChanged -= OnCatalogChanged;
+            gone.DatabaseSnapshotChanged -= OnOtherCatalogChanged;
             _subscribed.Remove(gone);
             _otherCatalogs.Remove(gone);
             _seen.Remove(gone);
@@ -131,6 +132,7 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
             {
                 session.SnapshotChanged += OnCatalogChanged;
                 session.DatabasesChanged += OnCatalogChanged;
+                session.DatabaseSnapshotChanged += OnOtherCatalogChanged;
             }
             if (_seen.Add(session)) _expandOnBuild.Add(session);
         }
@@ -200,6 +202,25 @@ public partial class NavigatorViewModel : ViewModelBase, ISessionAware
         if (sender is not DatabaseSession session || !IsStillOpen(session)) return;
         _otherCatalogs.Remove(session);
         Rebuild();
+    }
+
+    /// <summary>A database outside the connection's own catalog was read again (e.g. after a CREATE TABLE ran in it
+    /// from a Query tab): the tree shows the new catalog if it had that database open.</summary>
+    private async void OnOtherCatalogChanged(object? sender, string database)
+    {
+        if (sender is not DatabaseSession session || !IsStillOpen(session)) return;
+        if (!_otherCatalogs.TryGetValue(session, out var others) || !others.ContainsKey(database)) return;
+        try
+        {
+            var fresh = await sessions.GetDatabaseSnapshotAsync(session, database);
+            if (!IsStillOpen(session) || ReferenceEquals(fresh, OtherCatalogs(session).GetValueOrDefault(database))) return;
+            OtherCatalogs(session)[database] = fresh;
+            Rebuild();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("navigator refresh", ex);
+        }
     }
 
     // ----- Filter: debounced, matched off the UI thread, merged into the tree -----

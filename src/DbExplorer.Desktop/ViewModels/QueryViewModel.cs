@@ -264,12 +264,14 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         if (_session is not null)
         {
             _session.SnapshotChanged -= OnSnapshotChanged;
+            _session.DatabaseSnapshotChanged -= OnDatabaseSnapshotChanged;
             _session.DatabasesChanged -= OnDatabasesChanged;
         }
         _session = session;
         if (_session is not null)
         {
             _session.SnapshotChanged += OnSnapshotChanged;
+            _session.DatabaseSnapshotChanged += OnDatabaseSnapshotChanged;
             _session.DatabasesChanged += OnDatabasesChanged;
         }
         ResultSets = []; // pinned results stay: they are snapshots, and say which connection they came from
@@ -314,6 +316,13 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
     {
         if (_session is { } session) AvailableDatabases = MergeNames(AvailableDatabases, session.Snapshot.Databases, [CurrentDatabase]);
         RebuildCompletion();
+    }
+
+    /// <summary>The catalog of a database outside the connection's own snapshot was read again: the suggestions
+    /// follow when it is the one this tab runs in.</summary>
+    private void OnDatabaseSnapshotChanged(object? sender, string database)
+    {
+        if (string.Equals(database, TargetDatabase, StringComparison.OrdinalIgnoreCase)) RebuildCompletion();
     }
 
     // ----- Current database: where runs go and what the editor suggests -----
@@ -701,6 +710,7 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
         Messages.Clear();
         _resultsQuery = sql;
         var outcome = RunOutcome.Failed;
+        var inTransaction = targets.Count == 0 && !AutoCommit;
         try
         {
             var succeeded = true;
@@ -746,6 +756,8 @@ public partial class QueryViewModel : ViewModelBase, ISessionAware
             StopElapsedClock();
             // Even a script that failed later (or was cancelled) may already have created or dropped a database.
             if (DatabaseListChanges.Affects(sql, session.Provider.ProviderKey)) session.InvalidateDatabases();
+            // A failed or cancelled script may also have run its first statements.
+            if (!_isRefreshRun && SchemaChanges.Affects(sql)) AfterSchemaChange(session, targets, inTransaction);
             if (!_isRefreshRun && ReferenceEquals(session, _session)) RunFinished?.Invoke(this, elapsed, outcome);
         }
     }

@@ -122,9 +122,16 @@ public partial class App : Avalonia.Application
 
         // Records in errors.log when the UI thread stops answering, and for how long: a hung UI thread and a window
         // that only stopped repainting look the same to the user, and the log tells them apart.
+        // The line says what was clicked or pressed just before, and whether the graphics compositor had stalled; a
+        // hang that lasts 30 s also saves a memory dump that shows where the UI thread is stuck.
+        InputClue.Watch(HangClues.Shared);
         Watchdog = new ResponsivenessWatchdog(
             action => Dispatcher.UIThread.Post(action, DispatcherPriority.Send),
-            line => ErrorLog.Note("ui watchdog", line));
+            line => ErrorLog.Note("ui watchdog", line))
+        {
+            Clues = HangClues.Shared.Describe,
+            OnLongHang = HangDump.Write
+        };
         desktop.Exit += (_, _) => Watchdog?.Dispose();
 
         var shutdownStarted = false;

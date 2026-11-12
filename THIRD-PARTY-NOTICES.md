@@ -13,6 +13,7 @@ the links given (and in each package on nuget.org). Versions are those of this r
 | Avalonia.Angle.Windows.Natives (ANGLE) | BSD-3-Clause | https://chromium.googlesource.com/angle/angle |
 | MicroCom.Runtime | MIT | https://github.com/kekekeks/MicroCom |
 | CommunityToolkit.Mvvm | MIT | https://github.com/CommunityToolkit/dotnet |
+| Microsoft.Diagnostics.NETCore.Client | MIT | https://github.com/dotnet/diagnostics |
 | SkiaSharp | MIT | https://github.com/mono/SkiaSharp |
 | Skia (native, inside SkiaSharp) | BSD-3-Clause | https://skia.org |
 | HarfBuzzSharp | MIT | https://github.com/mono/SkiaSharp |

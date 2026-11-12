@@ -9,9 +9,20 @@ namespace DbExplorer.Desktop.Services;
 /// debugger's trace output, and a window that stops repainting leaves nothing for the user to send.
 /// Binding and property warnings are left out: they are noise from templates, not failures. Each message is kept at
 /// most once a minute so a failing render loop cannot fill the log.
+/// Two known messages are handled on their own: input that reaches a window or popup in the moment it closes (the
+/// release of the click that closed it) is dropped, being harmless, and the compositor's own stall recovery is written
+/// in plain words and noted in <see cref="HangClues"/> so a UI hang right after it can be tied to the graphics driver.
 /// </summary>
-public sealed class ErrorLogSink(ILogSink? inner, Action<string, string>? write = null, Func<DateTimeOffset>? clock = null) : ILogSink
+public sealed class ErrorLogSink(ILogSink? inner, Action<string, string>? write = null, Func<DateTimeOffset>? clock = null,
+    HangClues? clues = null) : ILogSink
 {
+    /// <summary>Avalonia's TopLevel.HandleInput, for input on a window or popup that has already closed.</summary>
+    public const string InputAfterCloseTemplate = "PlatformImpl is null, couldn't handle input.";
+
+    /// <summary>Avalonia's Win32 compositor watchdog: a frame took over 1 s and it forced the next one.</summary>
+    public const string CommitTimeoutTemplate = "windows::UI::Composition::ICompositor5.RequestCommitAsync timed out";
+
+    private readonly HangClues _clues = clues ?? HangClues.Shared;
     private static readonly TimeSpan Repeat = TimeSpan.FromMinutes(1);
     private readonly Action<string, string> _write = write ?? ErrorLog.Note;
     private readonly Func<DateTimeOffset> _clock = clock ?? (() => DateTimeOffset.Now);
@@ -30,8 +41,15 @@ public sealed class ErrorLogSink(ILogSink? inner, Action<string, string>? write 
     {
         if (inner?.IsEnabled(level, area) == true) inner.Log(level, area, source, messageTemplate, propertyValues);
         if (!Keeps(level, area)) return;
+        if (messageTemplate == InputAfterCloseTemplate) return;
 
-        var message = Format(messageTemplate, propertyValues);
+        var stall = messageTemplate.StartsWith(CommitTimeoutTemplate, StringComparison.Ordinal);
+        if (stall) _clues.RenderStall();
+
+        var message = stall
+            ? "The graphics compositor did not finish a frame within 1 s and was restarted. This happens after display " +
+              "sleep, a graphics driver reset or remote desktop, and is harmless unless the window stays blank or freezes."
+            : Format(messageTemplate, propertyValues);
         var key = area + "|" + messageTemplate;
         var now = _clock();
         lock (_lastWritten)
@@ -40,7 +58,7 @@ public sealed class ErrorLogSink(ILogSink? inner, Action<string, string>? write 
             _lastWritten[key] = now;
         }
         var origin = source is null ? "" : $" ({source.GetType().Name})";
-        _write($"avalonia {level.ToString().ToLowerInvariant()} {area}", message + origin);
+        _write(stall ? "render" : $"avalonia {level.ToString().ToLowerInvariant()} {area}", stall ? message : message + origin);
     }
 
     /// <summary>Fills the <c>{Name}</c> holes of a message template in order, as the trace sink does.</summary>

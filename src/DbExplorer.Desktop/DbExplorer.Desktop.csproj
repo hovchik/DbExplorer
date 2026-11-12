@@ -27,6 +27,8 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.13" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <!-- Lets the UI watchdog save a dump of the app while its UI thread is stuck (Services/HangDump.cs). -->
+    <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.745401" />
     <!-- Pinned above the version Avalonia.FreeDesktop pulls in (0.20.0, GHSA-xrw6-gwf8-vvr9); used on Linux only. -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>

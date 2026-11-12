@@ -16,7 +16,11 @@ public class RenderingDiagnosticsTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
-    private ErrorLogSink Sink(ILogSink? inner = null) => new(inner, (s, m) => _written.Add((s, m)), () => _now);
+    private readonly HangClues _clues;
+
+    public RenderingDiagnosticsTests() => _clues = new HangClues(() => _now);
+
+    private ErrorLogSink Sink(ILogSink? inner = null) => new(inner, (s, m) => _written.Add((s, m)), () => _now, _clues);
 
     [Fact]
     public void Software_rendering_is_off_by_default_and_survives_a_restart()
@@ -79,6 +83,81 @@ public class RenderingDiagnosticsTests : IDisposable
         var text = ErrorLogSink.Format("Render loop stopped", [new InvalidOperationException("EGL_CONTEXT_LOST")]);
         Assert.Contains("EGL_CONTEXT_LOST", text);
         Assert.Equal("a 1 {b}", ErrorLogSink.Format("a {x} {b}", [1]));
+    }
+
+    [Fact]
+    public void Input_on_a_window_or_popup_that_just_closed_is_not_logged()
+    {
+        var sink = Sink();
+        sink.Log(LogEventLevel.Warning, LogArea.Control, new object(), ErrorLogSink.InputAfterCloseTemplate);
+        Assert.Empty(_written);
+    }
+
+    [Fact]
+    public void A_compositor_stall_is_logged_in_plain_words_and_kept_as_a_clue()
+    {
+        var sink = Sink();
+        sink.Log(LogEventLevel.Error, LogArea.Visual, new object(),
+            "windows::UI::Composition::ICompositor5.RequestCommitAsync timed out, force-triggering next tick");
+        var (source, message) = Assert.Single(_written);
+        Assert.Equal("render", source);
+        Assert.Contains("did not finish a frame within 1 s", message);
+
+        _now += TimeSpan.FromSeconds(5);
+        Assert.Contains("compositor had stalled 5 s before", _clues.Describe(_now));
+    }
+
+    [Fact]
+    public void Clues_name_the_last_input_and_a_recent_compositor_stall_only()
+    {
+        var clues = new HangClues(() => _now);
+        Assert.Null(clues.Describe(_now));
+
+        clues.RenderStall();
+        _now += TimeSpan.FromMinutes(5);
+        clues.Input("Ctrl+Enter in QueryView");
+        _now += TimeSpan.FromSeconds(2);
+        // The stall was 5 minutes earlier: unrelated, left out.
+        Assert.Equal("Last input before it: Ctrl+Enter in QueryView, 2 s before.", clues.Describe(_now));
+
+        clues.RenderStall();
+        Assert.Contains("compositor had stalled just then", clues.Describe(_now));
+        Assert.Contains("Software rendering", clues.Describe(_now));
+    }
+
+    [Fact]
+    public void An_input_long_after_the_hang_began_is_not_blamed_for_it()
+    {
+        var clues = new HangClues(() => _now);
+        var since = _now;
+        _now += TimeSpan.FromSeconds(20);
+        clues.Input("click on Button in MainWindow");
+        Assert.Null(clues.Describe(since));
+    }
+
+    [Theory]
+    [InlineData(Avalonia.Input.Key.A, Avalonia.Input.KeyModifiers.None, "typing")]
+    [InlineData(Avalonia.Input.Key.D7, Avalonia.Input.KeyModifiers.Shift, "typing")]
+    [InlineData(Avalonia.Input.Key.Space, Avalonia.Input.KeyModifiers.None, "typing")]
+    [InlineData(Avalonia.Input.Key.F5, Avalonia.Input.KeyModifiers.None, "F5")]
+    [InlineData(Avalonia.Input.Key.Enter, Avalonia.Input.KeyModifiers.Control, "Ctrl+Return")]
+    [InlineData(Avalonia.Input.Key.F, Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift, "Ctrl+Shift+F")]
+    public void Keys_are_recorded_as_shortcuts_and_never_as_typed_text(Avalonia.Input.Key key, Avalonia.Input.KeyModifiers modifiers, string expected) =>
+        Assert.Equal(expected, InputClue.Key(key, modifiers));
+
+    [Fact]
+    public void Hang_dumps_can_be_turned_off_and_old_ones_are_deleted()
+    {
+        Assert.True(HangDump.Enabled(null));
+        Assert.True(HangDump.Enabled("on"));
+        Assert.False(HangDump.Enabled(" OFF "));
+        Assert.False(HangDump.Enabled("0"));
+
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(Path.Combine(_root, "hang-20261112-100700.dmp"), "x");
+        File.WriteAllText(Path.Combine(_root, "errors.log"), "x");
+        HangDump.DeleteOld(_root);
+        Assert.Equal(["errors.log"], Directory.GetFiles(_root).Select(Path.GetFileName));
     }
 
     private sealed class RecordingSink : ILogSink

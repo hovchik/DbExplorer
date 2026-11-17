@@ -58,7 +58,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _assistantSettings = assistantSettings;
         _workspace = workspace;
         SavedWorkspace = workspace.Load();
-        if (Enum.TryParse<AppTab>(SavedWorkspace.MainTab, out var savedTab) && Enum.IsDefined(savedTab)) _selectedTab = savedTab;
+        if (Enum.TryParse<AppTab>(SavedWorkspace.MainTab, out var savedTab) && Enum.IsDefined(savedTab))
+            _selectedTab = savedTab == AppTab.SideBySide ? AppTab.Query : savedTab; // the board is not kept between runs
         _store = store;
         _sessions = sessions;
         _registry = registry;
@@ -81,6 +82,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Query.ConnectCommand = ConnectCommand;
         Query.Profiles = Profiles;
         Query.ConnectProfileRequested += profile => ConnectProfileAsync(profile);
+        Query.SideBySideRequested += AddToSideBySide;
+        ResultsBoard.Changed += () => OnPropertyChanged(nameof(ShowSideBySideTab));
         Comparer = comparer;
         Comparer.Profiles = Profiles;
         Profiles.CollectionChanged += (_, _) => ExportConnectionsCommand.NotifyCanExecuteChanged();
@@ -376,6 +379,26 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Order matches the TabItems in MainWindow.axaml.</summary>
     [ObservableProperty] private AppTab _selectedTab = AppTab.Objects;
+
+    partial void OnSelectedTabChanged(AppTab value) => OnPropertyChanged(nameof(ShowSideBySideTab));
+
+    // ----- Side by side: results of any Query tab, next to each other -----
+
+    public ResultsBoardViewModel ResultsBoard { get; } = new();
+
+    /// <summary>The Side by side tab is listed once it has a result (and while it is open, so clearing it does not jump away).</summary>
+    public bool ShowSideBySideTab => ResultsBoard.HasItems || SelectedTab == AppTab.SideBySide;
+
+    /// <summary>Puts a snapshot of a result on the Side by side board; from the second result on, the board is shown.
+    /// Returns the status line.</summary>
+    public string AddToSideBySide(ResultSetView view, BoardSource source)
+    {
+        var before = ResultsBoard.Count;
+        var status = ResultsBoard.Add(view, source);
+        if (ResultsBoard.Count > before && ResultsBoard.Count >= 2) SelectedTab = AppTab.SideBySide;
+        StatusText = status;
+        return status;
+    }
     public QueryWorkspaceViewModel Query { get; }
     public ComparerViewModel Comparer { get; }
     public LabViewModel Lab { get; }
@@ -653,7 +676,11 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The main tab saved for the next start: the one left for the Query tab while offline, unless the
     /// Query tab was used meanwhile.</summary>
     private AppTab TabToRemember() =>
-        OfflineTabs.TabOnConnect(_tabBeforeOffline, SelectedTab, QueryFingerprint() != _scriptsWhenOffline) ?? SelectedTab;
+        (OfflineTabs.TabOnConnect(_tabBeforeOffline, SelectedTab, QueryFingerprint() != _scriptsWhenOffline) ?? SelectedTab) switch
+        {
+            AppTab.SideBySide => AppTab.Query, // its snapshots are not saved, so it would open empty
+            var tab => tab
+        };
 
     // ----- Workspace: window, main tab, active query tab and connection, restored at the next start -----
 
@@ -1256,6 +1283,7 @@ public enum AppTab
 {
     Objects,
     Query,
+    SideBySide,
     QueryBuilder,
     TableDesigner,
     Comparer,

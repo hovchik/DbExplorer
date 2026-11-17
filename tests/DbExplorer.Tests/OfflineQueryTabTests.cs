@@ -25,7 +25,7 @@ public class OfflineQueryTabTests : IDisposable
     public void Query_comparer_and_er_model_work_offline_and_nothing_else_does()
     {
         var offline = Enum.GetValues<AppTab>().Where(t => !OfflineTabs.NeedsConnection(t)).ToList();
-        Assert.Equal([AppTab.Query, AppTab.Comparer, AppTab.ErModel], offline);
+        Assert.Equal([AppTab.Query, AppTab.SideBySide, AppTab.Comparer, AppTab.ErModel], offline);
     }
 
     [Theory]

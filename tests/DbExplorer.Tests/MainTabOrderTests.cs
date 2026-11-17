@@ -9,14 +9,14 @@ public class MainTabOrderTests
 {
     private static readonly AppTab[] Expected =
     [
-        AppTab.Objects, AppTab.Query, AppTab.QueryBuilder, AppTab.TableDesigner, AppTab.Comparer, AppTab.Diagram,
+        AppTab.Objects, AppTab.Query, AppTab.SideBySide, AppTab.QueryBuilder, AppTab.TableDesigner, AppTab.Comparer, AppTab.Diagram,
         AppTab.SearchNamesAndCode, AppTab.SearchData, AppTab.ErModel, AppTab.Indexes, AppTab.Locks, AppTab.Activity,
         AppTab.Lab, AppTab.Security, AppTab.Jobs
     ];
 
     private static readonly Dictionary<string, AppTab> Headers = new()
     {
-        ["Objects"] = AppTab.Objects, ["Query"] = AppTab.Query, ["Query builder"] = AppTab.QueryBuilder,
+        ["Objects"] = AppTab.Objects, ["Query"] = AppTab.Query, ["{Binding ResultsBoard.Header}"] = AppTab.SideBySide, ["Query builder"] = AppTab.QueryBuilder,
         ["Table designer"] = AppTab.TableDesigner, ["Comparer"] = AppTab.Comparer, ["Diagram"] = AppTab.Diagram,
         ["Search names &amp; code"] = AppTab.SearchNamesAndCode, ["Search data"] = AppTab.SearchData,
         ["ER model"] = AppTab.ErModel, ["Indexes"] = AppTab.Indexes, ["Locks"] = AppTab.Locks,

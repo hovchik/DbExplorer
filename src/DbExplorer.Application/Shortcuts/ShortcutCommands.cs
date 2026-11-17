@@ -91,6 +91,7 @@ public static class ShortcutCommands
     public const string GridFilter = "grid.filter";
     public const string GridAddRow = "grid.add-row";
     public const string GridDeleteRows = "grid.delete-rows";
+    public const string GridSideBySide = "grid.side-by-side";
 
     public const string NextDifference = "comparer.next";
     public const string PreviousDifference = "comparer.previous";
@@ -243,6 +244,7 @@ public static class ShortcutCommands
         Add(GridFilter, g, "Quick filter on the rows", "Ctrl+F");
         Add(GridAddRow, g, "Add a row", "Alt+Insert");
         Add(GridDeleteRows, g, "Delete the selected rows", "Ctrl+Delete");
+        Add(GridSideBySide, g, "View the result side by side with others", "Ctrl+Alt+B");
 
         var c = ShortcutAreas.Comparer;
         Add(RunComparison, c, "Run the section's main action (compare, generate, preview)", "F5");

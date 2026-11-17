@@ -104,6 +104,9 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
     /// <summary>A run of any tab ended; the window turns long ones the user did not watch into a notification.</summary>
     public event Action<QueryViewModel, TimeSpan, RunOutcome>? RunFinished;
 
+    /// <summary>A tab's "View side by side": the window puts the result on the Side by side board and returns the status line.</summary>
+    public event Func<ResultSetView, BoardSource, string?>? SideBySideRequested;
+
     /// <summary>The command palette asks the workspace view to open or save a file (it owns the file pickers).</summary>
     public event Func<QueryFileAction, Task>? FileActionRequested;
 
@@ -385,6 +388,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
         };
         doc.RunFinished += (finished, elapsed, outcome) => RunFinished?.Invoke(finished, elapsed, outcome);
+        doc.SideBySideRequested += (view, source) => SideBySideRequested?.Invoke(view, source);
         doc.RunStarting += started => _ = RecordAsync(started, LocalHistoryReason.Run);
         Documents.Add(doc);
         SelectedDocument = doc;

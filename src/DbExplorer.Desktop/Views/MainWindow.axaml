@@ -611,6 +611,10 @@
             <views:WelcomeView IsVisible="{Binding ShowWelcome}" />
           </Panel>
         </TabItem>
+        <TabItem Header="{Binding ResultsBoard.Header}" IsVisible="{Binding ShowSideBySideTab}"
+                 ToolTip.Tip="Results from your Query tabs next to each other, to compare them by eye">
+          <views:ResultsBoardView DataContext="{Binding ResultsBoard}" />
+        </TabItem>
         <TabItem Header="Query builder" IsEnabled="{Binding IsConnected}" ToolTip.Tip="Build a SELECT by dragging tables and ticking columns">
           <views:QueryBuilderView DataContext="{Binding QueryBuilder}" />
         </TabItem>

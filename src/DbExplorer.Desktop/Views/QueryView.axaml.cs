@@ -114,6 +114,12 @@ public partial class QueryView : UserControl
         Editor.AddHandler(PointerWheelChangedEvent, OnEditorWheel, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
+        // A result grid's "View side by side" (button, menu, Ctrl+Alt+B): the tab puts a snapshot on the board.
+        ResultTabs.AddHandler(ResultGridView.ViewSideBySideRequestedEvent, (_, e) =>
+        {
+            if (e.Source is ResultGridView { ResultSet: { } view } && DataContext is QueryViewModel vm) vm.ViewSideBySideCommand.Execute(view);
+            e.Handled = true;
+        });
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
         DataContextChanged += (_, _) => OnTabShown();
 

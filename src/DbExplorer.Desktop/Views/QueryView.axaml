@@ -379,6 +379,9 @@
 						  Command="{Binding $parent[TabControl].DataContext.ClosePinnedResultCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close all pinned" Command="{Binding $parent[TabControl].DataContext.CloseAllPinnedResultsCommand}" />
 				<Separator />
+				<MenuItem Header="View side by side" IsVisible="{Binding IsGrid}" services:Keymap.Command="grid.side-by-side"
+						  Command="{Binding $parent[TabControl].DataContext.ViewSideBySideCommand}" CommandParameter="{Binding}" />
+				<Separator IsVisible="{Binding IsGrid}" />
 				<MenuItem Header="Show as text (Ctrl+T)" IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}"
 						  Command="{Binding $parent[TabControl].DataContext.ToggleResultsAsTextCommand}" />
 				<MenuItem Header="Show as grid (Ctrl+T)" IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}"
@@ -403,7 +406,7 @@
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <Panel>
 			<Panel IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}">
-			  <views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" />
+			  <views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" CanViewSideBySide="True" />
 			</Panel>
 			<!-- Ctrl+T: the same rows as aligned text, selectable and copyable as they look -->
 			<Panel IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}">

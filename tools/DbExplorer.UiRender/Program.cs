@@ -207,6 +207,7 @@ namespace DbExplorer.UiRender
             await Step("backup", RenderBackupAsync);
             await Step("jobs", () => RenderJobsAsync("postgres"));
             await Step("multi", RenderMultipleConnectionsAsync);
+            await Step("compare", RenderCompareAsync);
             await Step("builder", RenderQueryBuilderAsync);
             await Step("format", RenderFormattingAsync);
 
@@ -2321,6 +2322,58 @@ namespace DbExplorer.UiRender
                 await query.CloseTabCommand.ExecuteAsync(doc);
             }
             _vm.Profiles.Remove(archive);
+            await Settle();
+        }
+
+        /// <summary>Compare: the Accounts top 10 of one tab next to the Orders of another, beside and below.</summary>
+        private async Task RenderCompareAsync()
+        {
+            var query = _vm.Query;
+            var before = query.Documents.ToList();
+            _vm.SelectedTab = AppTab.Query;
+            query.OpenInNewTab("SELECT id, name, email, created_at\nFROM customers\nORDER BY id\nLIMIT 10;", "Accounts top 10");
+            var accounts = query.SelectedDocument!;
+            await accounts.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !accounts.IsRunning && accounts.ResultSets.Count > 0, "accounts");
+
+            query.OpenInNewTab("SELECT id, customer_id, status, ordered_at\nFROM orders\nORDER BY customer_id, id\nLIMIT 40;", "Orders");
+            var orders = query.SelectedDocument!;
+            await orders.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !orders.IsRunning && orders.ResultSets.Count > 0, "orders");
+            await Settle(6);
+
+            // The Compare ▾ list, opened from the Orders result.
+            var grid = _window.GetVisualDescendants().OfType<ResultGridView>().First(g => g.CanCompare && g.IsEffectivelyVisible);
+            grid.RequestCompare();
+            await Settle(6);
+            await Shot(_window, "compare-list");
+            foreach (var popup in _window.GetVisualDescendants().OfType<Popup>().Where(p => p.IsOpen).ToList()) popup.IsOpen = false;
+            if (TopLevel.GetTopLevel(grid) is { } top)
+                foreach (var presenter in top.GetVisualDescendants().OfType<MenuFlyoutPresenter>().ToList()) presenter.Close();
+            await Settle(4);
+
+            orders.CompareWithCommand.Execute(orders.CompareChoices().First(c => ReferenceEquals(c.Tab, accounts)));
+            await Settle(8);
+            await Shot(_window, "compare-beside");
+            orders.CompareBelow = true;
+            await Settle(8);
+            await Shot(_window, "compare-below");
+            orders.CompareBelow = false;
+
+            _window.Width = 1024;
+            _window.Height = 700;
+            await Settle(8);
+            await Shot(_window, "small-compare-beside");
+            _window.Width = 1400;
+            _window.Height = 900;
+            await Settle(4);
+
+            orders.CloseCompareCommand.Execute(null);
+            foreach (var doc in query.Documents.Except(before).ToList())
+            {
+                doc.SetText("", markClean: true);
+                await query.CloseTabCommand.ExecuteAsync(doc);
+            }
             await Settle();
         }
 

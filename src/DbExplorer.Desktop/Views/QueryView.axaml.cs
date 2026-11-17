@@ -114,6 +114,16 @@ public partial class QueryView : UserControl
         Editor.AddHandler(PointerWheelChangedEvent, OnEditorWheel, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
+        // Compare: a result grid's Compare ▾ (button, menu, Ctrl+Alt+B) lists the results to show next to it.
+        ResultTabs.AddHandler(ResultGridView.CompareRequestedEvent, (_, e) =>
+        {
+            if (e.Source is ResultGridView grid) ShowCompareChoices(grid.CompareAnchor);
+            e.Handled = true;
+        });
+        CompareChangeButton.Click += (_, _) => ShowCompareChoices(CompareChangeButton);
+        CompareGrid.Scrolled += OnCompareScrolled;
+        CompareGrid.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(CompareGrid.WatchScrolling, DispatcherPriority.Loaded);
+        ArrangeCompare();
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
         DataContextChanged += (_, _) => OnTabShown();
 

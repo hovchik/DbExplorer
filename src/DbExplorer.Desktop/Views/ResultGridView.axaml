@@ -81,6 +81,14 @@
 				   ToolTip.Tip="Summary of the current column over the selected rows" />
 	  </WrapPanel>
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+		<Button x:Name="CompareButton" Classes="compact" IsVisible="False"
+				AutomationProperties.Name="Compare with another result"
+				ToolTip.Tip="Compare: show a result from another Query tab (or another result of this one) next to this result (Ctrl+Alt+B)">
+		  <StackPanel Orientation="Horizontal" Spacing="5">
+			<controls:StrokeIcon Data="{x:Static controls:Icons.SideBySide}" Width="13" Height="13" VerticalAlignment="Center" />
+			<TextBlock Text="Compare ▾" VerticalAlignment="Center" />
+		  </StackPanel>
+		</Button>
 		<Button Classes="compact" Content="Copy ▾"
 				ToolTip.Tip="Copy the rows in view. Ctrl+C (or right-click) copies the selected rows.">
 		  <Button.Flyout>

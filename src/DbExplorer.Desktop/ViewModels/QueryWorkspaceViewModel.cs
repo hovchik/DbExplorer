@@ -82,6 +82,12 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
         _scripts = scripts;
         _dialogs = dialogs;
         _localHistory = localHistory;
+        // A closed tab's result can't stay next to another tab's results.
+        Documents.CollectionChanged += (_, e) =>
+        {
+            foreach (var closed in e.OldItems?.OfType<QueryViewModel>() ?? [])
+                foreach (var doc in Documents) doc.OnTabClosed(closed);
+        };
         NewTab();
 
         // Unsaved scratch text survives a crash: the tab list is written every 30 seconds while something changed.
@@ -385,6 +391,7 @@ public partial class QueryWorkspaceViewModel : ViewModelBase, ISessionAware
             if (opened.ExecuteCommand.CanExecute(null)) opened.ExecuteCommand.Execute(null);
         };
         doc.RunFinished += (finished, elapsed, outcome) => RunFinished?.Invoke(finished, elapsed, outcome);
+        doc.AllTabs = () => Documents;
         doc.RunStarting += started => _ = RecordAsync(started, LocalHistoryReason.Run);
         Documents.Add(doc);
         SelectedDocument = doc;

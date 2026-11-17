@@ -21,8 +21,12 @@ public partial class QueryViewModel
     /// <summary>The tab to select the next time the shown results change.</summary>
     private ResultSetView? _selectNext;
 
-    partial void OnResultSetsChanged(IReadOnlyList<ResultSetView> oldValue, IReadOnlyList<ResultSetView> newValue) =>
+    partial void OnResultSetsChanged(IReadOnlyList<ResultSetView> oldValue, IReadOnlyList<ResultSetView> newValue)
+    {
+        // New rows arrived (not just a result moved to the pins): remember when, for the Side by side board.
+        if (newValue.Any(n => !oldValue.Any(o => ReferenceEquals(o, n)))) _resultsAt = DateTime.Now;
         RefreshShownResults(oldValue, newValue, keepPosition: _isRefreshRun || _isFetchMoreRun);
+    }
 
     /// <param name="keepPosition">Keep the selected tab's position among the run's results (auto refresh, pin changes).</param>
     private void RefreshShownResults(IReadOnlyList<ResultSetView> oldRunResults, IReadOnlyList<ResultSetView> newRunResults, bool keepPosition)

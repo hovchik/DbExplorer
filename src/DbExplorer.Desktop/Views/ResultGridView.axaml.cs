@@ -196,11 +196,13 @@ public partial class ResultGridView : UserControl
         InitPivot();
         InitChart();
         InitExport();
+        InitCompare();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == CanCompareProperty) UpdateCompare();
         if (change.Property == ResultSetProperty)
         {
             Rebuild(change.GetNewValue<ResultSetView?>());
@@ -1181,6 +1183,11 @@ public partial class ResultGridView : UserControl
         else if (e.Key == Key.S && ctrl && HasPendingEdits())
         {
             _ = CommitEditsAsync();
+            e.Handled = true;
+        }
+        else if (command == ShortcutCommands.GridCompare && CanCompare)
+        {
+            RequestCompare();
             e.Handled = true;
         }
         else if (command == ShortcutCommands.GridFilter)

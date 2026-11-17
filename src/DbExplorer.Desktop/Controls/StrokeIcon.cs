@@ -57,6 +57,9 @@ public static class Icons
     public const string Redo = "M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 0 0 0 11H13";
     public const string Arrange = "M3 4h7v6H3z M14 4h7v6h-7z M14 14h7v6h-7z M10 7h4 M17.5 10v4";
     public const string OpenExternal = "M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5";
+    // Compare results
+    public const string SideBySide = "M3 5h7v14H3z M14 5h7v14h-7z";
+    public const string Rows = "M4 3h16v7H4z M4 14h16v7H4z";
     public const string Settings = "M4 6h9 M17 6h3 M15 4v4 M4 12h3 M11 12h9 M9 10v4 M4 18h11 M19 18h1 M17 16v4";
 }
 

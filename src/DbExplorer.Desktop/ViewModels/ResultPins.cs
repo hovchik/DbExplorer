@@ -30,31 +30,25 @@ public sealed class ResultPins
         return null;
     }
 
-    /// <summary>Pins a copy of <paramref name="view"/> (read-only, see <see cref="Snapshot"/>) and returns it; null when it
-    /// cannot be pinned (see <see cref="WhyNot"/>).</summary>
+    /// <summary>Pins a copy of <paramref name="view"/> (read-only: saving edits and following foreign keys are off, since the
+    /// tab may later be on another connection) and returns it; null when it cannot be pinned (see <see cref="WhyNot"/>).</summary>
     public ResultSetView? Pin(ResultSetView view, string? query, DateTime at)
     {
         if (WhyNot(view) is not null) return null;
-        var pinned = Snapshot(view, query,
-            "A pinned result is a snapshot: it is not run again. Use the latest run's result to fetch more or export everything.")
-            with { IsPinned = true, PinnedAt = at };
+        var pinned = view with
+        {
+            IsPinned = true,
+            PinnedAt = at,
+            Query = query ?? view.Query,
+            CommitEdits = null,
+            OpenReference = null,
+            Rerun = null,
+            RerunUnavailable = view.IsTruncated ? "A pinned result is a snapshot: it is not run again. Use the latest run's result to fetch more or export everything." : null,
+            Rows = view.Rows.ToArray()
+        };
         _items.Add(pinned);
         return pinned;
     }
-
-    /// <summary>A read-only copy of <paramref name="view"/> that later runs, edits and connection changes leave alone:
-    /// saving edits, following foreign keys and fetching more are off (it may later be shown for another connection), and
-    /// the rows are copies, so editing the original grid does not change it. Used by pins and the Side by side board.</summary>
-    /// <param name="cutOffReason">Shown above the grid when the result was cut off at the row limit.</param>
-    public static ResultSetView Snapshot(ResultSetView view, string? query, string cutOffReason) => view with
-    {
-        Query = query ?? view.Query,
-        CommitEdits = null,
-        OpenReference = null,
-        Rerun = null,
-        RerunUnavailable = view.IsTruncated ? cutOffReason : null,
-        Rows = view.Rows.Where(r => !r.IsDeleted).Select(r => new ResultRow(r.Values)).ToArray()
-    };
 
     /// <summary>Gives a pinned result a new title; returns the renamed result (null when it is not pinned here).</summary>
     public ResultSetView? Rename(ResultSetView view, string title)

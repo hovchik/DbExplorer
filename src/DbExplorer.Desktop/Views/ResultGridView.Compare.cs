@@ -7,60 +7,64 @@ using DbExplorer.Desktop.Services;
 
 namespace DbExplorer.Desktop.Views;
 
-/// <summary>"View side by side": asks the host (the Query tab) to put this result on the Side by side board, and lets the
-/// board scroll several grids together.</summary>
+/// <summary>"Compare ▾": asks the host (the Query tab) to show another result next to this one, and lets two grids
+/// scroll together.</summary>
 public partial class ResultGridView
 {
-    /// <summary>Show "View side by side" (button, menu item, key). Off by default: only hosts that handle
-    /// <see cref="ViewSideBySideRequestedEvent"/> turn it on.</summary>
-    public static readonly StyledProperty<bool> CanViewSideBySideProperty =
-        AvaloniaProperty.Register<ResultGridView, bool>(nameof(CanViewSideBySide));
+    /// <summary>Show "Compare ▾" (button, menu item, key). Off by default: only hosts that handle
+    /// <see cref="CompareRequestedEvent"/> turn it on.</summary>
+    public static readonly StyledProperty<bool> CanCompareProperty =
+        AvaloniaProperty.Register<ResultGridView, bool>(nameof(CanCompare));
 
-    public bool CanViewSideBySide
+    public bool CanCompare
     {
-        get => GetValue(CanViewSideBySideProperty);
-        set => SetValue(CanViewSideBySideProperty, value);
+        get => GetValue(CanCompareProperty);
+        set => SetValue(CanCompareProperty, value);
     }
 
-    /// <summary>Raised (bubbling) when the user asks to view <see cref="ResultSet"/> side by side; the source is this grid.</summary>
-    public static readonly RoutedEvent<RoutedEventArgs> ViewSideBySideRequestedEvent =
-        RoutedEvent.Register<ResultGridView, RoutedEventArgs>(nameof(ViewSideBySideRequested), RoutingStrategies.Bubble);
+    /// <summary>Raised (bubbling) when the user asks to compare this result with another; the source is this grid, and
+    /// <see cref="CompareAnchor"/> is where the host opens its list of results.</summary>
+    public static readonly RoutedEvent<RoutedEventArgs> CompareRequestedEvent =
+        RoutedEvent.Register<ResultGridView, RoutedEventArgs>(nameof(CompareRequested), RoutingStrategies.Bubble);
 
-    public event EventHandler<RoutedEventArgs>? ViewSideBySideRequested
+    public event EventHandler<RoutedEventArgs>? CompareRequested
     {
-        add => AddHandler(ViewSideBySideRequestedEvent, value);
-        remove => RemoveHandler(ViewSideBySideRequestedEvent, value);
+        add => AddHandler(CompareRequestedEvent, value);
+        remove => RemoveHandler(CompareRequestedEvent, value);
     }
 
-    private MenuItem? _sideBySideItem;
-    private readonly Separator _sideBySideSeparator = new();
+    /// <summary>The Compare ▾ button, to open the list of results under it.</summary>
+    public Control CompareAnchor => CompareButton;
 
-    private void InitSideBySide()
+    private MenuItem? _compareItem;
+    private readonly Separator _compareSeparator = new();
+
+    private void InitCompare()
     {
-        _sideBySideItem = Item("View side by side", RequestSideBySide);
-        Keymap.SetCommand(_sideBySideItem, ShortcutCommands.GridSideBySide);
+        _compareItem = Item("Compare with another result…", RequestCompare);
+        Keymap.SetCommand(_compareItem, ShortcutCommands.GridCompare);
         if (Grid.ContextMenu is { } menu)
         {
-            menu.Items.Add(_sideBySideSeparator);
-            menu.Items.Add(_sideBySideItem);
+            menu.Items.Add(_compareSeparator);
+            menu.Items.Add(_compareItem);
         }
-        SideBySideButton.Click += (_, _) => RequestSideBySide();
-        UpdateSideBySide();
+        CompareButton.Click += (_, _) => RequestCompare();
+        UpdateCompare();
     }
 
-    private void UpdateSideBySide()
+    private void UpdateCompare()
     {
-        var on = CanViewSideBySide;
-        SideBySideButton.IsVisible = on;
-        _sideBySideSeparator.IsVisible = on;
-        if (_sideBySideItem is not null) _sideBySideItem.IsVisible = on;
+        var on = CanCompare;
+        CompareButton.IsVisible = on;
+        _compareSeparator.IsVisible = on;
+        if (_compareItem is not null) _compareItem.IsVisible = on;
     }
 
-    /// <summary>Asks the host to show this result next to others; nothing when the host does not offer it.</summary>
-    public void RequestSideBySide()
+    /// <summary>Asks the host for its list of results to compare with; nothing when the host does not offer it.</summary>
+    public void RequestCompare()
     {
-        if (!CanViewSideBySide || ResultSet is null) return;
-        RaiseEvent(new RoutedEventArgs(ViewSideBySideRequestedEvent, this));
+        if (!CanCompare) return;
+        RaiseEvent(new RoutedEventArgs(CompareRequestedEvent, this));
     }
 
     // ---------------------------------------------------------------- scrolling several grids together

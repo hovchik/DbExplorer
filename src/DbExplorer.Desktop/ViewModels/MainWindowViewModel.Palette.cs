@@ -211,7 +211,6 @@ public partial class MainWindowViewModel
         foreach (var tab in Enum.GetValues<AppTab>())
         {
             if (!IsConnected && OfflineTabs.NeedsConnection(tab)) continue;
-            if (tab == AppTab.SideBySide && !ResultsBoard.HasItems) continue;
             var title = Converters.HumanizeConverter.Instance.Convert(tab, typeof(string), null, System.Globalization.CultureInfo.CurrentCulture) as string ?? tab.ToString();
             items.Add(new PaletteItem(title.Replace("Search names and code", "Search names & code").Replace("Er model", "ER model"), "tab", PaletteItemKind.Tab, _ => SelectedTab = tab));
         }

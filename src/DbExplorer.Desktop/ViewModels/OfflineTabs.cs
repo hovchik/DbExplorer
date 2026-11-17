@@ -7,9 +7,9 @@ namespace DbExplorer.Desktop.ViewModels;
 /// </summary>
 public static class OfflineTabs
 {
-    /// <summary>Query (write, open and save scripts), Side by side (snapshots of results), Comparer (picks its own
-    /// connections) and ER model (works on a model file) are usable offline; every other tab shows a server's catalog or state.</summary>
-    public static bool NeedsConnection(AppTab tab) => tab is not (AppTab.Query or AppTab.SideBySide or AppTab.Comparer or AppTab.ErModel);
+    /// <summary>Query (write, open and save scripts), Comparer (picks its own connections) and ER model (works on a
+    /// model file) are usable offline; every other tab shows a server's catalog or state.</summary>
+    public static bool NeedsConnection(AppTab tab) => tab is not (AppTab.Query or AppTab.Comparer or AppTab.ErModel);
 
     /// <summary>The tab to show once nothing is connected; null to stay on <paramref name="current"/>.</summary>
     public static AppTab? TabWhenOffline(AppTab current) => NeedsConnection(current) ? AppTab.Query : null;

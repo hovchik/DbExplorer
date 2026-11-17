@@ -114,12 +114,16 @@ public partial class QueryView : UserControl
         Editor.AddHandler(PointerWheelChangedEvent, OnEditorWheel, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
         ResultsSplitter.DoubleTapped += (_, _) => SetSplit(DefaultEditorShare, DefaultResultsShare);
-        // A result grid's "View side by side" (button, menu, Ctrl+Alt+B): the tab puts a snapshot on the board.
-        ResultTabs.AddHandler(ResultGridView.ViewSideBySideRequestedEvent, (_, e) =>
+        // Compare: a result grid's Compare ▾ (button, menu, Ctrl+Alt+B) lists the results to show next to it.
+        ResultTabs.AddHandler(ResultGridView.CompareRequestedEvent, (_, e) =>
         {
-            if (e.Source is ResultGridView { ResultSet: { } view } && DataContext is QueryViewModel vm) vm.ViewSideBySideCommand.Execute(view);
+            if (e.Source is ResultGridView grid) ShowCompareChoices(grid.CompareAnchor);
             e.Handled = true;
         });
+        CompareChangeButton.Click += (_, _) => ShowCompareChoices(CompareChangeButton);
+        CompareGrid.Scrolled += OnCompareScrolled;
+        CompareGrid.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(CompareGrid.WatchScrolling, DispatcherPriority.Loaded);
+        ArrangeCompare();
         ActualThemeVariantChanged += (_, _) => ApplyHighlighting();
         DataContextChanged += (_, _) => OnTabShown();
 

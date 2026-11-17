@@ -81,12 +81,12 @@
 				   ToolTip.Tip="Summary of the current column over the selected rows" />
 	  </WrapPanel>
 	  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
-		<Button x:Name="SideBySideButton" Classes="compact" IsVisible="False"
-				AutomationProperties.Name="View side by side"
-				ToolTip.Tip="View side by side: show a snapshot of this result next to results from other Query tabs, to compare them by eye">
+		<Button x:Name="CompareButton" Classes="compact" IsVisible="False"
+				AutomationProperties.Name="Compare with another result"
+				ToolTip.Tip="Compare: show a result from another Query tab (or another result of this one) next to this result (Ctrl+Alt+B)">
 		  <StackPanel Orientation="Horizontal" Spacing="5">
 			<controls:StrokeIcon Data="{x:Static controls:Icons.SideBySide}" Width="13" Height="13" VerticalAlignment="Center" />
-			<TextBlock Text="Side by side" VerticalAlignment="Center" />
+			<TextBlock Text="Compare ▾" VerticalAlignment="Center" />
 		  </StackPanel>
 		</Button>
 		<Button Classes="compact" Content="Copy ▾"

@@ -344,8 +344,10 @@
 				  ToolTip.Tip="Drag to resize the editor and results · double-click to reset" />
 
 	<!-- Results: pinned snapshots first (kept when the query runs again), then the latest run's result sets -->
-	<TabControl Grid.Row="3" x:Name="ResultTabs" ItemsSource="{Binding ShownResults}" SelectedItem="{Binding SelectedResult}">
-	  <TabControl.Styles>
+	<!-- Results, and optionally another result (another tab's, or another of this tab's) next to them to compare by eye;
+	     the code-behind lays the two out beside or below each other -->
+	<Grid Grid.Row="3" x:Name="ResultsArea" ColumnDefinitions="*,0,0" RowDefinitions="*,0,0">
+	  <Grid.Styles>
 		<Style Selector="Button.resulttab">
 		  <Setter Property="Padding" Value="3" />
 		  <Setter Property="MinWidth" Value="0" />
@@ -365,7 +367,8 @@
 		<Style Selector="controls|StrokeIcon.pinned">
 		  <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
 		</Style>
-	  </TabControl.Styles>
+	  </Grid.Styles>
+	<TabControl x:Name="ResultTabs" ItemsSource="{Binding ShownResults}" SelectedItem="{Binding SelectedResult}">
 	  <TabControl.ItemTemplate>
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <StackPanel Orientation="Horizontal" Spacing="4" Background="Transparent" ToolTip.Tip="{Binding HeaderTip}">
@@ -379,9 +382,6 @@
 						  Command="{Binding $parent[TabControl].DataContext.ClosePinnedResultCommand}" CommandParameter="{Binding}" />
 				<MenuItem Header="Close all pinned" Command="{Binding $parent[TabControl].DataContext.CloseAllPinnedResultsCommand}" />
 				<Separator />
-				<MenuItem Header="View side by side" IsVisible="{Binding IsGrid}" services:Keymap.Command="grid.side-by-side"
-						  Command="{Binding $parent[TabControl].DataContext.ViewSideBySideCommand}" CommandParameter="{Binding}" />
-				<Separator IsVisible="{Binding IsGrid}" />
 				<MenuItem Header="Show as text (Ctrl+T)" IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}"
 						  Command="{Binding $parent[TabControl].DataContext.ToggleResultsAsTextCommand}" />
 				<MenuItem Header="Show as grid (Ctrl+T)" IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}"
@@ -406,7 +406,7 @@
 		<DataTemplate x:DataType="vm:ResultSetView">
 		  <Panel>
 			<Panel IsVisible="{Binding !$parent[TabControl].DataContext.ResultsAsText}">
-			  <views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" CanViewSideBySide="True" />
+			  <views:ResultGridView ResultSet="{Binding}" IsVisible="{Binding IsGrid}" CanCompare="True" />
 			</Panel>
 			<!-- Ctrl+T: the same rows as aligned text, selectable and copyable as they look -->
 			<Panel IsVisible="{Binding $parent[TabControl].DataContext.ResultsAsText}">
@@ -426,6 +426,48 @@
 		</DataTemplate>
 	  </TabControl.ContentTemplate>
 	</TabControl>
+
+	<GridSplitter x:Name="CompareSplitter" IsVisible="{Binding HasCompare}" Background="Transparent"
+				  ToolTip.Tip="Drag to share the room between the two results" />
+	<Border x:Name="ComparePane" IsVisible="{Binding HasCompare}" BorderThickness="1" CornerRadius="6" ClipToBounds="True"
+			BorderBrush="{DynamicResource AppBorderBrush}">
+	  <DockPanel>
+		<Border DockPanel.Dock="Top" Padding="8,4,4,4" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}"
+				Background="{DynamicResource AppBarBackgroundBrush}" ToolTip.Tip="{Binding CompareDetail}">
+		  <Grid ColumnDefinitions="Auto,*,Auto">
+			<controls:StrokeIcon Data="{x:Static controls:Icons.SideBySide}" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,8,0"
+								 Foreground="{DynamicResource SystemAccentColor}" />
+			<StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+			  <TextBlock Text="{Binding CompareTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+			  <TextBlock Classes="hint" FontSize="12" Text="{Binding CompareDetail}" TextTrimming="CharacterEllipsis" />
+			</StackPanel>
+			<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="6,0,0,0">
+			  <Button x:Name="CompareChangeButton" Classes="compact" Content="Change ▾"
+					  ToolTip.Tip="Show another result here" />
+			  <ToggleButton Classes="compact" IsChecked="{Binding CompareScrollTogether}" MinHeight="26" Padding="8,2" FontSize="12" CornerRadius="6"
+							Content="Scroll together" ToolTip.Tip="Scrolling one of the two results scrolls the other to the same row" />
+			  <Button Classes="resulttab" Command="{Binding ToggleCompareLayoutCommand}" ToolTip.Tip="{Binding CompareLayoutTip}"
+					  AutomationProperties.Name="Beside or below">
+				<Panel>
+				  <controls:StrokeIcon Data="{x:Static controls:Icons.Rows}" Width="14" Height="14" IsVisible="{Binding !CompareBelow}" />
+				  <controls:StrokeIcon Data="{x:Static controls:Icons.SideBySide}" Width="14" Height="14" IsVisible="{Binding CompareBelow}" />
+				</Panel>
+			  </Button>
+			  <Button Classes="resulttab" Command="{Binding CloseCompareCommand}" ToolTip.Tip="Close the compared result"
+					  AutomationProperties.Name="Close the compared result">
+				<controls:StrokeIcon Data="{x:Static controls:Icons.Close}" Width="12" Height="12" />
+			  </Button>
+			</StackPanel>
+		  </Grid>
+		</Border>
+		<Panel Margin="6,6,6,4">
+		  <views:ResultGridView x:Name="CompareGrid" ResultSet="{Binding CompareResult}" IsVisible="{Binding HasCompareResult}" />
+		  <TextBlock Classes="hint" Text="{Binding CompareEmptyText}" TextWrapping="Wrap" IsVisible="{Binding !HasCompareResult}"
+					 HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16" />
+		</Panel>
+	  </DockPanel>
+	</Border>
+	</Grid>
 
 	<!-- Server messages (PRINT, rows affected, per-database results): collapsed to one line until needed -->
 	<Expander Grid.Row="4" HorizontalAlignment="Stretch" Margin="0,2,0,0" Padding="4" MinHeight="0"

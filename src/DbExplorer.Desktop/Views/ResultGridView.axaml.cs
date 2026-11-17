@@ -196,13 +196,13 @@ public partial class ResultGridView : UserControl
         InitPivot();
         InitChart();
         InitExport();
-        InitSideBySide();
+        InitCompare();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == CanViewSideBySideProperty) UpdateSideBySide();
+        if (change.Property == CanCompareProperty) UpdateCompare();
         if (change.Property == ResultSetProperty)
         {
             Rebuild(change.GetNewValue<ResultSetView?>());
@@ -1185,9 +1185,9 @@ public partial class ResultGridView : UserControl
             _ = CommitEditsAsync();
             e.Handled = true;
         }
-        else if (command == ShortcutCommands.GridSideBySide && CanViewSideBySide)
+        else if (command == ShortcutCommands.GridCompare && CanCompare)
         {
-            RequestSideBySide();
+            RequestCompare();
             e.Handled = true;
         }
         else if (command == ShortcutCommands.GridFilter)

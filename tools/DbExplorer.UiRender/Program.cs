@@ -207,7 +207,7 @@ namespace DbExplorer.UiRender
             await Step("backup", RenderBackupAsync);
             await Step("jobs", () => RenderJobsAsync("postgres"));
             await Step("multi", RenderMultipleConnectionsAsync);
-            await Step("sidebyside", RenderSideBySideAsync);
+            await Step("compare", RenderCompareAsync);
             await Step("builder", RenderQueryBuilderAsync);
             await Step("format", RenderFormattingAsync);
 
@@ -2325,64 +2325,55 @@ namespace DbExplorer.UiRender
             await Settle();
         }
 
-        /// <summary>The Side by side board: the same table read on two connections, shown next to each other.</summary>
-        private async Task RenderSideBySideAsync()
+        /// <summary>Compare: the Accounts top 10 of one tab next to the Orders of another, beside and below.</summary>
+        private async Task RenderCompareAsync()
         {
             var query = _vm.Query;
             var before = query.Documents.ToList();
-            _vm.SelectedTab = AppTab.SideBySide;
-            await Settle(6);
-            await Shot(_window, "sidebyside-empty");
-
             _vm.SelectedTab = AppTab.Query;
-            query.OpenInNewTab("SELECT sku, name, price, stock\nFROM products\nORDER BY sku;", "Products");
-            var shop = query.SelectedDocument!;
-            await shop.ExecuteCommand.ExecuteAsync(null);
-            await WaitFor(() => !shop.IsRunning && shop.ResultSets.Count > 0, "shop products");
+            query.OpenInNewTab("SELECT id, name, email, created_at\nFROM customers\nORDER BY id\nLIMIT 10;", "Accounts top 10");
+            var accounts = query.SelectedDocument!;
+            await accounts.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !accounts.IsRunning && accounts.ResultSets.Count > 0, "accounts");
+
+            query.OpenInNewTab("SELECT id, customer_id, status, ordered_at\nFROM orders\nORDER BY customer_id, id\nLIMIT 40;", "Orders");
+            var orders = query.SelectedDocument!;
+            await orders.ExecuteCommand.ExecuteAsync(null);
+            await WaitFor(() => !orders.IsRunning && orders.ResultSets.Count > 0, "orders");
             await Settle(6);
-            await Shot(_window, "sidebyside-query");
-            shop.ViewSideBySideCommand.Execute(shop.ResultSets[0]);
+
+            // The Compare ▾ list, opened from the Orders result.
+            var grid = _window.GetVisualDescendants().OfType<ResultGridView>().First(g => g.CanCompare && g.IsEffectivelyVisible);
+            grid.RequestCompare();
+            await Settle(6);
+            await Shot(_window, "compare-list");
+            foreach (var popup in _window.GetVisualDescendants().OfType<Popup>().Where(p => p.IsOpen).ToList()) popup.IsOpen = false;
+            if (TopLevel.GetTopLevel(grid) is { } top)
+                foreach (var presenter in top.GetVisualDescendants().OfType<MenuFlyoutPresenter>().ToList()) presenter.Close();
             await Settle(4);
-            await Shot(_window, "sidebyside-first-added");
 
-            var archive = Profile("Shop archive", SqlDialect.PostgresKey, [.. pg[..4], "uirender_shop_old"], ConnectionEnvironment.Staging, "Local");
-            _vm.Profiles.Add(archive);
-            await _vm.ConnectProfileAsync(archive);
-            await WaitFor(() => _vm.OpenConnections.Count == 2 && !_vm.IsBusy, "archive connection", 60_000);
-            // The archive's products as they were (the sample archive has no rows of its own).
-            query.OpenInNewTab("SELECT 'SKU-' || lpad(i::text, 4, '0') AS sku, 'Product ' || i AS name,\n" +
-                               "       round(i * 3.25, 2) AS price, (i * 5) % 60 AS stock\n" +
-                               "FROM generate_series(1, 25) AS i\nORDER BY sku;", "Products last year");
-            var old = query.SelectedDocument!;
-            await old.ExecuteCommand.ExecuteAsync(null);
-            await WaitFor(() => !old.IsRunning && old.ResultSets.Count > 0, "archive products");
-            old.ViewSideBySideCommand.Execute(old.ResultSets[0]);
+            orders.CompareWithCommand.Execute(orders.CompareChoices().First(c => ReferenceEquals(c.Tab, accounts)));
             await Settle(8);
-            if (_vm.SelectedTab != AppTab.SideBySide) _failures.Add("sidebyside: the second result did not open the board");
-            await Shot(_window, "sidebyside-columns");
-
-            _vm.ResultsBoard.Layout = BoardLayout.Rows;
+            await Shot(_window, "compare-beside");
+            orders.CompareBelow = true;
             await Settle(8);
-            await Shot(_window, "sidebyside-rows");
-            _vm.ResultsBoard.Layout = BoardLayout.Columns;
+            await Shot(_window, "compare-below");
+            orders.CompareBelow = false;
 
             _window.Width = 1024;
             _window.Height = 700;
             await Settle(8);
-            await Shot(_window, "small-sidebyside-columns");
+            await Shot(_window, "small-compare-beside");
             _window.Width = 1400;
             _window.Height = 900;
             await Settle(4);
 
-            _vm.ResultsBoard.ClearCommand.Execute(null);
-            _vm.SelectedTab = AppTab.Query;
+            orders.CloseCompareCommand.Execute(null);
             foreach (var doc in query.Documents.Except(before).ToList())
             {
                 doc.SetText("", markClean: true);
                 await query.CloseTabCommand.ExecuteAsync(doc);
             }
-            await _vm.CloseConnectionAsync(_vm.OpenConnections.Find(archive.Id)!);
-            _vm.Profiles.Remove(archive);
             await Settle();
         }
 
